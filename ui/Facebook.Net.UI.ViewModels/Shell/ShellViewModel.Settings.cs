@@ -99,10 +99,14 @@ public sealed partial class ShellViewModel
 
         this._context.Settings.Save(updated);
 
+        string friendlyTheme = this._context.Localization.FormatThemeMode(updated.Theme);
+        string friendlyLang = LocalizationService.FormatLanguage(updated.Language);
+        string friendlyBrowser = this._context.Localization.FormatBrowserKind(updated.PreferredBrowser);
+
         _ = await this.LogAuditAsync(
             AuditCategory.System,
             AuditSeverity.Success,
-            "Cài đặt",
-            $"Đã lưu cấu hình: Giao diện={updated.Theme}, Ngôn ngữ={updated.Language}, Trình duyệt={updated.PreferredBrowser}.").ConfigureAwait(true);
+            this._context.Localization["Nav.Settings"],
+            $"Đã lưu cấu hình: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Giãn cách {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.").ConfigureAwait(true);
     }
 }

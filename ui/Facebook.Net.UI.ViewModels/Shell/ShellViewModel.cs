@@ -84,13 +84,18 @@ public sealed partial class ShellViewModel : ObservableObject
         this.AddSelectedGroupToTargetsCommand = new AsyncRelayCommand(this.AddSelectedGroupToTargetsAsync);
         this.RemoveSelectedTargetGroupCommand = new AsyncRelayCommand(this.RemoveSelectedTargetGroupAsync);
         this.JoinSelectedGroupCommand = new AsyncRelayCommand(this.JoinSelectedGroupAsync);
+        this.EnableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(true));
+        this.DisableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(false));
 
         // Publisher & Sales Leads commands
         this.SaveTemplateCommand = new AsyncRelayCommand(this.SaveTemplateAsync);
+        this.DeleteSelectedTemplateCommand = new AsyncRelayCommand(this.DeleteSelectedTemplateAsync);
         this.PublishCampaignCommand = new AsyncRelayCommand(this.PublishCampaignAsync);
+        this.BumpRecentPostsCommand = new AsyncRelayCommand(this.BumpRecentPostsAsync);
         this.ScanGroupLeadsCommand = new AsyncRelayCommand(this.ScanGroupLeadsAsync);
         this.SendSalesCommentOnSelectedPostCommand = new AsyncRelayCommand(this.SendSalesCommentOnSelectedPostAsync);
         this.AutoCommentAllMatchedPostsCommand = new AsyncRelayCommand(this.AutoCommentAllMatchedPostsAsync);
+        this.OpenSelectedPostInBrowserCommand = new AsyncRelayCommand(this.OpenSelectedPostInBrowserAsync);
 
         // Settings commands
         this.SaveSettingsCommand = new AsyncRelayCommand(this.SaveSettingsAsync);
@@ -170,11 +175,23 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Gets the command to request joining the selected group.</summary>
     public IAsyncRelayCommand JoinSelectedGroupCommand { get; }
 
+    /// <summary>Gets the command to enable all target groups for campaigns.</summary>
+    public IAsyncRelayCommand EnableAllTargetGroupsCommand { get; }
+
+    /// <summary>Gets the command to disable all target groups for campaigns.</summary>
+    public IAsyncRelayCommand DisableAllTargetGroupsCommand { get; }
+
     /// <summary>Gets the command to save the current Spintax content as a reusable template.</summary>
     public IAsyncRelayCommand SaveTemplateCommand { get; }
 
+    /// <summary>Gets the command to delete the currently selected template from the library.</summary>
+    public IAsyncRelayCommand DeleteSelectedTemplateCommand { get; }
+
     /// <summary>Gets the command to publish a post to selected target groups or personal timeline.</summary>
     public IAsyncRelayCommand PublishCampaignCommand { get; }
+
+    /// <summary>Gets the command to bump (Up-Top) recently published group posts with a comment.</summary>
+    public IAsyncRelayCommand BumpRecentPostsCommand { get; }
 
     /// <summary>Gets the command to scan recent posts inside the selected group and filter by buyer keywords.</summary>
     public IAsyncRelayCommand ScanGroupLeadsCommand { get; }
@@ -184,6 +201,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>Gets the command to auto-comment on all scraped posts matching the buyer keyword filter.</summary>
     public IAsyncRelayCommand AutoCommentAllMatchedPostsCommand { get; }
+
+    /// <summary>Gets the command to open the selected scraped post directly in the active browser session.</summary>
+    public IAsyncRelayCommand OpenSelectedPostInBrowserCommand { get; }
 
     /// <summary>Gets the command to persist system settings.</summary>
     public IAsyncRelayCommand SaveSettingsCommand { get; }
@@ -203,7 +223,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _ = await this.LogAuditAsync(
             AuditCategory.System,
             AuditSeverity.Info,
-            targetName: "Hệ thống",
+            targetName: this._context.Localization["Audit.Cat.System"],
             message: $"Khởi động hoàn tất ({this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu).").ConfigureAwait(true);
     }
 
@@ -215,8 +235,22 @@ public sealed partial class ShellViewModel : ObservableObject
         string? permalinkUrl = null)
     {
         string uid = this.SelectedAccount?.Uid ?? "system";
-        string name = this.SelectedAccount?.DisplayName ?? "Hệ thống";
+        string name = this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.System"];
         return this._context.AuditStore.AppendAsync(category, severity, uid, name, targetName, message, permalinkUrl);
+    }
+
+    private static string SanitizeErrorMessage(Exception ex)
+    {
+        string raw = ex.Message;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "Kết nối tạm thời bị gián đoạn, vui lòng thử lại.";
+        }
+
+        return raw
+            .Replace("UID", "mã định danh", StringComparison.OrdinalIgnoreCase)
+            .Replace("fb_dtsg", "mã bảo mật phiên", StringComparison.OrdinalIgnoreCase)
+            .Replace("c_user", "phiên đăng nhập", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IBrowserSession?> TryGetOrLaunchActiveSessionAsync()
@@ -226,7 +260,7 @@ public sealed partial class ShellViewModel : ObservableObject
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                "Tài khoản",
+                this._context.Localization["Audit.Cat.Account"],
                 "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.").ConfigureAwait(true);
             return null;
         }

@@ -46,6 +46,12 @@ public static class VectorIcons
     /// <summary>Sync / Refresh arrows icon path.</summary>
     public const string Sync = "M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0 0 20.49 15";
 
+    /// <summary>CheckCircle / Verified icon path.</summary>
+    public const string CheckCircle = "M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3";
+
+    /// <summary>Folder / File Picker icon path.</summary>
+    public const string Folder = "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z";
+
     /// <summary>Creates a crisp <see cref="PathIcon"/> from an SVG path string.</summary>
     public static PathIcon Create(string svgPathData, double size = 16, IBrush? foreground = null)
     {

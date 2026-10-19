@@ -29,6 +29,68 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string GroupSearchKeyword { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the local filter text to quickly filter synced groups by name.</summary>
+    [ObservableProperty]
+    public partial string GroupFilterText { get; set; } = string.Empty;
+
+    private readonly System.Collections.Generic.List<GroupSummary> _allCatalogGroups = new();
+
+    /// <summary>
+    /// Filters the displayed <see cref="JoinedGroups"/> catalog locally by <see cref="GroupFilterText"/>.
+    /// </summary>
+    public void ApplyLocalGroupFilter(string? filterText)
+    {
+        this.GroupFilterText = filterText ?? string.Empty;
+        string kw = this.GroupFilterText.Trim();
+
+        this.JoinedGroups.Clear();
+        for (int i = 0; i < this._allCatalogGroups.Count; i++)
+        {
+            GroupSummary grp = this._allCatalogGroups[i];
+            if (string.IsNullOrWhiteSpace(kw) || grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                this.JoinedGroups.Add(grp);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Toggles the <see cref="SavedTargetGroup.IsEnabled"/> state of a target group and persists it to SQLite.
+    /// </summary>
+    public async Task ToggleTargetGroupEnabledAsync(SavedTargetGroup group, bool isEnabled)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        SavedTargetGroup updated = group with { IsEnabled = isEnabled };
+        await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            if (string.Equals(this.TargetGroups[i].GroupId, group.GroupId, StringComparison.Ordinal))
+            {
+                this.TargetGroups[i] = updated;
+                break;
+            }
+        }
+    }
+
+    private async Task SetAllTargetGroupsEnabledAsync(bool isEnabled)
+    {
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup updated = this.TargetGroups[i] with { IsEnabled = isEnabled };
+            await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+            this.TargetGroups[i] = updated;
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Group,
+            AuditSeverity.Info,
+            "Nhóm Mục tiêu",
+            isEnabled
+                ? $"Đã bật tất cả {this.TargetGroups.Count} nhóm mục tiêu."
+                : $"Đã tạm tắt tất cả {this.TargetGroups.Count} nhóm mục tiêu.").ConfigureAwait(true);
+    }
+
     private async Task SyncJoinedGroupsAsync()
     {
         IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
@@ -48,7 +110,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 "Đồng bộ Nhóm",
-                $"Lỗi tải danh sách nhóm: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi tải danh sách nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
@@ -62,10 +124,12 @@ public sealed partial class ShellViewModel
             .GetJoinedGroupsAsync(session, count: 30)
             .ConfigureAwait(true);
 
+        this._allCatalogGroups.Clear();
         this.JoinedGroups.Clear();
         for (int i = 0; i < result.Items.Count; i++)
         {
             GroupSummary group = result.Items[i];
+            this._allCatalogGroups.Add(group);
             this.JoinedGroups.Add(group);
 
             // Auto-save into SQLite TargetGroups so they persist across app restarts
@@ -119,9 +183,11 @@ public sealed partial class ShellViewModel
                 .SearchGroupsAsync(session, keyword, count: 15)
                 .ConfigureAwait(true);
 
+            this._allCatalogGroups.Clear();
             this.JoinedGroups.Clear();
             for (int i = 0; i < result.Items.Count; i++)
             {
+                this._allCatalogGroups.Add(result.Items[i]);
                 this.JoinedGroups.Add(result.Items[i]);
             }
 
@@ -142,7 +208,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.GroupSearchKeyword,
-                $"Lỗi tìm kiếm nhóm: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi tìm kiếm nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
@@ -207,11 +273,12 @@ public sealed partial class ShellViewModel
                 .JoinGroupAsync(session, group.GroupId)
                 .ConfigureAwait(true);
 
+            string friendlyState = this._context.Localization.FormatGroupMembership(state);
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 group.Name,
-                $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' (Trạng thái: {state}).").ConfigureAwait(true);
+                $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' ({friendlyState}).").ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -219,7 +286,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.SelectedGroup?.Name ?? "Nhóm",
-                $"Lỗi tham gia nhóm: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi tham gia nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {

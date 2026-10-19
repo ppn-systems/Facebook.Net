@@ -31,6 +31,14 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string PostMediaFilePath { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the currently selected template in the saved content library.</summary>
+    [ObservableProperty]
+    public partial CampaignTemplate? SelectedTemplate { get; set; }
+
+    /// <summary>Gets or sets the Spintax comment text used to bump (Up-Top) recently published group posts.</summary>
+    [ObservableProperty]
+    public partial string BumpCommentSpintaxText { get; set; } = "{Chấm đẩy bài ạ|Hàng vẫn sẵn kho anh chị nhé|Quan tâm nhắn tin giúp em nhé|Up cho anh chị cần ạ}!";
+
     /// <summary>Gets or sets the buyer-intent filter keywords when scanning group feeds (e.g. "cần mua, xin giá, ib").</summary>
     [ObservableProperty]
     public partial string BuyerIntentKeywords { get; set; } = string.Empty;
@@ -46,6 +54,8 @@ public sealed partial class ShellViewModel
     /// <summary>Gets or sets the optional local product/price photo path for sales commenting.</summary>
     [ObservableProperty]
     public partial string SalesCommentPhotoPath { get; set; } = string.Empty;
+
+    private readonly List<string> _recentPublishedPostIds = new();
 
     private async Task SaveTemplateAsync()
     {
@@ -73,6 +83,25 @@ public sealed partial class ShellViewModel
             AuditSeverity.Success,
             "Kho Nội dung",
             $"Đã lưu mẫu bài viết '{title}' vào kho lưu trữ.").ConfigureAwait(true);
+    }
+
+    private async Task DeleteSelectedTemplateAsync()
+    {
+        if (this.SelectedTemplate is null)
+        {
+            return;
+        }
+
+        string title = this.SelectedTemplate.Title;
+        _ = await this._context.AccountStore.DeleteCampaignTemplateAsync(this.SelectedTemplate.Id).ConfigureAwait(true);
+        this.SelectedTemplate = null;
+        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Post,
+            AuditSeverity.Info,
+            "Kho Nội dung",
+            $"Đã xóa mẫu '{title}' khỏi kho lưu trữ.").ConfigureAwait(true);
     }
 
     private async Task PublishCampaignAsync()
@@ -121,6 +150,11 @@ public sealed partial class ShellViewModel
                     .PublishPostAsync(session, this.PostSpintaxText, ComposerTarget.Feed, null, photoIds)
                     .ConfigureAwait(true);
 
+                if (!string.IsNullOrWhiteSpace(postId))
+                {
+                    this._recentPublishedPostIds.Add(postId);
+                }
+
                 await this._context.AccountStore.RecordActionAsync(new ActionHistoryEntry(
                     session.AccountUid,
                     "POST",
@@ -165,6 +199,11 @@ public sealed partial class ShellViewModel
 
             for (int i = 0; i < targets.Count; i++)
             {
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync(targets[i].GroupName).ConfigureAwait(true);
+                }
+
                 SavedTargetGroup group = targets[i];
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
@@ -175,6 +214,11 @@ public sealed partial class ShellViewModel
                 string? postId = await this._context.CometClient
                     .PublishPostAsync(session, this.PostSpintaxText, ComposerTarget.Group, group.GroupId, photoIds)
                     .ConfigureAwait(true);
+
+                if (!string.IsNullOrWhiteSpace(postId))
+                {
+                    this._recentPublishedPostIds.Add(postId);
+                }
 
                 await this._context.AccountStore.RecordActionAsync(new ActionHistoryEntry(
                     session.AccountUid,
@@ -199,7 +243,65 @@ public sealed partial class ShellViewModel
                 AuditCategory.Post,
                 AuditSeverity.Error,
                 "Đăng bài",
-                $"Lỗi khi đăng bài: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi khi đăng bài: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
+        }
+        finally
+        {
+            this.IsBusy = false;
+        }
+    }
+
+    private async Task BumpRecentPostsAsync()
+    {
+        if (this._recentPublishedPostIds.Count == 0)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Warning,
+                "Đẩy Top Bài viết",
+                "Chưa có bài viết vừa đăng nào trong phiên này để đẩy Top — hãy chạy đăng bài trước.").ConfigureAwait(true);
+            return;
+        }
+
+        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
+        if (session is null)
+        {
+            return;
+        }
+
+        this.IsBusy = true;
+        try
+        {
+            string bumpText = string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText)
+                ? "{Up|Chấm đẩy bài ạ}"
+                : this.BumpCommentSpintaxText;
+
+            for (int i = 0; i < this._recentPublishedPostIds.Count; i++)
+            {
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync("Đẩy Top").ConfigureAwait(true);
+                }
+
+                string postId = this._recentPublishedPostIds[i];
+                _ = await this._context.CometClient
+                    .CreateCommentAsync(session, postId, bumpText, null)
+                    .ConfigureAwait(true);
+
+                _ = await this.LogAuditAsync(
+                    AuditCategory.SalesComment,
+                    AuditSeverity.Success,
+                    "Đẩy Top (Up-Top)",
+                    $"Đã bình luận đẩy bài viết ({i + 1}/{this._recentPublishedPostIds.Count}) lên đầu nhóm thành công!").ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Error,
+                "Đẩy Top (Up-Top)",
+                $"Lỗi khi đẩy Top bài viết: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
@@ -272,7 +374,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Scrape,
                 AuditSeverity.Error,
                 targetGroupName,
-                $"Lỗi quét bài viết nhóm: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi quét bài viết nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
@@ -309,7 +411,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
                 this.SelectedScrapedPost.AuthorName ?? "Bài viết",
-                $"Lỗi gửi Comment Sale: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi gửi Comment Sale: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
@@ -340,6 +442,11 @@ public sealed partial class ShellViewModel
         {
             for (int i = 0; i < this.ScrapedPosts.Count; i++)
             {
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync(this.ScrapedPosts[i].AuthorName ?? "Bài tiếp theo").ConfigureAwait(true);
+                }
+
                 await this.ExecuteSingleSalesCommentAsync(session, this.ScrapedPosts[i]).ConfigureAwait(true);
             }
         }
@@ -349,12 +456,57 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
                 "Auto Comment Sale",
-                $"Lỗi trong quá trình Auto Comment: {ex.Message}").ConfigureAwait(true);
+                $"Lỗi trong quá trình Auto Comment: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
         }
         finally
         {
             this.IsBusy = false;
         }
+    }
+
+    private async Task OpenSelectedPostInBrowserAsync()
+    {
+        if (this.SelectedScrapedPost is null || string.IsNullOrWhiteSpace(this.SelectedScrapedPost.PermalinkUrl))
+        {
+            return;
+        }
+
+        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
+        if (session is null)
+        {
+            return;
+        }
+
+        await session.NavigateAsync(this.SelectedScrapedPost.PermalinkUrl).ConfigureAwait(true);
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Info,
+            this.SelectedScrapedPost.AuthorName ?? "Bài viết",
+            "Đã mở bài viết trực tiếp trên cửa sổ trình duyệt.").ConfigureAwait(true);
+    }
+
+    private async Task WaitAntiCheckpointDelayAsync(string nextTargetName)
+    {
+        int minSec = Math.Max(0, this.MinDelaySeconds);
+        int maxSec = Math.Max(minSec, this.MaxDelaySeconds);
+        if (maxSec <= 0)
+        {
+            return;
+        }
+
+        int waitSec = Random.Shared.Next(minSec, maxSec + 1);
+        if (waitSec <= 0)
+        {
+            return;
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.System,
+            AuditSeverity.Info,
+            nextTargetName,
+            $"Đang nghỉ giãn cách an toàn {waitSec} giây trước khi xử lý '{nextTargetName}' (chống Checkpoint)...").ConfigureAwait(true);
+
+        await Task.Delay(TimeSpan.FromSeconds(waitSec)).ConfigureAwait(true);
     }
 
     private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post)

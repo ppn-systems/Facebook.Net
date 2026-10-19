@@ -15,7 +15,7 @@ namespace Facebook.Net.UI.ViewModels.Audit;
 
 /// <summary>
 /// ViewModel for the Collapsible Bottom Audit Log Drawer / Taskbar, backed by the dedicated
-/// <c>facebook_audit.db</c> SQLite database with multi-criteria filtering (Category, Severity, Account, Keyword, Time).
+/// <c>facebook_audit.db</c> SQLite database with multi-criteria filtering (Category, Time Range, Account, Keyword).
 /// </summary>
 public sealed partial class AuditLogDrawerViewModel : ObservableObject
 {
@@ -30,6 +30,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
         this._context = context;
 
         this.IsExpanded = context.Settings.Current.IsAuditDrawerExpanded;
+        this.LatestTickerText = context.Localization["Audit.ReadyTicker"];
         this.FilteredLogs = new ObservableCollection<AuditLogRecord>();
 
         this.ToggleDrawerCommand = new RelayCommand(this.ToggleDrawer);
@@ -37,6 +38,13 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
         this.ClearLogsCommand = new AsyncRelayCommand(this.ClearLogsAsync);
 
         this._context.AuditStore.LogAppended += this.OnLogAppended;
+        this._context.Localization.LanguageChanged += (_, _) =>
+        {
+            if (this.FilteredLogs.Count == 0)
+            {
+                this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
+            }
+        };
     }
 
     /// <summary>Gets or sets a value indicating whether the bottom audit log drawer is expanded.</summary>
@@ -45,11 +53,15 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
 
     /// <summary>Gets or sets the latest single-line summary shown in the collapsed taskbar.</summary>
     [ObservableProperty]
-    public partial string LatestTickerText { get; set; } = "Sẵn sàng — Chưa có tác vụ nào đang chạy.";
+    public partial string LatestTickerText { get; set; }
 
     /// <summary>Gets or sets the selected category filter (<c>null</c> = All categories).</summary>
     [ObservableProperty]
     public partial AuditCategory? SelectedCategory { get; set; }
+
+    /// <summary>Gets or sets the selected time range filter (<see cref="AuditTimeRange.AllTime"/> by default).</summary>
+    [ObservableProperty]
+    public partial AuditTimeRange SelectedTimeRange { get; set; } = AuditTimeRange.AllTime;
 
     /// <summary>Gets or sets the selected severity filter (<c>null</c> = All severities).</summary>
     [ObservableProperty]
@@ -88,14 +100,17 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
     public IAsyncRelayCommand ClearLogsCommand { get; }
 
     /// <summary>
-    /// Reloads audit logs from <c>facebook_audit.db</c> using the active filter criteria.
+    /// Reloads audit logs from <c>facebook_audit.db</c> using the active filter criteria (Category, TimeRange, Account, Keyword).
     /// </summary>
     public async Task RefreshLogsAsync()
     {
+        DateTimeOffset? fromTime = ResolveFromTime(this.SelectedTimeRange);
+
         AuditLogFilter filter = new(
             Category: this.SelectedCategory,
             Severity: this.SelectedSeverity,
             AccountUid: this.SelectedAccountUid,
+            FromTime: fromTime,
             SearchKeyword: this.SearchKeyword,
             Limit: 250);
 
@@ -136,7 +151,21 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
             AuditLogRecord latest = records[0];
             this.LatestTickerText = $"[{latest.Timestamp.ToLocalTime():HH:mm:ss}] [{latest.AccountDisplayName}] {latest.Message}";
         }
+        else
+        {
+            this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
+        }
     }
+
+    private static DateTimeOffset? ResolveFromTime(AuditTimeRange range) =>
+        range switch
+        {
+            AuditTimeRange.LastHour => DateTimeOffset.UtcNow.AddHours(-1),
+            AuditTimeRange.Today24Hours => DateTimeOffset.UtcNow.AddHours(-24),
+            AuditTimeRange.Last7Days => DateTimeOffset.UtcNow.AddDays(-7),
+            AuditTimeRange.AllTime => null,
+            _ => null
+        };
 
     private void ToggleDrawer()
     {
@@ -198,6 +227,12 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
         }
 
         if (this.SelectedSeverity.HasValue && record.Severity != this.SelectedSeverity.Value)
+        {
+            return false;
+        }
+
+        DateTimeOffset? minTime = ResolveFromTime(this.SelectedTimeRange);
+        if (minTime.HasValue && record.Timestamp < minTime.Value)
         {
             return false;
         }

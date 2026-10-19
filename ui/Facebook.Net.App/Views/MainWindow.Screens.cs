@@ -129,8 +129,8 @@ public sealed partial class MainWindow
                 TextBlock subInfo = new()
                 {
                     Text = item.LastActiveAt.HasValue
-                        ? $"Hoạt động gần nhất: {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
-                        : "Sẵn sàng kết nối trình duyệt",
+                        ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
+                        : this._i18n["Accounts.ReadyToConnect"],
                     FontSize = 11,
                     Foreground = this._theme.Palette.TextSecondary
                 };
@@ -141,7 +141,10 @@ public sealed partial class MainWindow
                 AuditSeverity sev = item.Status == AccountStatus.Active
                     ? AuditSeverity.Success
                     : (item.Status == AccountStatus.Checkpoint ? AuditSeverity.Error : AuditSeverity.Warning);
-                Border statusPill = CloudflareControls.CreateStatusPill(this._theme, item.Status.ToString(), sev);
+                Border statusPill = CloudflareControls.CreateStatusPill(
+                    this._theme,
+                    this._i18n.FormatAccountStatus(item.Status),
+                    sev);
                 Grid.SetColumn(statusPill, 2);
 
                 row.Children.Add(avatar);
@@ -202,6 +205,12 @@ public sealed partial class MainWindow
             this._vm.SyncJoinedGroupsCommand,
             VectorIcons.Sync);
 
+        Grid searchRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
+
         TextBox searchKeywordBox = CloudflareControls.CreateTextBox(
             this._theme,
             this._i18n["Groups.SearchKeywordPlaceholder"]);
@@ -213,9 +222,19 @@ public sealed partial class MainWindow
             this._vm.SearchGroupsByKeywordCommand,
             VectorIcons.Search);
 
+        Grid.SetColumn(searchKeywordBox, 0);
+        Grid.SetColumn(searchBtn, 1);
+        searchRow.Children.Add(searchKeywordBox);
+        searchRow.Children.Add(searchBtn);
+
+        TextBox localFilterBox = CloudflareControls.CreateTextBox(
+            this._theme,
+            this._i18n["Groups.FilterPlaceholder"]);
+        localFilterBox.TextChanged += (_, _) => this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
+
         ListBox groupsList = new()
         {
-            Height = 290,
+            Height = 270,
             ItemsSource = this._vm.JoinedGroups,
             ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
             {
@@ -247,7 +266,7 @@ public sealed partial class MainWindow
 
                 Border statePill = CloudflareControls.CreateStatusPill(
                     this._theme,
-                    grp.MembershipState.ToString(),
+                    this._i18n.FormatGroupMembership(grp.MembershipState),
                     grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
                 Grid.SetColumn(statePill, 2);
 
@@ -288,8 +307,8 @@ public sealed partial class MainWindow
         actionRow.Children.Add(joinBtn);
 
         leftStack.Children.Add(syncJoinedBtn);
-        leftStack.Children.Add(searchKeywordBox);
-        leftStack.Children.Add(searchBtn);
+        leftStack.Children.Add(searchRow);
+        leftStack.Children.Add(localFilterBox);
         leftStack.Children.Add(groupsList);
         leftStack.Children.Add(actionRow);
 
@@ -297,7 +316,7 @@ public sealed partial class MainWindow
         Grid.SetColumn(leftCard, 0);
         grid.Children.Add(leftCard);
 
-        // Right: Selected Target Campaign Groups
+        // Right: Selected Target Campaign Groups with CheckBox toggles
         StackPanel rightStack = new() { Spacing = 10 };
         TextBlock targetListHeader = new()
         {
@@ -307,9 +326,31 @@ public sealed partial class MainWindow
             Foreground = this._theme.Palette.TextPrimary
         };
 
+        Grid bulkToggleRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 8
+        };
+
+        Button selectAllTargetsBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Groups.BtnSelectAllTargets"],
+            this._vm.EnableAllTargetGroupsCommand,
+            VectorIcons.CheckCircle);
+
+        Button deselectAllTargetsBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Groups.BtnDeselectAllTargets"],
+            this._vm.DisableAllTargetGroupsCommand);
+
+        Grid.SetColumn(selectAllTargetsBtn, 0);
+        Grid.SetColumn(deselectAllTargetsBtn, 1);
+        bulkToggleRow.Children.Add(selectAllTargetsBtn);
+        bulkToggleRow.Children.Add(deselectAllTargetsBtn);
+
         ListBox targetList = new()
         {
-            Height = 380,
+            Height = 330,
             ItemsSource = this._vm.TargetGroups,
             ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, _) =>
             {
@@ -324,6 +365,22 @@ public sealed partial class MainWindow
                     Spacing = 10,
                     Margin = new Thickness(4)
                 };
+
+                CheckBox enabledCheck = new()
+                {
+                    IsChecked = tg.IsEnabled,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                enabledCheck.IsCheckedChanged += async (_, _) =>
+                {
+                    bool nextState = enabledCheck.IsChecked ?? false;
+                    if (nextState != tg.IsEnabled)
+                    {
+                        await this._vm.ToggleTargetGroupEnabledAsync(tg, nextState).ConfigureAwait(true);
+                    }
+                };
+
+                sp.Children.Add(enabledCheck);
                 sp.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, tg.GroupName, 28));
                 sp.Children.Add(new TextBlock
                 {
@@ -347,10 +404,11 @@ public sealed partial class MainWindow
 
         Button removeTargetBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
-            "Xóa Nhóm khỏi Danh sách Mục tiêu",
+            this._i18n["Groups.BtnRemoveTarget"],
             this._vm.RemoveSelectedTargetGroupCommand);
 
         rightStack.Children.Add(targetListHeader);
+        rightStack.Children.Add(bulkToggleRow);
         rightStack.Children.Add(targetList);
         rightStack.Children.Add(removeTargetBtn);
 
@@ -363,11 +421,15 @@ public sealed partial class MainWindow
             titleTb.Text = this._i18n["Groups.Header"];
             descTb.Text = this._i18n["Groups.Desc"];
             searchKeywordBox.PlaceholderText = this._i18n["Groups.SearchKeywordPlaceholder"];
+            localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
             CloudflareControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
             CloudflareControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
             CloudflareControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
             CloudflareControls.SetButtonText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
             targetListHeader.Text = this._i18n["Groups.TargetListTitle"];
+            CloudflareControls.SetButtonText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
+            CloudflareControls.SetButtonText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
+            CloudflareControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
         return grid;

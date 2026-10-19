@@ -48,6 +48,24 @@ public enum AuditSeverity
 }
 
 /// <summary>
+/// Preset time range filters for querying audit logs in the collapsible taskbar drawer.
+/// </summary>
+public enum AuditTimeRange
+{
+    /// <summary>All recorded audit logs.</summary>
+    AllTime = 0,
+
+    /// <summary>Logs from the last 1 hour.</summary>
+    LastHour = 1,
+
+    /// <summary>Logs from the last 24 hours.</summary>
+    Today24Hours = 2,
+
+    /// <summary>Logs from the last 7 days.</summary>
+    Last7Days = 3
+}
+
+/// <summary>
 /// Represents a single immutable row in the dedicated <c>facebook_audit.db</c> SQLite database.
 /// Uses human-friendly display names so end users never have to read raw numeric UIDs.
 /// </summary>

@@ -2,16 +2,20 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Audit;
 
@@ -23,6 +27,22 @@ namespace Facebook.Net.App.Views;
 /// </summary>
 public sealed partial class MainWindow
 {
+    private async Task<string?> PickSingleFileAsync(string title)
+    {
+        if (this.StorageProvider is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<IStorageFile> files = await this.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        }).ConfigureAwait(true);
+
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
     private Control BuildPublisherScreen()
     {
         Grid grid = new()
@@ -53,14 +73,38 @@ public sealed partial class MainWindow
             this._i18n["Publisher.ContentPlaceholder"],
             this._vm.PostSpintaxText,
             multiline: true,
-            height: 150);
+            height: 135);
         contentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = contentBox.Text ?? string.Empty;
+
+        Grid photoRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
 
         TextBox photoBox = CloudflareControls.CreateTextBox(
             this._theme,
             this._i18n["Publisher.PhotoPlaceholder"],
             this._vm.PostMediaFilePath);
         photoBox.TextChanged += (_, _) => this._vm.PostMediaFilePath = photoBox.Text ?? string.Empty;
+
+        Button pickPhotoBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnPickPhoto"]);
+        pickPhotoBtn.Click += async (_, _) =>
+        {
+            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                photoBox.Text = path;
+                this._vm.PostMediaFilePath = path;
+            }
+        };
+
+        Grid.SetColumn(photoBox, 0);
+        Grid.SetColumn(pickPhotoBtn, 1);
+        photoRow.Children.Add(photoBox);
+        photoRow.Children.Add(pickPhotoBtn);
 
         Grid btnRow = new()
         {
@@ -84,10 +128,37 @@ public sealed partial class MainWindow
         btnRow.Children.Add(saveTplBtn);
         btnRow.Children.Add(publishBtn);
 
+        // Auto Up-Top (Bump Recent Posts) Section
+        StackPanel bumpStack = new() { Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
+        TextBlock bumpTitleTb = new()
+        {
+            Text = this._i18n["Publisher.BumpTitle"],
+            FontSize = 14,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = this._theme.Palette.BrandPrimary
+        };
+
+        TextBox bumpBox = CloudflareControls.CreateTextBox(
+            this._theme,
+            this._i18n["Publisher.BumpPlaceholder"],
+            this._vm.BumpCommentSpintaxText);
+        bumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = bumpBox.Text ?? string.Empty;
+
+        Button bumpBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnBumpRecentPosts"],
+            this._vm.BumpRecentPostsCommand,
+            VectorIcons.SalesComment);
+
+        bumpStack.Children.Add(bumpTitleTb);
+        bumpStack.Children.Add(bumpBox);
+        bumpStack.Children.Add(bumpBtn);
+
         leftStack.Children.Add(targetModeCheck);
         leftStack.Children.Add(contentBox);
-        leftStack.Children.Add(photoBox);
+        leftStack.Children.Add(photoRow);
         leftStack.Children.Add(btnRow);
+        leftStack.Children.Add(CloudflareControls.CreateInsetWell(this._theme, bumpStack));
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
         Grid.SetColumn(leftCard, 0);
@@ -105,7 +176,7 @@ public sealed partial class MainWindow
 
         ListBox tplList = new()
         {
-            Height = 380,
+            Height = 350,
             ItemsSource = this._vm.SavedTemplates,
             ItemTemplate = new FuncDataTemplate<CampaignTemplate>((tpl, _) =>
             {
@@ -138,6 +209,7 @@ public sealed partial class MainWindow
         {
             if (tplList.SelectedItem is CampaignTemplate selectedTpl)
             {
+                this._vm.SelectedTemplate = selectedTpl;
                 contentBox.Text = selectedTpl.SpintaxContent;
                 this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
                 if (!string.IsNullOrWhiteSpace(selectedTpl.MediaFilePath))
@@ -148,8 +220,14 @@ public sealed partial class MainWindow
             }
         };
 
+        Button deleteTplBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnDeleteTemplate"],
+            this._vm.DeleteSelectedTemplateCommand);
+
         rightStack.Children.Add(tplTitle);
         rightStack.Children.Add(tplList);
+        rightStack.Children.Add(deleteTplBtn);
 
         Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightStack });
         Grid.SetColumn(rightCard, 1);
@@ -162,9 +240,14 @@ public sealed partial class MainWindow
             targetModeCheck.Content = this._i18n["Publisher.TargetModeGroup"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             photoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
+            CloudflareControls.SetButtonText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             CloudflareControls.SetButtonText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
             CloudflareControls.SetButtonText(publishBtn, this._i18n["Publisher.BtnPublishNow"]);
+            bumpTitleTb.Text = this._i18n["Publisher.BumpTitle"];
+            bumpBox.PlaceholderText = this._i18n["Publisher.BumpPlaceholder"];
+            CloudflareControls.SetButtonText(bumpBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
             tplTitle.Text = this._i18n["Publisher.TemplatesTitle"];
+            CloudflareControls.SetButtonText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
         };
 
         return grid;
@@ -213,10 +296,10 @@ public sealed partial class MainWindow
 
                 StackPanel card = new() { Spacing = 4, Margin = new Thickness(4) };
                 StackPanel authorRow = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
-                authorRow.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, post.AuthorName ?? "Khách hàng", 26));
+                authorRow.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, post.AuthorName ?? this._i18n["Leads.DefaultAuthor"], 26));
                 authorRow.Children.Add(new TextBlock
                 {
-                    Text = string.IsNullOrWhiteSpace(post.AuthorName) ? "Thành viên trong nhóm" : post.AuthorName,
+                    Text = string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName,
                     FontWeight = FontWeight.SemiBold,
                     FontSize = 13,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -229,7 +312,7 @@ public sealed partial class MainWindow
 
                 TextBlock snippet = new()
                 {
-                    Text = string.IsNullOrWhiteSpace(post.MessageText) ? "(Bài viết có đính kèm hình ảnh/video)" : post.MessageText,
+                    Text = string.IsNullOrWhiteSpace(post.MessageText) ? this._i18n["Leads.MediaOnlyPost"] : post.MessageText,
                     FontSize = 12,
                     MaxLines = 3,
                     TextWrapping = TextWrapping.Wrap,
@@ -256,7 +339,7 @@ public sealed partial class MainWindow
             if (postsList.SelectedItem is PostSummary p)
             {
                 this._vm.SelectedScrapedPost = p;
-                selectedBanner.Text = $"{this._i18n["Leads.SelectedPostBanner"]} {p.AuthorName ?? "Thành viên"} — \"{p.MessageText}\"";
+                selectedBanner.Text = $"{this._i18n["Leads.SelectedPostBanner"]} {p.AuthorName ?? this._i18n["Leads.DefaultAuthor"]} — \"{p.MessageText}\"";
             }
         };
 
@@ -277,14 +360,38 @@ public sealed partial class MainWindow
             this._i18n["Leads.CommentContentPlaceholder"],
             this._vm.SalesCommentSpintaxText,
             multiline: true,
-            height: 130);
+            height: 120);
         commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
+
+        Grid commentPhotoRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
 
         TextBox commentPhotoBox = CloudflareControls.CreateTextBox(
             this._theme,
             this._i18n["Leads.CommentPhotoPlaceholder"],
             this._vm.SalesCommentPhotoPath);
         commentPhotoBox.TextChanged += (_, _) => this._vm.SalesCommentPhotoPath = commentPhotoBox.Text ?? string.Empty;
+
+        Button pickCommentPhotoBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnPickPhoto"]);
+        pickCommentPhotoBtn.Click += async (_, _) =>
+        {
+            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                commentPhotoBox.Text = path;
+                this._vm.SalesCommentPhotoPath = path;
+            }
+        };
+
+        Grid.SetColumn(commentPhotoBox, 0);
+        Grid.SetColumn(pickCommentPhotoBtn, 1);
+        commentPhotoRow.Children.Add(commentPhotoBox);
+        commentPhotoRow.Children.Add(pickCommentPhotoBtn);
 
         Button sendSelectedBtn = CloudflareControls.CreatePrimaryButton(
             this._theme,
@@ -298,10 +405,17 @@ public sealed partial class MainWindow
             this._vm.AutoCommentAllMatchedPostsCommand,
             VectorIcons.Publish);
 
+        Button openPostBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Leads.BtnOpenPostInBrowser"],
+            this._vm.OpenSelectedPostInBrowserCommand,
+            VectorIcons.Browser);
+
         rightStack.Children.Add(commentBox);
-        rightStack.Children.Add(commentPhotoBox);
+        rightStack.Children.Add(commentPhotoRow);
         rightStack.Children.Add(sendSelectedBtn);
         rightStack.Children.Add(autoCommentAllBtn);
+        rightStack.Children.Add(openPostBtn);
 
         Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightStack });
         Grid.SetColumn(rightCard, 1);
@@ -313,10 +427,17 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Leads.Desc"];
             buyerKwBox.PlaceholderText = this._i18n["Leads.BuyerKeywordPlaceholder"];
             CloudflareControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
+            if (this._vm.SelectedScrapedPost is null)
+            {
+                selectedBanner.Text = this._i18n["Leads.NoPostSelected"];
+            }
+
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
+            CloudflareControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             CloudflareControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
             CloudflareControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
+            CloudflareControls.SetButtonText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
         };
 
         return grid;
@@ -339,6 +460,65 @@ public sealed partial class MainWindow
             out TextBlock descTb);
         leftStack.Children.Add(header);
 
+        // 1. Theme Selector
+        TextBlock themeLabel = new()
+        {
+            Text = this._i18n["Settings.ThemeLabel"],
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = this._theme.Palette.TextSecondary
+        };
+
+        ComboBox themeCombo = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemsSource = new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
+            SelectedItem = this._vm.SelectedThemeMode,
+            ItemTemplate = new FuncDataTemplate<AppThemeMode>((m, _) =>
+                new TextBlock { Text = this._i18n.FormatThemeMode(m) })
+        };
+        themeCombo.SelectionChanged += (_, _) =>
+        {
+            if (themeCombo.SelectedItem is AppThemeMode mode)
+            {
+                this._vm.SelectedThemeMode = mode;
+            }
+        };
+
+        // 2. Language Selector
+        TextBlock langLabel = new()
+        {
+            Text = this._i18n["Settings.LanguageLabel"],
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = this._theme.Palette.TextSecondary
+        };
+
+        ComboBox langCombo = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemsSource = new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
+            SelectedItem = this._vm.SelectedLanguage,
+            ItemTemplate = new FuncDataTemplate<AppLanguage>((l, _) =>
+                new TextBlock { Text = LocalizationService.FormatLanguage(l) })
+        };
+        langCombo.SelectionChanged += (_, _) =>
+        {
+            if (langCombo.SelectedItem is AppLanguage lang)
+            {
+                this._vm.SelectedLanguage = lang;
+            }
+        };
+
+        // 3. Browser Engine Selector
+        TextBlock browserLabel = new()
+        {
+            Text = this._i18n["Settings.BrowserEngineLabel"],
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = this._theme.Palette.TextSecondary
+        };
+
         ComboBox browserCombo = new()
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -349,7 +529,9 @@ public sealed partial class MainWindow
                 PreferredBrowserKind.Chrome,
                 PreferredBrowserKind.Brave
             },
-            SelectedItem = this._vm.SelectedBrowserKind
+            SelectedItem = this._vm.SelectedBrowserKind,
+            ItemTemplate = new FuncDataTemplate<PreferredBrowserKind>((k, _) =>
+                new TextBlock { Text = this._i18n.FormatBrowserKind(k) })
         };
         browserCombo.SelectionChanged += (_, _) =>
         {
@@ -359,11 +541,35 @@ public sealed partial class MainWindow
             }
         };
 
+        Grid customExeRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
+
         TextBox customExeBox = CloudflareControls.CreateTextBox(
             this._theme,
             this._i18n["Settings.BrowserCustomPathPlaceholder"],
             this._vm.CustomBrowserExecutablePath);
         customExeBox.TextChanged += (_, _) => this._vm.CustomBrowserExecutablePath = customExeBox.Text ?? string.Empty;
+
+        Button browseExeBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Common.BrowseFile"]);
+        browseExeBtn.Click += async (_, _) =>
+        {
+            string? path = await this.PickSingleFileAsync(this._i18n["Common.BrowseFile"]).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                customExeBox.Text = path;
+                this._vm.CustomBrowserExecutablePath = path;
+            }
+        };
+
+        Grid.SetColumn(customExeBox, 0);
+        Grid.SetColumn(browseExeBtn, 1);
+        customExeRow.Children.Add(customExeBox);
+        customExeRow.Children.Add(browseExeBtn);
 
         CheckBox headlessCheck = new()
         {
@@ -373,15 +579,84 @@ public sealed partial class MainWindow
         headlessCheck.IsCheckedChanged += (_, _) =>
             this._vm.RunBrowserHeadless = headlessCheck.IsChecked ?? false;
 
+        // 4. Anti-Checkpoint Delay Range Controls
+        TextBlock delayRangeLabel = new()
+        {
+            Text = this._i18n["Settings.DelayRangeLabel"],
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = this._theme.Palette.TextSecondary
+        };
+
+        Grid delayRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*"),
+            ColumnSpacing = 8
+        };
+
+        TextBlock minDelayPrefix = new()
+        {
+            Text = this._i18n["Settings.MinDelayPrefix"],
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = this._theme.Palette.TextPrimary
+        };
+
+        NumericUpDown minDelayBox = new()
+        {
+            Minimum = 0,
+            Maximum = 600,
+            Increment = 5,
+            Value = this._vm.MinDelaySeconds,
+            FormatString = "0"
+        };
+        minDelayBox.ValueChanged += (_, _) =>
+            this._vm.MinDelaySeconds = (int)(minDelayBox.Value ?? 15);
+
+        TextBlock maxDelayPrefix = new()
+        {
+            Text = this._i18n["Settings.MaxDelayPrefix"],
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = this._theme.Palette.TextPrimary
+        };
+
+        NumericUpDown maxDelayBox = new()
+        {
+            Minimum = 0,
+            Maximum = 1200,
+            Increment = 5,
+            Value = this._vm.MaxDelaySeconds,
+            FormatString = "0"
+        };
+        maxDelayBox.ValueChanged += (_, _) =>
+            this._vm.MaxDelaySeconds = (int)(maxDelayBox.Value ?? 45);
+
+        Grid.SetColumn(minDelayPrefix, 0);
+        Grid.SetColumn(minDelayBox, 1);
+        Grid.SetColumn(maxDelayPrefix, 2);
+        Grid.SetColumn(maxDelayBox, 3);
+        delayRow.Children.Add(minDelayPrefix);
+        delayRow.Children.Add(minDelayBox);
+        delayRow.Children.Add(maxDelayPrefix);
+        delayRow.Children.Add(maxDelayBox);
+
         Button saveBtn = CloudflareControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Settings.BtnSaveSettings"],
             this._vm.SaveSettingsCommand,
             VectorIcons.Settings);
 
+        leftStack.Children.Add(themeLabel);
+        leftStack.Children.Add(themeCombo);
+        leftStack.Children.Add(langLabel);
+        leftStack.Children.Add(langCombo);
+        leftStack.Children.Add(browserLabel);
         leftStack.Children.Add(browserCombo);
-        leftStack.Children.Add(customExeBox);
+        leftStack.Children.Add(customExeRow);
         leftStack.Children.Add(headlessCheck);
+        leftStack.Children.Add(delayRangeLabel);
+        leftStack.Children.Add(delayRow);
         leftStack.Children.Add(saveBtn);
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
@@ -415,8 +690,15 @@ public sealed partial class MainWindow
         {
             titleTb.Text = this._i18n["Settings.Header"];
             descTb.Text = this._i18n["Settings.Desc"];
+            themeLabel.Text = this._i18n["Settings.ThemeLabel"];
+            langLabel.Text = this._i18n["Settings.LanguageLabel"];
+            browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
+            CloudflareControls.SetButtonText(browseExeBtn, this._i18n["Common.BrowseFile"]);
             headlessCheck.Content = this._i18n["Settings.HeadlessLabel"];
+            delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
+            minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
+            maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             CloudflareControls.SetButtonText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
             guideTitle.Text = this._i18n["Settings.GuideTitle"];
             guideBody.Text = this._i18n["Settings.GuideBody"];
@@ -484,16 +766,16 @@ public sealed partial class MainWindow
             IsVisible = drawerVm.IsExpanded
         };
 
+        // 4-Way Filter Bar: Category (Sự kiện), Time Range (Thời gian), Account (Tài khoản), Keyword (Từ khóa)
         Grid filterRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("180,*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("155,155,180,*,Auto,Auto"),
             ColumnSpacing = 8
         };
 
         ComboBox categoryCombo = new()
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            PlaceholderText = this._i18n["Audit.FilterCategoryAll"],
             ItemsSource = new object[]
             {
                 "ALL",
@@ -504,7 +786,12 @@ public sealed partial class MainWindow
                 AuditCategory.SalesComment,
                 AuditCategory.Scrape
             },
-            SelectedIndex = 0
+            SelectedIndex = 0,
+            ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
+            {
+                AuditCategory? cat = obj is AuditCategory c ? c : null;
+                return new TextBlock { Text = this._i18n.FormatAuditCategory(cat), FontSize = 12 };
+            })
         };
         categoryCombo.SelectionChanged += async (_, _) =>
         {
@@ -513,27 +800,77 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(categoryCombo, 0);
 
+        ComboBox timeRangeCombo = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemsSource = new AuditTimeRange[]
+            {
+                AuditTimeRange.AllTime,
+                AuditTimeRange.LastHour,
+                AuditTimeRange.Today24Hours,
+                AuditTimeRange.Last7Days
+            },
+            SelectedIndex = 0,
+            ItemTemplate = new FuncDataTemplate<AuditTimeRange>((r, _) =>
+                new TextBlock { Text = this._i18n.FormatAuditTimeRange(r), FontSize = 12 })
+        };
+        timeRangeCombo.SelectionChanged += async (_, _) =>
+        {
+            if (timeRangeCombo.SelectedItem is AuditTimeRange range)
+            {
+                drawerVm.SelectedTimeRange = range;
+                await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
+            }
+        };
+        Grid.SetColumn(timeRangeCombo, 1);
+
+        ComboBox accountFilterCombo = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            PlaceholderText = this._i18n["Audit.FilterAccountAll"],
+            ItemsSource = this._vm.Accounts,
+            ItemTemplate = new FuncDataTemplate<AccountProfile>((acc, _) =>
+                new TextBlock
+                {
+                    Text = acc?.DisplayName ?? this._i18n["Audit.FilterAccountAll"],
+                    FontSize = 12
+                })
+        };
+        accountFilterCombo.SelectionChanged += async (_, _) =>
+        {
+            drawerVm.SelectedAccountUid = accountFilterCombo.SelectedItem is AccountProfile acc ? acc.Uid : null;
+            await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
+        };
+        Grid.SetColumn(accountFilterCombo, 2);
+
         TextBox searchBox = CloudflareControls.CreateTextBox(this._theme, this._i18n["Audit.SearchPlaceholder"]);
         searchBox.TextChanged += async (_, _) =>
         {
             drawerVm.SearchKeyword = searchBox.Text ?? string.Empty;
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
-        Grid.SetColumn(searchBox, 1);
+        Grid.SetColumn(searchBox, 3);
 
         Button refreshBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand);
-        Grid.SetColumn(refreshBtn, 2);
+        refreshBtn.Click += (_, _) =>
+        {
+            accountFilterCombo.SelectedItem = null;
+            drawerVm.SelectedAccountUid = null;
+        };
+        Grid.SetColumn(refreshBtn, 4);
 
         Button clearBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnClear"],
             drawerVm.ClearLogsCommand);
-        Grid.SetColumn(clearBtn, 3);
+        Grid.SetColumn(clearBtn, 5);
 
         filterRow.Children.Add(categoryCombo);
+        filterRow.Children.Add(timeRangeCombo);
+        filterRow.Children.Add(accountFilterCombo);
         filterRow.Children.Add(searchBox);
         filterRow.Children.Add(refreshBtn);
         filterRow.Children.Add(clearBtn);
@@ -552,7 +889,7 @@ public sealed partial class MainWindow
 
                 Grid logRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("75,130,110,160,*"),
+                    ColumnDefinitions = new ColumnDefinitions("75,130,120,160,*"),
                     ColumnSpacing = 8,
                     Margin = new Thickness(2, 1)
                 };
@@ -576,7 +913,10 @@ public sealed partial class MainWindow
                 Grid.SetColumn(accTb, 1);
                 logRow.Children.Add(accTb);
 
-                Border catPill = CloudflareControls.CreateStatusPill(this._theme, rec.Category.ToString(), rec.Severity);
+                Border catPill = CloudflareControls.CreateStatusPill(
+                    this._theme,
+                    this._i18n.FormatAuditCategory(rec.Category),
+                    rec.Severity);
                 Grid.SetColumn(catPill, 2);
                 logRow.Children.Add(catPill);
 
@@ -629,6 +969,17 @@ public sealed partial class MainWindow
 
         ApplyColors();
         this._theme.ThemeChanged += (_, _) => ApplyColors();
+
+        this._i18n.LanguageChanged += (_, _) =>
+        {
+            accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
+            searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
+            CloudflareControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
+            CloudflareControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
+            CloudflareControls.SetButtonText(
+                toggleBtn,
+                drawerVm.IsExpanded ? this._i18n["Audit.ToggleCollapse"] : this._i18n["Audit.ToggleExpand"]);
+        };
 
         drawerVm.PropertyChanged += (_, e) =>
         {

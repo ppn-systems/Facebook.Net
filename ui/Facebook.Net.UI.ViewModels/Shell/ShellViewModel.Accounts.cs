@@ -48,6 +48,7 @@ public sealed partial class ShellViewModel
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
         this.TargetGroups.Clear();
+        this.JoinedGroups.Clear();
         for (int i = 0; i < storedGroups.Count; i++)
         {
             this.TargetGroups.Add(storedGroups[i]);
@@ -68,8 +69,7 @@ public sealed partial class ShellViewModel
     }
 
     /// <summary>
-    /// Imports a session from J2Team JSON, Cookie-Editor JSON, pipe-delimited string, or creates a new browser login profile
-    /// without ever asking the user to type a raw UID.
+    /// Imports a session from J2Team JSON, Cookie-Editor JSON, pipe-delimited string, or creates a new browser login profile.
     /// </summary>
     public async Task QuickImportSessionAsync()
     {
@@ -108,7 +108,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Success,
             profile.DisplayName,
-            $"Đã lưu phiên tài khoản '{profile.DisplayName}' (không cần nhập UID thủ công).").ConfigureAwait(true);
+            $"Đã lưu phiên đăng nhập cho tài khoản '{profile.DisplayName}' thành công.").ConfigureAwait(true);
     }
 
     private async Task OpenBrowserAndSyncAsync()
@@ -143,10 +143,11 @@ public sealed partial class ShellViewModel
             await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin).ConfigureAwait(true);
             SessionMaterial material = await session.ExtractMaterialAsync().ConfigureAwait(true);
 
-            // If the account was created as a placeholder before login, update its internal UID cleanly
+            // If the account was created as a placeholder before login, update its internal session identifier cleanly
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
+            string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
             string displayName = account.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal)
-                ? $"Facebook ({realUid[^4..]})"
+                ? $"Facebook ({suffix})"
                 : account.DisplayName;
 
             AccountProfile updated = account with
@@ -183,7 +184,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 this.SelectedAccount?.DisplayName ?? "Tài khoản",
-                $"Trình duyệt đã mở — vui lòng đăng nhập Facebook trên cửa sổ trình duyệt rồi bấm lại để đồng bộ ({ex.Message}).").ConfigureAwait(true);
+                $"Trình duyệt đã mở — vui lòng đăng nhập Facebook trên cửa sổ trình duyệt rồi bấm lại để đồng bộ ({SanitizeErrorMessage(ex)}).").ConfigureAwait(true);
         }
         finally
         {

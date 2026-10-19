@@ -119,8 +119,54 @@ public sealed partial class MainWindow : Window
         StackPanel rightActions = new()
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
+            Spacing = 10,
             VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock activeAccLabel = new()
+        {
+            Text = this._i18n["TopBar.ActiveAccount"],
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        ComboBox activeAccCombo = new()
+        {
+            MinWidth = 210,
+            PlaceholderText = this._i18n["TopBar.NoAccount"],
+            ItemsSource = this._vm.Accounts,
+            SelectedItem = this._vm.SelectedAccount,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<Facebook.Net.Contracts.Models.AccountProfile>((acc, _) =>
+            {
+                if (acc is null)
+                {
+                    return new TextBlock { Text = this._i18n["TopBar.NoAccount"] };
+                }
+
+                return new TextBlock
+                {
+                    Text = $"{acc.DisplayName} ({this._i18n.FormatAccountStatus(acc.Status)})",
+                    FontSize = 12,
+                    FontWeight = FontWeight.Medium
+                };
+            })
+        };
+
+        activeAccCombo.SelectionChanged += (_, _) =>
+        {
+            if (activeAccCombo.SelectedItem is Facebook.Net.Contracts.Models.AccountProfile selected)
+            {
+                this._vm.SelectedAccount = selected;
+            }
+        };
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
+            {
+                activeAccCombo.SelectedItem = this._vm.SelectedAccount;
+            }
         };
 
         Button langBtn = CloudflareControls.CreateSecondaryButton(
@@ -134,6 +180,8 @@ public sealed partial class MainWindow : Window
             this._vm.ToggleThemeQuickCommand,
             VectorIcons.Sun);
 
+        rightActions.Children.Add(activeAccLabel);
+        rightActions.Children.Add(activeAccCombo);
         rightActions.Children.Add(langBtn);
         rightActions.Children.Add(themeBtn);
 
@@ -155,6 +203,7 @@ public sealed partial class MainWindow : Window
             bar.BorderBrush = p.SubtleBorder;
             appTitle.Foreground = p.TextPrimary;
             appSub.Foreground = p.TextSecondary;
+            activeAccLabel.Foreground = p.TextSecondary;
             CloudflareControls.SetButtonText(
                 themeBtn,
                 this._theme.CurrentMode == AppThemeMode.Dark ? this._i18n["Settings.ThemeDark"] : this._i18n["Settings.ThemeLight"]);
@@ -166,6 +215,11 @@ public sealed partial class MainWindow : Window
         {
             appTitle.Text = this._i18n["App.Title"];
             appSub.Text = this._i18n["App.Subtitle"];
+            activeAccLabel.Text = this._i18n["TopBar.ActiveAccount"];
+            activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
+            CloudflareControls.SetButtonText(
+                langBtn,
+                this._i18n.CurrentLanguage == AppLanguage.ViVn ? "VI / EN" : "EN / VI");
             ApplyColors();
         };
 

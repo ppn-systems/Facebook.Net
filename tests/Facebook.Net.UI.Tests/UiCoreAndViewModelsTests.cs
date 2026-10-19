@@ -121,6 +121,18 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal(AppThemeMode.Dark, theme.CurrentMode);
         theme.ToggleTheme();
         Assert.Equal(AppThemeMode.Light, theme.CurrentMode);
+
+        // Verify zero-jargon localized enum formatters
+        Assert.Equal("Ready to connect", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
+        Assert.Equal("Joined Member", i18n.FormatGroupMembership(Facebook.Net.Contracts.Primitives.GroupMembershipState.Member));
+        Assert.Equal("Sales Comment", i18n.FormatAuditCategory(AuditCategory.SalesComment));
+        Assert.Equal("Last 24 Hours", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
+
+        i18n.SetLanguage(AppLanguage.ViVn);
+        Assert.Equal("Chờ kết nối", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
+        Assert.Equal("Đã tham gia", i18n.FormatGroupMembership(Facebook.Net.Contracts.Primitives.GroupMembershipState.Member));
+        Assert.Equal("Comment Sale", i18n.FormatAuditCategory(AuditCategory.SalesComment));
+        Assert.Equal("Trong 24 giờ qua", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
     }
 
     public void Dispose()
