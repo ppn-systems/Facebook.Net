@@ -35,7 +35,11 @@ public sealed class App : Application
             UiServiceContext context = new(platformAdapter);
             ShellViewModel shellViewModel = new(context);
             desktop.MainWindow = new MainWindow(shellViewModel);
-            desktop.Exit += (_, _) => context.Dispose();
+            desktop.Exit += (_, _) =>
+            {
+                shellViewModel.Dispose();
+                context.Dispose();
+            };
 
             _ = shellViewModel.InitializeAsync();
         }

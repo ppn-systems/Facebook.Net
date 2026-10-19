@@ -17,7 +17,7 @@ namespace Facebook.Net.UI.ViewModels.Audit;
 /// ViewModel for the Collapsible Bottom Audit Log Drawer / Taskbar, backed by the dedicated
 /// <c>facebook_audit.db</c> SQLite database with multi-criteria filtering (Category, Time Range, Account, Keyword).
 /// </summary>
-public sealed partial class AuditLogDrawerViewModel : ObservableObject
+public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposable
 {
     private readonly UiServiceContext _context;
 
@@ -38,13 +38,15 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
         this.ClearLogsCommand = new AsyncRelayCommand(this.ClearLogsAsync);
 
         this._context.AuditStore.LogAppended += this.OnLogAppended;
-        this._context.Localization.LanguageChanged += (_, _) =>
+        this._context.Localization.LanguageChanged += this.OnLanguageChanged;
+    }
+
+    private void OnLanguageChanged(object? sender, Facebook.Net.UI.Core.Localization.AppLanguage e)
+    {
+        if (this.FilteredLogs.Count == 0)
         {
-            if (this.FilteredLogs.Count == 0)
-            {
-                this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
-            }
-        };
+            this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
+        }
     }
 
     /// <summary>Gets or sets a value indicating whether the bottom audit log drawer is expanded.</summary>
@@ -190,22 +192,26 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
             if (this.MatchesFilter(record))
             {
                 this.FilteredLogs.Insert(0, record);
-            }
+                if (this.FilteredLogs.Count > 250)
+                {
+                    this.FilteredLogs.RemoveAt(this.FilteredLogs.Count - 1);
+                }
 
-            switch (record.Severity)
-            {
-                case AuditSeverity.Success:
-                    this.SuccessCount++;
-                    break;
-                case AuditSeverity.Warning:
-                    this.WarningCount++;
-                    break;
-                case AuditSeverity.Error:
-                    this.ErrorCount++;
-                    break;
-                case AuditSeverity.Info:
-                default:
-                    break;
+                switch (record.Severity)
+                {
+                    case AuditSeverity.Success:
+                        this.SuccessCount++;
+                        break;
+                    case AuditSeverity.Warning:
+                        this.WarningCount++;
+                        break;
+                    case AuditSeverity.Error:
+                        this.ErrorCount++;
+                        break;
+                    case AuditSeverity.Info:
+                    default:
+                        break;
+                }
             }
         }
 
@@ -217,6 +223,13 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject
         {
             Dispatcher.UIThread.Post(UpdateUi);
         }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        this._context.AuditStore.LogAppended -= this.OnLogAppended;
+        this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
     }
 
     private bool MatchesFilter(AuditLogRecord record)

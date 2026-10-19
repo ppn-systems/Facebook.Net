@@ -63,11 +63,38 @@ public sealed partial class ShellViewModel
 
     private readonly List<string> _recentPublishedPostIds = new();
 
+    private string _lastDefaultPostSpintax = string.Empty;
+    private string _lastDefaultBumpSpintax = string.Empty;
+    private string _lastDefaultSalesCommentSpintax = string.Empty;
+
     private void SyncLocalizedDefaultPrompts()
     {
-        this.PostSpintaxText = this._context.Localization["Publisher.DefaultPostSpintax"];
-        this.BumpCommentSpintaxText = this._context.Localization["Publisher.DefaultBumpSpintax"];
-        this.SalesCommentSpintaxText = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
+        string nextPost = this._context.Localization["Publisher.DefaultPostSpintax"];
+        if (string.IsNullOrWhiteSpace(this.PostSpintaxText) ||
+            string.Equals(this.PostSpintaxText, this._lastDefaultPostSpintax, StringComparison.Ordinal))
+        {
+            this.PostSpintaxText = nextPost;
+        }
+
+        this._lastDefaultPostSpintax = nextPost;
+
+        string nextBump = this._context.Localization["Publisher.DefaultBumpSpintax"];
+        if (string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText) ||
+            string.Equals(this.BumpCommentSpintaxText, this._lastDefaultBumpSpintax, StringComparison.Ordinal))
+        {
+            this.BumpCommentSpintaxText = nextBump;
+        }
+
+        this._lastDefaultBumpSpintax = nextBump;
+
+        string nextSales = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
+        if (string.IsNullOrWhiteSpace(this.SalesCommentSpintaxText) ||
+            string.Equals(this.SalesCommentSpintaxText, this._lastDefaultSalesCommentSpintax, StringComparison.Ordinal))
+        {
+            this.SalesCommentSpintaxText = nextSales;
+        }
+
+        this._lastDefaultSalesCommentSpintax = nextSales;
     }
 
     /// <summary>

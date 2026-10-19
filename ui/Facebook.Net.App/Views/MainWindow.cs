@@ -55,6 +55,13 @@ public sealed partial class MainWindow : Window
         this.Content = this.BuildShellLayout();
     }
 
+    /// <inheritdoc />
+    protected override void OnClosed(EventArgs e)
+    {
+        this._vm.Dispose();
+        base.OnClosed(e);
+    }
+
     private Grid BuildShellLayout()
     {
         Grid root = new()

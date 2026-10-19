@@ -140,6 +140,7 @@ public sealed partial class MainWindow
         ListBox accountList = new()
         {
             ItemsSource = this._vm.Accounts,
+            SelectedItem = this._vm.SelectedAccount,
             ItemTemplate = new FuncDataTemplate<AccountProfile>((item, _) =>
             {
                 if (item is null)
@@ -207,6 +208,15 @@ public sealed partial class MainWindow
             if (accountList.SelectedItem is AccountProfile acc)
             {
                 this._vm.SelectedAccount = acc;
+            }
+        };
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedAccount), System.StringComparison.Ordinal) &&
+                !ReferenceEquals(accountList.SelectedItem, this._vm.SelectedAccount))
+            {
+                accountList.SelectedItem = this._vm.SelectedAccount;
             }
         };
 
@@ -287,6 +297,7 @@ public sealed partial class MainWindow
         {
             Height = 250,
             ItemsSource = this._vm.JoinedGroups,
+            SelectedItem = this._vm.SelectedGroup,
             ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
             {
                 if (grp is null)
@@ -403,6 +414,7 @@ public sealed partial class MainWindow
         {
             Height = 330,
             ItemsSource = this._vm.TargetGroups,
+            SelectedItem = this._vm.SelectedTargetGroup,
             ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, _) =>
             {
                 if (tg is null)
@@ -443,6 +455,20 @@ public sealed partial class MainWindow
             if (targetList.SelectedItem is SavedTargetGroup stg)
             {
                 this._vm.SelectedTargetGroup = stg;
+            }
+        };
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedGroup), System.StringComparison.Ordinal) &&
+                !ReferenceEquals(groupsList.SelectedItem, this._vm.SelectedGroup))
+            {
+                groupsList.SelectedItem = this._vm.SelectedGroup;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedTargetGroup), System.StringComparison.Ordinal) &&
+                     !ReferenceEquals(targetList.SelectedItem, this._vm.SelectedTargetGroup))
+            {
+                targetList.SelectedItem = this._vm.SelectedTargetGroup;
             }
         };
 

@@ -168,6 +168,21 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal("socks5://203.0.113.10:1080:socksuser:sockspass", formatted);
     }
 
+    [Fact]
+    public void PayloadBuilder_SpinText_HandlesNestedAndStrayBracesSafely()
+    {
+        string nested = Facebook.Net.Protocol.PayloadBuilder.SpinText("{A|{B|B}}");
+        Assert.True(nested == "A" || nested == "B");
+
+        string strayClosingBeforeBlock = Facebook.Net.Protocol.PayloadBuilder.SpinText("Price: } 100k {deal|sale}");
+        Assert.True(
+            strayClosingBeforeBlock == "Price: } 100k deal" ||
+            strayClosingBeforeBlock == "Price: } 100k sale");
+
+        string emptyBraces = Facebook.Net.Protocol.PayloadBuilder.SpinText("Hello {}world");
+        Assert.Equal("Hello world", emptyBraces);
+    }
+
     public void Dispose()
     {
         try

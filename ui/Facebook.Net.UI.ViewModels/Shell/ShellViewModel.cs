@@ -108,11 +108,12 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // Settings commands
         this.SaveSettingsCommand = new AsyncRelayCommand(this.SaveSettingsAsync);
 
-        this.PostSpintaxText = this._context.Localization["Publisher.DefaultPostSpintax"];
-        this.BumpCommentSpintaxText = this._context.Localization["Publisher.DefaultBumpSpintax"];
-        this.SalesCommentSpintaxText = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
-        this._context.Localization.LanguageChanged += (_, _) => this.SyncLocalizedDefaultPrompts();
+        this.SyncLocalizedDefaultPrompts();
+        this._context.Localization.LanguageChanged += this.OnLanguageChanged;
     }
+
+    private void OnLanguageChanged(object? sender, AppLanguage e) =>
+        this.SyncLocalizedDefaultPrompts();
 
     /// <summary>Gets the shared UI service context.</summary>
     public UiServiceContext Context => this._context;
@@ -271,9 +272,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
         this._activeTaskCts?.Cancel();
         this._activeTaskCts?.Dispose();
         this._activeTaskCts = null;
+        this.AuditDrawer.Dispose();
     }
 
     private CancellationToken BeginTaskScope()

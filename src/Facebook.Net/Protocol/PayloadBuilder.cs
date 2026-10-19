@@ -32,18 +32,35 @@ public static class PayloadBuilder
         }
 
         string current = template;
-        int maxIterations = 32;
+        int maxIterations = 256;
 
         while (maxIterations-- > 0)
         {
-            int closeIdx = current.IndexOf('}', StringComparison.Ordinal);
-            if (closeIdx < 0)
+            int searchFrom = 0;
+            int openIdx = -1;
+            int closeIdx = -1;
+
+            while (searchFrom < current.Length)
             {
-                break;
+                int candidateClose = current.IndexOf('}', searchFrom);
+                if (candidateClose < 0)
+                {
+                    break;
+                }
+
+                int candidateOpen = current.LastIndexOf('{', candidateClose);
+                if (candidateOpen >= 0)
+                {
+                    openIdx = candidateOpen;
+                    closeIdx = candidateClose;
+                    break;
+                }
+
+                // Skip stray '}' that has no preceding '{'
+                searchFrom = candidateClose + 1;
             }
 
-            int openIdx = current.LastIndexOf('{', closeIdx);
-            if (openIdx < 0)
+            if (openIdx < 0 || closeIdx < 0)
             {
                 break;
             }

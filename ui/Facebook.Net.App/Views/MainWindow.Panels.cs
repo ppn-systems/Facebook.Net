@@ -184,6 +184,20 @@ public sealed partial class MainWindow
             this._vm.BumpCommentSpintaxText);
         bumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = bumpBox.Text ?? string.Empty;
 
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.PostSpintaxText), StringComparison.Ordinal) &&
+                !string.Equals(contentBox.Text, this._vm.PostSpintaxText, StringComparison.Ordinal))
+            {
+                contentBox.Text = this._vm.PostSpintaxText;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.BumpCommentSpintaxText), StringComparison.Ordinal) &&
+                     !string.Equals(bumpBox.Text, this._vm.BumpCommentSpintaxText, StringComparison.Ordinal))
+            {
+                bumpBox.Text = this._vm.BumpCommentSpintaxText;
+            }
+        };
+
         Button bumpBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Publisher.BtnBumpRecentPosts"],
@@ -385,6 +399,15 @@ public sealed partial class MainWindow
             multiline: true,
             height: 120);
         commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SalesCommentSpintaxText), StringComparison.Ordinal) &&
+                !string.Equals(commentBox.Text, this._vm.SalesCommentSpintaxText, StringComparison.Ordinal))
+            {
+                commentBox.Text = this._vm.SalesCommentSpintaxText;
+            }
+        };
 
         Grid commentPhotoRow = new()
         {
@@ -859,14 +882,50 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(timeRangeCombo, 1);
 
+        System.Collections.ObjectModel.ObservableCollection<object> accountFilterItems = new() { "ALL" };
+        for (int i = 0; i < this._vm.Accounts.Count; i++)
+        {
+            accountFilterItems.Add(this._vm.Accounts[i]);
+        }
+
         ComboBox accountFilterCombo = new()
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             PlaceholderText = this._i18n["Audit.FilterAccountAll"],
-            ItemsSource = this._vm.Accounts,
-            ItemTemplate = new FuncDataTemplate<AccountProfile>((acc, _) =>
-                CloudflareControls.CreateThemedLabel(this._theme, acc?.DisplayName ?? this._i18n["Audit.FilterAccountAll"], 12))
+            ItemsSource = accountFilterItems,
+            SelectedIndex = 0,
+            ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
+            {
+                if (obj is AccountProfile acc)
+                {
+                    return CloudflareControls.CreateThemedLabel(this._theme, acc.DisplayName, 12);
+                }
+
+                TextBlock allTb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
+                this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Audit.FilterAccountAll"];
+                return allTb;
+            })
         };
+
+        this._vm.Accounts.CollectionChanged += (_, _) =>
+        {
+            object? prev = accountFilterCombo.SelectedItem;
+            accountFilterItems.Clear();
+            accountFilterItems.Add("ALL");
+            object? restored = "ALL";
+            for (int i = 0; i < this._vm.Accounts.Count; i++)
+            {
+                AccountProfile item = this._vm.Accounts[i];
+                accountFilterItems.Add(item);
+                if (prev is AccountProfile prevAcc && string.Equals(prevAcc.Uid, item.Uid, StringComparison.Ordinal))
+                {
+                    restored = item;
+                }
+            }
+
+            accountFilterCombo.SelectedItem = restored;
+        };
+
         accountFilterCombo.SelectionChanged += async (_, _) =>
         {
             drawerVm.SelectedAccountUid = accountFilterCombo.SelectedItem is AccountProfile acc ? acc.Uid : null;

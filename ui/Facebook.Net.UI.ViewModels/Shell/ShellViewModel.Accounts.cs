@@ -62,18 +62,35 @@ public sealed partial class ShellViewModel
         this.AccountProxyInput = string.Empty;
     }
 
-    private async Task ReloadAllStoredDataAsync()
+    private async Task ReloadAllStoredDataAsync(string? preferredUid = null)
     {
+        string? targetUid = preferredUid ?? this.SelectedAccount?.Uid;
         IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
         this.Accounts.Clear();
+
+        AccountProfile? matched = null;
         for (int i = 0; i < storedAccounts.Count; i++)
         {
-            this.Accounts.Add(storedAccounts[i]);
+            AccountProfile acc = storedAccounts[i];
+            this.Accounts.Add(acc);
+            if (!string.IsNullOrWhiteSpace(targetUid) &&
+                string.Equals(acc.Uid, targetUid, StringComparison.Ordinal))
+            {
+                matched = acc;
+            }
         }
 
-        if (this.SelectedAccount is null && this.Accounts.Count > 0)
+        if (matched is not null)
+        {
+            this.SelectedAccount = matched;
+        }
+        else if (this.Accounts.Count > 0)
         {
             this.SelectedAccount = this.Accounts[0];
+        }
+        else
+        {
+            this.SelectedAccount = null;
         }
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
@@ -157,8 +174,7 @@ public sealed partial class ShellViewModel
             LastActiveAt: DateTimeOffset.UtcNow);
 
         await this._context.AccountStore.UpsertAccountAsync(profile).ConfigureAwait(true);
-        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-        this.SelectedAccount = profile;
+        await this.ReloadAllStoredDataAsync(profile.Uid).ConfigureAwait(true);
 
         this.AccountFriendlyNameInput = string.Empty;
         this.SessionImportRawInput = string.Empty;
@@ -200,8 +216,7 @@ public sealed partial class ShellViewModel
             AccountProfile cleared = current with { ProxyId = null };
             await this._context.AccountStore.UpsertAccountAsync(cleared).ConfigureAwait(true);
             await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-            this.SelectedAccount = cleared;
+            await this.ReloadAllStoredDataAsync(cleared.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
@@ -230,8 +245,7 @@ public sealed partial class ShellViewModel
         AccountProfile updated = current with { ProxyId = parsed.Id };
         await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
         await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
-        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-        this.SelectedAccount = updated;
+        await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Account,
@@ -267,8 +281,7 @@ public sealed partial class ShellViewModel
         {
             AccountProfile expired = current with { Status = AccountStatus.CookieExpired };
             await this._context.AccountStore.UpsertAccountAsync(expired).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-            this.SelectedAccount = expired;
+            await this.ReloadAllStoredDataAsync(expired.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
@@ -303,8 +316,7 @@ public sealed partial class ShellViewModel
             };
 
             await this._context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-            this.SelectedAccount = checkedProfile;
+            await this.ReloadAllStoredDataAsync(checkedProfile.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
@@ -335,8 +347,7 @@ public sealed partial class ShellViewModel
 
             AccountProfile updated = current with { Status = faultStatus };
             await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-            this.SelectedAccount = updated;
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
@@ -414,8 +425,7 @@ public sealed partial class ShellViewModel
             }
 
             await this._context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-            this.SelectedAccount = updated;
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
