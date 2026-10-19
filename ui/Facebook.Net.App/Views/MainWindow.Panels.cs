@@ -256,7 +256,17 @@ public sealed partial class MainWindow
             this._i18n["Publisher.BtnDeleteTemplate"],
             this._vm.DeleteSelectedTemplateCommand);
 
+        Border emptyTemplatesBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Templates"],
+            VectorIcons.Publish,
+            out TextBlock emptyTplTb);
+        emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+        this._vm.SavedTemplates.CollectionChanged += (_, _) =>
+            emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+
         rightStack.Children.Add(tplTitle);
+        rightStack.Children.Add(emptyTemplatesBanner);
         rightStack.Children.Add(tplList);
         rightStack.Children.Add(deleteTplBtn);
 
@@ -268,6 +278,7 @@ public sealed partial class MainWindow
         {
             titleTb.Text = this._i18n["Publisher.Header"];
             descTb.Text = this._i18n["Publisher.Desc"];
+            emptyTplTb.Text = this._i18n["Empty.Templates"];
             targetModeCheck.Content = this._i18n["Publisher.TargetModeGroup"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             CloudflareControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
@@ -448,8 +459,18 @@ public sealed partial class MainWindow
             }
         };
 
+        Border emptyLeadsBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Leads"],
+            VectorIcons.Search,
+            out TextBlock emptyLeadsTb);
+        emptyLeadsBanner.IsVisible = this._vm.ScrapedPosts.Count == 0;
+        this._vm.ScrapedPosts.CollectionChanged += (_, _) =>
+            emptyLeadsBanner.IsVisible = this._vm.ScrapedPosts.Count == 0;
+
         leftStack.Children.Add(buyerKwBox);
         leftStack.Children.Add(scanRow);
+        leftStack.Children.Add(emptyLeadsBanner);
         leftStack.Children.Add(postsList);
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
@@ -553,6 +574,7 @@ public sealed partial class MainWindow
         {
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
+            emptyLeadsTb.Text = this._i18n["Empty.Leads"];
             buyerKwBox.PlaceholderText = this._i18n["Leads.BuyerKeywordPlaceholder"];
             CloudflareControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
             CloudflareControls.SetButtonText(exportLeadsBtn, this._i18n["Leads.BtnExportLeads"]);

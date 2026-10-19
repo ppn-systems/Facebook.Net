@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Theming;
 
@@ -295,6 +296,147 @@ public static partial class CloudflareControls
 
         ApplyColors();
         BindThemeLifecycle(box, theme, ApplyColors);
+        return box;
+    }
+
+    /// <summary>
+    /// Creates a Cloudflare Dashboard KPI Stat Card displaying a label, a large monospace/tabular metric value,
+    /// and a vector icon badge.
+    /// </summary>
+    public static Border CreateKpiStatCard(
+        ThemeService theme,
+        string initialTitle,
+        string initialValue,
+        string iconSvg,
+        out TextBlock titleBlock,
+        out TextBlock valueBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock title = new()
+        {
+            Text = initialTitle,
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        TextBlock val = new()
+        {
+            Text = initialValue,
+            FontSize = 20,
+            FontWeight = FontWeight.Bold,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace")
+        };
+
+        PathIcon icon = VectorIcons.Create(iconSvg, 16, margin: new Thickness(0));
+        Border iconBadge = new()
+        {
+            Width = 32,
+            Height = 32,
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = icon
+        };
+
+        StackPanel textStack = new()
+        {
+            Spacing = 2,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        textStack.Children.Add(title);
+        textStack.Children.Add(val);
+
+        Grid row = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
+        Grid.SetColumn(textStack, 0);
+        Grid.SetColumn(iconBadge, 1);
+        row.Children.Add(textStack);
+        row.Children.Add(iconBadge);
+
+        Border card = new()
+        {
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(14, 10),
+            Child = row
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            card.Background = p.ElevatedSurface;
+            card.BorderBrush = p.SubtleBorder;
+            title.Foreground = p.TextSecondary;
+            val.Foreground = p.TextPrimary;
+            iconBadge.Background = p.BrandSubtleFill;
+            iconBadge.BorderBrush = p.BrandSubtleBorder;
+            icon.Foreground = p.BrandPrimary;
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(card, theme, ApplyColors);
+        titleBlock = title;
+        valueBlock = val;
+        return card;
+    }
+
+    /// <summary>
+    /// Creates a subtle Cloudflare empty-state banner shown when a list or collection is empty.
+    /// </summary>
+    public static Border CreateEmptyState(
+        ThemeService theme,
+        string initialMessage,
+        string iconSvg,
+        out TextBlock messageBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        PathIcon icon = VectorIcons.Create(iconSvg, 18, margin: new Thickness(0));
+        TextBlock msg = new()
+        {
+            Text = initialMessage,
+            FontSize = 12,
+            FontWeight = FontWeight.Medium,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        row.Children.Add(icon);
+        row.Children.Add(msg);
+
+        Border box = new()
+        {
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(12, 10),
+            Child = row
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            box.Background = p.SecondarySurface;
+            box.BorderBrush = p.SubtleBorder;
+            icon.Foreground = p.BrandPrimary;
+            msg.Foreground = p.TextSecondary;
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(box, theme, ApplyColors);
+        messageBlock = msg;
         return box;
     }
 

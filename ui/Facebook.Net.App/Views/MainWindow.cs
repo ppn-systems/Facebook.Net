@@ -175,6 +175,15 @@ public sealed partial class MainWindow : Window
             VectorIcons.StopCircle);
         stopTaskBtn.IsVisible = this._vm.IsBusy;
 
+        ProgressBar busyStrip = new()
+        {
+            IsIndeterminate = true,
+            Height = 2,
+            MinHeight = 2,
+            BorderThickness = new Thickness(0),
+            IsVisible = this._vm.IsBusy
+        };
+
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
@@ -184,6 +193,7 @@ public sealed partial class MainWindow : Window
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
             {
                 stopTaskBtn.IsVisible = this._vm.IsBusy;
+                busyStrip.IsVisible = this._vm.IsBusy;
             }
         };
 
@@ -209,10 +219,14 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(titleStack);
         grid.Children.Add(rightActions);
 
+        StackPanel barStack = new() { Spacing = 0 };
+        barStack.Children.Add(grid);
+        barStack.Children.Add(busyStrip);
+
         Border bar = new()
         {
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = grid
+            Child = barStack
         };
 
         void ApplyColors()
@@ -224,6 +238,8 @@ public sealed partial class MainWindow : Window
             appSub.Foreground = p.TextSecondary;
             activeAccLabel.Foreground = p.TextSecondary;
             stopTaskBtn.Background = p.DangerText;
+            busyStrip.Foreground = p.BrandPrimary;
+            busyStrip.Background = p.SecondarySurface;
             CloudflareControls.SetButtonText(
                 themeBtn,
                 this._theme.CurrentMode == AppThemeMode.Dark ? this._i18n["Settings.ThemeDark"] : this._i18n["Settings.ThemeLight"]);
@@ -334,8 +350,94 @@ public sealed partial class MainWindow : Window
 
     private static void HighlightNavButton(Button btn, bool isActive, CloudflarePalette p)
     {
-        btn.Background = isActive ? p.BrandSubtleFill : p.SecondarySurface;
-        btn.BorderBrush = isActive ? p.BrandPrimary : p.InteractiveBorder;
+        btn.HorizontalContentAlignment = HorizontalAlignment.Left;
+        btn.Background = isActive ? p.BrandSubtleFill : Brushes.Transparent;
+        btn.BorderBrush = isActive ? p.BrandPrimary : Brushes.Transparent;
+        btn.BorderThickness = isActive ? new Thickness(3, 1, 1, 1) : new Thickness(1);
+    }
+
+    private Grid BuildKpiStatBar()
+    {
+        Grid kpiGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*,*,*"),
+            ColumnSpacing = 12,
+            Margin = new Thickness(0, 0, 0, 14)
+        };
+
+        Border cardAcc = CloudflareControls.CreateKpiStatCard(
+            this._theme,
+            this._i18n["Kpi.AccountsTitle"],
+            this._vm.Accounts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            VectorIcons.Accounts,
+            out TextBlock accTitleTb,
+            out TextBlock accValTb);
+
+        Border cardGrp = CloudflareControls.CreateKpiStatCard(
+            this._theme,
+            this._i18n["Kpi.GroupsTitle"],
+            this._vm.TargetGroups.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            VectorIcons.Groups,
+            out TextBlock grpTitleTb,
+            out TextBlock grpValTb);
+
+        Border cardLeads = CloudflareControls.CreateKpiStatCard(
+            this._theme,
+            this._i18n["Kpi.LeadsTitle"],
+            this._vm.ScrapedPosts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            VectorIcons.Search,
+            out TextBlock leadsTitleTb,
+            out TextBlock leadsValTb);
+
+        Border cardTelemetry = CloudflareControls.CreateKpiStatCard(
+            this._theme,
+            this._i18n["Kpi.TelemetryTitle"],
+            this._vm.AuditDrawer.SuccessCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            VectorIcons.CheckCircle,
+            out TextBlock telTitleTb,
+            out TextBlock telValTb);
+
+        void RefreshKpiValues()
+        {
+            accValTb.Text = this._vm.Accounts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            int enabledTargets = 0;
+            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+            {
+                if (this._vm.TargetGroups[i].IsEnabled)
+                {
+                    enabledTargets++;
+                }
+            }
+
+            grpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
+            leadsValTb.Text = this._vm.ScrapedPosts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            telValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        RefreshKpiValues();
+        this._vm.Accounts.CollectionChanged += (_, _) => RefreshKpiValues();
+        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshKpiValues();
+        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshKpiValues();
+        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshKpiValues();
+
+        this._i18n.LanguageChanged += (_, _) =>
+        {
+            accTitleTb.Text = this._i18n["Kpi.AccountsTitle"];
+            grpTitleTb.Text = this._i18n["Kpi.GroupsTitle"];
+            leadsTitleTb.Text = this._i18n["Kpi.LeadsTitle"];
+            telTitleTb.Text = this._i18n["Kpi.TelemetryTitle"];
+        };
+
+        Grid.SetColumn(cardAcc, 0);
+        Grid.SetColumn(cardGrp, 1);
+        Grid.SetColumn(cardLeads, 2);
+        Grid.SetColumn(cardTelemetry, 3);
+        kpiGrid.Children.Add(cardAcc);
+        kpiGrid.Children.Add(cardGrp);
+        kpiGrid.Children.Add(cardLeads);
+        kpiGrid.Children.Add(cardTelemetry);
+
+        return kpiGrid;
     }
 
     private Border BuildScreenHost()
@@ -346,17 +448,33 @@ public sealed partial class MainWindow : Window
         this._leadsScreen = this.BuildSalesLeadsScreen();
         this._settingsScreen = this.BuildSettingsScreen();
 
+        Grid workspaceGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,*")
+        };
+
+        Grid kpiBar = this.BuildKpiStatBar();
+        Grid.SetRow(kpiBar, 0);
+        workspaceGrid.Children.Add(kpiBar);
+
+        Border activeScreenContainer = new()
+        {
+            Child = this._accountsScreen
+        };
+        Grid.SetRow(activeScreenContainer, 1);
+        workspaceGrid.Children.Add(activeScreenContainer);
+
         Border host = new()
         {
-            Padding = new Thickness(20),
-            Child = this._accountsScreen
+            Padding = new Thickness(20, 16, 20, 20),
+            Child = workspaceGrid
         };
 
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentSection), StringComparison.Ordinal))
             {
-                host.Child = this._vm.CurrentSection switch
+                activeScreenContainer.Child = this._vm.CurrentSection switch
                 {
                     NavigationSection.Accounts => this._accountsScreen,
                     NavigationSection.Groups => this._groupsScreen,

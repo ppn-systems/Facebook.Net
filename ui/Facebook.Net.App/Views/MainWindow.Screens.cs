@@ -220,7 +220,20 @@ public sealed partial class MainWindow
             }
         };
 
-        Border rightCard = CloudflareControls.CreateCard(this._theme, accountList);
+        Border emptyAccountsBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Accounts"],
+            VectorIcons.Accounts,
+            out TextBlock emptyAccTb);
+        emptyAccountsBanner.IsVisible = this._vm.Accounts.Count == 0;
+        this._vm.Accounts.CollectionChanged += (_, _) =>
+            emptyAccountsBanner.IsVisible = this._vm.Accounts.Count == 0;
+
+        StackPanel rightAccStack = new() { Spacing = 8 };
+        rightAccStack.Children.Add(emptyAccountsBanner);
+        rightAccStack.Children.Add(accountList);
+
+        Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightAccStack });
         Grid.SetColumn(rightCard, 1);
         grid.Children.Add(rightCard);
 
@@ -228,6 +241,7 @@ public sealed partial class MainWindow
         {
             titleTb.Text = this._i18n["Accounts.Header"];
             descTb.Text = this._i18n["Accounts.Desc"];
+            emptyAccTb.Text = this._i18n["Empty.Accounts"];
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
             proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
@@ -369,9 +383,19 @@ public sealed partial class MainWindow
             this._vm.AutoJoinDiscoveredGroupsCommand,
             VectorIcons.Groups);
 
+        Border emptyGroupsBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Groups"],
+            VectorIcons.Groups,
+            out TextBlock emptyGroupsTb);
+        emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
+        this._vm.JoinedGroups.CollectionChanged += (_, _) =>
+            emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
+
         leftStack.Children.Add(syncJoinedBtn);
         leftStack.Children.Add(searchRow);
         leftStack.Children.Add(localFilterBox);
+        leftStack.Children.Add(emptyGroupsBanner);
         leftStack.Children.Add(groupsList);
         leftStack.Children.Add(actionRow);
         leftStack.Children.Add(autoJoinAllBtn);
@@ -477,8 +501,18 @@ public sealed partial class MainWindow
             this._i18n["Groups.BtnRemoveTarget"],
             this._vm.RemoveSelectedTargetGroupCommand);
 
+        Border emptyTargetsBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.TargetGroups"],
+            VectorIcons.CheckCircle,
+            out TextBlock emptyTargetsTb);
+        emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
+        this._vm.TargetGroups.CollectionChanged += (_, _) =>
+            emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
+
         rightStack.Children.Add(targetListHeader);
         rightStack.Children.Add(bulkToggleRow);
+        rightStack.Children.Add(emptyTargetsBanner);
         rightStack.Children.Add(targetList);
         rightStack.Children.Add(removeTargetBtn);
 
@@ -490,6 +524,8 @@ public sealed partial class MainWindow
         {
             titleTb.Text = this._i18n["Groups.Header"];
             descTb.Text = this._i18n["Groups.Desc"];
+            emptyGroupsTb.Text = this._i18n["Empty.Groups"];
+            emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
             searchKeywordBox.PlaceholderText = this._i18n["Groups.SearchKeywordPlaceholder"];
             localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
             CloudflareControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
