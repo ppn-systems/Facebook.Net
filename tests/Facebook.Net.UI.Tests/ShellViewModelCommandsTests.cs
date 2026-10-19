@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Importing;
@@ -59,20 +58,20 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             this.AccountUid = accountUid;
             this.CurrentMaterial = new SessionMaterial(
                 Uid: accountUid,
+                CookieHeader: $"c_user={accountUid}; xs=99%3Afake_xs;",
                 FbDtsg: "AQH_fake_dtsg",
                 Jazoest: "25432",
                 Lsd: "LSD_fake",
                 ClientRevision: "1012345678",
-                Hsi: "730000000000",
-                SpinT: 1700000000,
-                CookieHeader: $"c_user={accountUid}; xs=99%3Afake_xs;",
+                HasteSession: "20745.HYP:comet_pkg.2.1...1",
+                WebSessionId: "abc123:def456:ghi789",
                 UserAgent: "Mozilla/5.0 Fake",
                 ExtractedAt: DateTimeOffset.UtcNow);
         }
 
         public string AccountUid { get; }
 
-        public BrowserState State { get; set; } = BrowserState.Ready;
+        public BrowserState State { get; set; } = BrowserState.Running;
 
         public SessionMaterial? CurrentMaterial { get; set; }
 
@@ -132,7 +131,7 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         public Task<IBrowserSession> AcquireSessionAsync(BrowserLaunchOptions options, CancellationToken ct = default)
         {
             FakeBrowserSession session = this.GetOrCreateFake(options.AccountUid);
-            this.SessionStateChanged?.Invoke(this, new SessionStateChangedEvent(options.AccountUid, BrowserState.Launching, BrowserState.Ready));
+            this.SessionStateChanged?.Invoke(this, new SessionStateChangedEvent(options.AccountUid, BrowserState.Running, AccountStatus.Active));
             return Task.FromResult<IBrowserSession>(session);
         }
 
@@ -371,7 +370,7 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         await vm.SyncJoinedGroupsCommand.ExecuteAsync(null);
         Assert.Equal(2, vm.JoinedGroups.Count);
         vm.SelectedGroup = vm.JoinedGroups[0];
-        await vm.SaveSelectedGroupAsTargetCommand.ExecuteAsync(null);
+        await vm.AddSelectedGroupToTargetsCommand.ExecuteAsync(null);
         _ = Assert.Single(vm.TargetGroups);
 
         // 5. Publish Campaign to Target Group + Auto-React Own Post + Up-Top Bump
@@ -477,15 +476,11 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         Assert.Equal(b1.AccountUid, b2.AccountUid);
         Assert.StartsWith("session_", b1.AccountUid, StringComparison.Ordinal);
 
-        // 2. AppConfig.Normalize swaps inverted delay bounds and clamps negatives
-        AppConfig inverted = new()
-        {
-            MinActionDelaySeconds = 90,
-            MaxActionDelaySeconds = 20
-        };
-        inverted.Normalize();
-        Assert.Equal(20, inverted.MinActionDelaySeconds);
-        Assert.Equal(90, inverted.MaxActionDelaySeconds);
+        // 2. AppConfig.Normalize clamps delay bounds so MinDelaySeconds <= MaxDelaySeconds
+        AppConfig inverted = new(MinDelaySeconds: 90, MaxDelaySeconds: 20);
+        AppConfig normalized = inverted.Normalize();
+        Assert.Equal(90, normalized.MinDelaySeconds);
+        Assert.Equal(90, normalized.MaxDelaySeconds);
 
         // 3. BulkObservableCollection fires exactly 1 CollectionChanged Reset event
         BulkObservableCollection<int> col = new();

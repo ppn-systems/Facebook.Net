@@ -121,6 +121,65 @@ public sealed class CometClientTests
         Assert.Equal("CURSOR_NEXT_2", feed.EndCursor);
     }
 
+    [Fact]
+    public void SpinText_ExpandsDynamicMacros_Date_Time_Day_And_RandomId()
+    {
+        string input = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";
+        string spun = PayloadBuilder.SpinText(input);
+
+        Assert.DoesNotContain("{date}", spun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{time}", spun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{day}", spun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{random_id}", spun, StringComparison.Ordinal);
+        Assert.Contains("#", spun, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProtocolErrorClassifier_ClassifiesActionBlocked368_Checkpoint190_And_TransientRateLimit()
+    {
+        GraphQlError err368 = new(368, 1404078, "You're Temporarily Blocked", "It looks like you were misusing this feature", false);
+        Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.Classify(err368));
+
+        GraphQlError err190 = new(190, 490, "Error validating access token: user enrolled in a blocking, logged-in checkpoint", null, false);
+        Assert.Equal(AutomationErrorCategory.CheckpointOrAuthFailure, ProtocolErrorClassifier.Classify(err190));
+
+        GraphQlError errRate = new(1675004, null, "Rate limit exceeded", null, true);
+        Assert.Equal(AutomationErrorCategory.RateLimitedTransient, ProtocolErrorClassifier.Classify(errRate));
+
+        InvalidOperationException ex368 = new("GraphQL error 368: SentryBlock");
+        Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.ClassifyException(ex368));
+    }
+
+    [Fact]
+    public void HumanJitter_NextGaussianDelay_AlwaysStaysWithinConfiguredBounds()
+    {
+        for (int i = 0; i < 50; i++)
+        {
+            TimeSpan delay = HumanJitter.NextGaussianDelay(10, 25);
+            Assert.InRange(delay.TotalMilliseconds, 10000, 26000);
+        }
+
+        Assert.Equal(TimeSpan.Zero, HumanJitter.NextGaussianDelay(0, 0));
+    }
+
+    [Fact]
+    public async Task CometClient_JoinGroup_SendFriendRequest_And_ReactToPost_SucceedWithMockSession()
+    {
+        FakeBrowserSession joinSession = new("{\"data\":{\"group_join\":{\"group\":{\"group_member_Join_state\":\"MEMBER\"}}}}");
+        CometClient client = new();
+
+        GroupMembershipState state = await client.JoinGroupAsync(joinSession, "777888");
+        Assert.Equal(GroupMembershipState.Member, state);
+
+        FakeBrowserSession friendSession = new("{\"data\":{\"friend_request_send\":{\"friend_requestees\":[{\"friendship_status\":\"OUTGOING_REQUEST\"}]}}}");
+        FriendshipState fState = await client.SendFriendRequestAsync(friendSession, "1000999");
+        Assert.Equal(FriendshipState.OutgoingRequest, fState);
+
+        FakeBrowserSession reactSession = new("{\"data\":{\"feedback_react\":{\"feedback\":{\"id\":\"fb_1\"}}}}");
+        bool reacted = await client.ReactToPostAsync(reactSession, "post_555", ReactionKind.Love);
+        Assert.True(reacted);
+    }
+
     private static SessionMaterial CreateDummyMaterial() =>
         new(
             Uid: "1000123456789",
