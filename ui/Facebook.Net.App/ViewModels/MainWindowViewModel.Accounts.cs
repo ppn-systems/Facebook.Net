@@ -112,6 +112,12 @@ public sealed partial class MainWindowViewModel
                 .AcquireSessionAsync(options)
                 .ConfigureAwait(true);
 
+            if (!string.IsNullOrWhiteSpace(account.CookieHeader))
+            {
+                int injectedCount = await session.ImportCookiesAsync(account.CookieHeader).ConfigureAwait(true);
+                this.AppendLog($"Đã nạp {injectedCount} cookie vào trình duyệt cho tài khoản {account.Uid}.");
+            }
+
             await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin).ConfigureAwait(true);
             SessionMaterial material = await session.ExtractMaterialAsync().ConfigureAwait(true);
 

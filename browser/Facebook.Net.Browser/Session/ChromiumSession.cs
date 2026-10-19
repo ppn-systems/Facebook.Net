@@ -160,6 +160,83 @@ public sealed partial class ChromiumSession : IBrowserSession
     }
 
     /// <inheritdoc />
+    public async Task<int> ImportCookiesAsync(string rawCookieHeader, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        if (string.IsNullOrWhiteSpace(rawCookieHeader))
+        {
+            return 0;
+        }
+
+        List<CdpCookie> cookies = ParseCookieHeader(rawCookieHeader.AsSpan());
+        if (cookies.Count == 0)
+        {
+            return 0;
+        }
+
+        using JsonDocument setDoc = await this._cdp.SendCommandAsync(
+            "Network.setCookies",
+            new CdpSetCookiesParams(cookies),
+            ct).ConfigureAwait(false);
+
+        return cookies.Count;
+    }
+
+    /// <summary>
+    /// Parses a raw semicolon-delimited HTTP Cookie header into <see cref="CdpCookie"/> entries for <c>.facebook.com</c>.
+    /// </summary>
+    public static List<CdpCookie> ParseCookieHeader(ReadOnlySpan<char> rawCookieHeader)
+    {
+        List<CdpCookie> list = new();
+        int start = 0;
+
+        while (start < rawCookieHeader.Length)
+        {
+            int semiIdx = rawCookieHeader[start..].IndexOf(';');
+            ReadOnlySpan<char> segment = semiIdx >= 0
+                ? rawCookieHeader.Slice(start, semiIdx).Trim()
+                : rawCookieHeader[start..].Trim();
+
+            start = semiIdx >= 0 ? start + semiIdx + 1 : rawCookieHeader.Length;
+
+            if (segment.IsEmpty)
+            {
+                continue;
+            }
+
+            int eqIdx = segment.IndexOf('=');
+            if (eqIdx <= 0)
+            {
+                continue;
+            }
+
+            string name = segment[..eqIdx].Trim().ToString();
+            string val = segment[(eqIdx + 1)..].Trim().ToString();
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            bool isHttpOnly = string.Equals(name, "xs", StringComparison.Ordinal) ||
+                              string.Equals(name, "datr", StringComparison.Ordinal) ||
+                              string.Equals(name, "fr", StringComparison.Ordinal) ||
+                              string.Equals(name, "sb", StringComparison.Ordinal) ||
+                              string.Equals(name, "ps_l", StringComparison.Ordinal) ||
+                              string.Equals(name, "ps_n", StringComparison.Ordinal);
+
+            list.Add(new CdpCookie(
+                Name: name,
+                Value: val,
+                Domain: ".facebook.com",
+                Path: "/",
+                HttpOnly: isHttpOnly,
+                Secure: true));
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (this._isDisposed)

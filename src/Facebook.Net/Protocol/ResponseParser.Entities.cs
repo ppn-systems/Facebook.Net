@@ -128,8 +128,11 @@ public static partial class ResponseParser
                     string? authorName = FindActorName(element);
                     string? permalink = FindStringRecursive(element, "wwwURL")
                         ?? string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/", postId);
+                    int reactionCount = FindNestedCount(element, "reaction_count");
+                    int commentCount = FindNestedCount(element, "total_comment_count");
+                    DateTimeOffset? createdAt = FindCreationTime(element);
 
-                    posts.Add(new PostSummary(postId, authorUid, authorName, text, permalink));
+                    posts.Add(new PostSummary(postId, authorUid, authorName, text, permalink, reactionCount, commentCount, createdAt));
                 }
             }
 
@@ -192,6 +195,77 @@ public static partial class ResponseParser
                 if (actor.TryGetProperty("name"u8, out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String)
                 {
                     return nameEl.GetString();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int FindNestedCount(JsonElement element, string containerPropertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty(containerPropertyName, out JsonElement containerEl) &&
+                containerEl.ValueKind == JsonValueKind.Object &&
+                containerEl.TryGetProperty("count"u8, out JsonElement countEl) &&
+                countEl.TryGetInt32(out int count))
+            {
+                return count;
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                int nested = FindNestedCount(prop.Value, containerPropertyName);
+                if (nested > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                int nested = FindNestedCount(item, containerPropertyName);
+                if (nested > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private static DateTimeOffset? FindCreationTime(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("creation_time"u8, out JsonElement timeEl) &&
+                timeEl.TryGetInt64(out long unixSeconds) &&
+                unixSeconds > 0)
+            {
+                return DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                DateTimeOffset? nested = FindCreationTime(prop.Value);
+                if (nested.HasValue)
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                DateTimeOffset? nested = FindCreationTime(item);
+                if (nested.HasValue)
+                {
+                    return nested;
                 }
             }
         }

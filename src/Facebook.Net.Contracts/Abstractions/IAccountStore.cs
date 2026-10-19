@@ -9,7 +9,8 @@ using Facebook.Net.Contracts.Models;
 namespace Facebook.Net.Contracts.Abstractions;
 
 /// <summary>
-/// Persistence store for managing <see cref="AccountProfile"/> and <see cref="ProxyConfig"/> records in SQLite.
+/// Persistence store for managing <see cref="AccountProfile"/>, <see cref="ProxyConfig"/>,
+/// <see cref="SavedTargetGroup"/>, <see cref="CampaignTemplate"/>, and <see cref="ActionHistoryEntry"/> records in SQLite.
 /// </summary>
 public interface IAccountStore
 {
@@ -52,4 +53,50 @@ public interface IAccountStore
     /// Deletes a proxy configuration by ID.
     /// </summary>
     Task<bool> DeleteProxyAsync(string proxyId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves all saved target groups for automated posting and scraping.
+    /// </summary>
+    Task<IReadOnlyList<SavedTargetGroup>> GetAllTargetGroupsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a saved target group.
+    /// </summary>
+    Task UpsertTargetGroupAsync(SavedTargetGroup group, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a saved target group by ID.
+    /// </summary>
+    Task<bool> DeleteTargetGroupAsync(string groupId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves all saved Spintax campaign templates.
+    /// </summary>
+    Task<IReadOnlyList<CampaignTemplate>> GetAllCampaignTemplatesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a Spintax campaign template.
+    /// </summary>
+    Task UpsertCampaignTemplateAsync(CampaignTemplate campaignTemplate, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a campaign template by ID.
+    /// </summary>
+    Task<bool> DeleteCampaignTemplateAsync(string templateId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Checks whether the specified account has already executed an action (e.g., <c>"COMMENT"</c> or <c>"POST"</c>)
+    /// on the given target ID (Post ID or Group ID) to prevent duplicate seeding.
+    /// </summary>
+    Task<bool> HasExecutedActionAsync(string accountUid, string actionKind, string targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a completed post or sales comment action in the SQLite history log.
+    /// </summary>
+    Task RecordActionAsync(ActionHistoryEntry entry, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves the most recent action history entries.
+    /// </summary>
+    Task<IReadOnlyList<ActionHistoryEntry>> GetRecentActionsAsync(int limit = 100, CancellationToken ct = default);
 }

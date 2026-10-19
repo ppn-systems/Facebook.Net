@@ -151,6 +151,16 @@ public sealed partial class MainWindowViewModel
                 .PublishPostAsync(session, this.PostSpintaxContent, target, groupId, photoIds)
                 .ConfigureAwait(true);
 
+            if (!string.IsNullOrWhiteSpace(postId))
+            {
+                await this._services.AccountStore.RecordActionAsync(new ActionHistoryEntry(
+                    AccountUid: session.AccountUid,
+                    ActionKind: "POST",
+                    TargetId: groupId ?? session.AccountUid,
+                    ResultId: postId,
+                    ExecutedAt: DateTimeOffset.UtcNow)).ConfigureAwait(true);
+            }
+
             this.AppendLog(string.IsNullOrWhiteSpace(postId)
                 ? "Đã gửi lệnh đăng bài (bài có thể đang chờ quản trị viên duyệt)."
                 : $"Đăng bài thành công! Post ID: {postId}");
@@ -182,6 +192,17 @@ public sealed partial class MainWindowViewModel
         this.IsBusy = true;
         try
         {
+            string targetPost = this.CommentTargetPostId.Trim();
+            bool alreadyCommented = await this._services.AccountStore
+                .HasExecutedActionAsync(session.AccountUid, "COMMENT", targetPost)
+                .ConfigureAwait(true);
+
+            if (alreadyCommented)
+            {
+                this.AppendLog($"Bỏ qua: Tài khoản {session.AccountUid} đã từng Comment Sale vào bài viết {targetPost} trước đó.");
+                return;
+            }
+
             string? attachmentFbid = null;
             if (!string.IsNullOrWhiteSpace(this.CommentPhotoPath) && File.Exists(this.CommentPhotoPath.Trim()))
             {
@@ -191,12 +212,21 @@ public sealed partial class MainWindowViewModel
                     .ConfigureAwait(true);
             }
 
-            string targetPost = this.CommentTargetPostId.Trim();
             this.AppendLog($"Đang gửi Comment Sale vào bài viết {targetPost}...");
 
             string? commentId = await this._services.CometClient
                 .CreateCommentAsync(session, targetPost, this.CommentSpintaxContent, attachmentFbid)
                 .ConfigureAwait(true);
+
+            if (!string.IsNullOrWhiteSpace(commentId))
+            {
+                await this._services.AccountStore.RecordActionAsync(new ActionHistoryEntry(
+                    AccountUid: session.AccountUid,
+                    ActionKind: "COMMENT",
+                    TargetId: targetPost,
+                    ResultId: commentId,
+                    ExecutedAt: DateTimeOffset.UtcNow)).ConfigureAwait(true);
+            }
 
             this.AppendLog(string.IsNullOrWhiteSpace(commentId)
                 ? "Không lấy được Comment ID phản hồi."

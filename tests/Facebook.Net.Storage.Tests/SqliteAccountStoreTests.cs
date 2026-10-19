@@ -86,6 +86,34 @@ public sealed class SqliteAccountStoreTests : IDisposable
         Assert.Empty(await this._store.GetAllProxiesAsync());
     }
 
+    [Fact]
+    public async Task TargetGroupAndCampaignCrud_AndActionHistoryDeduplication_WorksCorrectly()
+    {
+        await this._store.InitializeAsync();
+
+        SavedTargetGroup group = new("555666", "Hội Mua Bán Laptop", IsEnabled: true, Notes: "Nhóm tương tác cao");
+        await this._store.UpsertTargetGroupAsync(group);
+        IReadOnlyList<SavedTargetGroup> groups = await this._store.GetAllTargetGroupsAsync();
+        _ = Assert.Single(groups);
+        Assert.Equal("Hội Mua Bán Laptop", groups[0].GroupName);
+        Assert.True(await this._store.DeleteTargetGroupAsync("555666"));
+
+        CampaignTemplate tpl = new("tpl-1", "Sale iPhone", "{Bán|Pass} iPhone 16", @"C:\img.jpg", IsCommentTemplate: true);
+        await this._store.UpsertCampaignTemplateAsync(tpl);
+        IReadOnlyList<CampaignTemplate> templates = await this._store.GetAllCampaignTemplatesAsync();
+        _ = Assert.Single(templates);
+        Assert.True(templates[0].IsCommentTemplate);
+        Assert.True(await this._store.DeleteCampaignTemplateAsync("tpl-1"));
+
+        Assert.False(await this._store.HasExecutedActionAsync("10001", "COMMENT", "post_999"));
+        await this._store.RecordActionAsync(new ActionHistoryEntry("10001", "COMMENT", "post_999", "cmt_111", DateTimeOffset.UtcNow));
+        Assert.True(await this._store.HasExecutedActionAsync("10001", "COMMENT", "post_999"));
+
+        IReadOnlyList<ActionHistoryEntry> recent = await this._store.GetRecentActionsAsync(10);
+        _ = Assert.Single(recent);
+        Assert.Equal("cmt_111", recent[0].ResultId);
+    }
+
     public void Dispose()
     {
         try

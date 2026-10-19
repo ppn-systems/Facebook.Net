@@ -60,6 +60,20 @@ public sealed class BrowserAdapterTests
     }
 
     [Fact]
+    public void ParseCookieHeader_ParsesSemicolonDelimitedCookiesAndMarksHttpOnly()
+    {
+        string raw = "c_user=100012345; xs=44%3Asecret; datr=abcd; wd=1920x1080";
+        List<Facebook.Net.Browser.Protocol.CdpCookie> cookies = ChromiumSession.ParseCookieHeader(raw.AsSpan());
+
+        Assert.Equal(4, cookies.Count);
+        Assert.Equal("c_user", cookies[0].Name);
+        Assert.False(cookies[0].HttpOnly);
+        Assert.Equal("xs", cookies[1].Name);
+        Assert.True(cookies[1].HttpOnly);
+        Assert.Equal(".facebook.com", cookies[1].Domain);
+    }
+
+    [Fact]
     public void LocalSessionFile_WhenPresentLocally_ValidatesExtractedTokensAndChecksum()
     {
         string? localSessionPath = TryFindLocalSessionFile();

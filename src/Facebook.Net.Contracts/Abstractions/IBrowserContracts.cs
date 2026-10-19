@@ -99,6 +99,15 @@ public interface IBrowserSession : IAsyncDisposable, IDisposable
     Task<SessionMaterial> ExtractMaterialAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Injects a raw HTTP <c>Cookie</c> header string (e.g., <c>c_user=...; xs=...; datr=...</c>)
+    /// directly into the Chromium cookie jar for <c>.facebook.com</c> via CDP <c>Network.setCookies</c>.
+    /// </summary>
+    /// <param name="rawCookieHeader">The raw semicolon-delimited cookie header string.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The number of cookies successfully injected.</returns>
+    Task<int> ImportCookiesAsync(string rawCookieHeader, CancellationToken ct = default);
+
+    /// <summary>
     /// Executes an HTTP POST request directly inside the page's DOM context (In-Page Request Delegation)
     /// to inherit the browser's genuine TLS/JA3 fingerprint, HTTP/2 framing, and cookies.
     /// </summary>

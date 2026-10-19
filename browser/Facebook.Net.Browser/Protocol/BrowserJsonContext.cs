@@ -88,6 +88,12 @@ public sealed record DomMaterialSnapshot(
     [property: JsonPropertyName("userAgent")] string UserAgent);
 
 /// <summary>
+/// Parameters for <c>Network.setCookies</c> CDP command.
+/// </summary>
+public sealed record CdpSetCookiesParams(
+    [property: JsonPropertyName("cookies")] IReadOnlyList<CdpCookie> Cookies);
+
+/// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for CDP protocol messages under Native AOT.
 /// </summary>
 [JsonSourceGenerationOptions(
@@ -97,6 +103,7 @@ public sealed record DomMaterialSnapshot(
 [JsonSerializable(typeof(CdpNavigateParams))]
 [JsonSerializable(typeof(CdpEvaluateParams))]
 [JsonSerializable(typeof(CdpGetCookiesParams))]
+[JsonSerializable(typeof(CdpSetCookiesParams))]
 [JsonSerializable(typeof(CdpGetDocumentParams))]
 [JsonSerializable(typeof(CdpQuerySelectorParams))]
 [JsonSerializable(typeof(CdpSetFileInputFilesParams))]
@@ -105,6 +112,7 @@ public sealed record DomMaterialSnapshot(
 [JsonSerializable(typeof(List<CdpTargetInfo>))]
 [JsonSerializable(typeof(CdpCookie))]
 [JsonSerializable(typeof(CdpCookie[]))]
+[JsonSerializable(typeof(List<CdpCookie>))]
 [JsonSerializable(typeof(DomMaterialSnapshot))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]

@@ -98,10 +98,10 @@ public sealed class CometClientTests
     }
 
     [Fact]
-    public async Task GetGroupFeedAsync_ParsesMultilineNdjsonPostsAndPaginationCursor()
+    public async Task GetGroupFeedAsync_ParsesMultilineNdjsonPostsEngagementAndPaginationCursor()
     {
         string ndjson =
-            "for (;;);{\"data\":{\"node\":{\"group_feed\":{\"edges\":[{\"node\":{\"post_id\":\"101\",\"actors\":[{\"id\":\"10001\",\"name\":\"Seller A\"}],\"message\":{\"text\":\"Bán laptop gaming\"}}}]}}}}\n" +
+            "for (;;);{\"data\":{\"node\":{\"group_feed\":{\"edges\":[{\"node\":{\"post_id\":\"101\",\"creation_time\":1730000000,\"actors\":[{\"id\":\"10001\",\"name\":\"Seller A\"}],\"message\":{\"text\":\"Bán laptop gaming\"},\"feedback\":{\"reaction_count\":{\"count\":15},\"total_comment_count\":{\"count\":4}}}}]}}}}\n" +
             "{\"label\":\"GroupsCometFeedRegularStoriesPaginationQuery$defer\",\"data\":{\"node\":{\"post_id\":\"102\",\"actors\":[{\"id\":\"10002\",\"name\":\"Seller B\"}],\"message\":{\"text\":\"Pass màn hình 27 inch\"}}}}\n" +
             "{\"data\":{\"page_info\":{\"end_cursor\":\"CURSOR_NEXT_2\",\"has_next_page\":true}}}";
 
@@ -113,6 +113,9 @@ public sealed class CometClientTests
         Assert.Equal(2, feed.Items.Count);
         Assert.Equal("101", feed.Items[0].PostId);
         Assert.Equal("Bán laptop gaming", feed.Items[0].MessageText);
+        Assert.Equal(15, feed.Items[0].ReactionCount);
+        Assert.Equal(4, feed.Items[0].CommentCount);
+        _ = Assert.NotNull(feed.Items[0].CreatedAt);
         Assert.Equal("102", feed.Items[1].PostId);
         Assert.True(feed.HasNextPage);
         Assert.Equal("CURSOR_NEXT_2", feed.EndCursor);
@@ -159,6 +162,9 @@ public sealed class CometClientTests
 
         public Task<SessionMaterial> ExtractMaterialAsync(CancellationToken ct = default) =>
             Task.FromResult(this.CurrentMaterial!);
+
+        public Task<int> ImportCookiesAsync(string rawCookieHeader, CancellationToken ct = default) =>
+            Task.FromResult(1);
 
         public Task<string> ExecuteInPagePostAsync(
             string url,

@@ -66,6 +66,30 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 status INTEGER NOT NULL DEFAULT 0,
                 last_active_at TEXT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS target_groups (
+                group_id TEXT PRIMARY KEY NOT NULL,
+                group_name TEXT NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                notes TEXT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS campaign_templates (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                spintax_content TEXT NOT NULL,
+                media_file_path TEXT NULL,
+                is_comment_template INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS action_history (
+                account_uid TEXT NOT NULL,
+                action_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                result_id TEXT NULL,
+                executed_at TEXT NOT NULL,
+                PRIMARY KEY (account_uid, action_kind, target_id)
+            );
             """;
 
         using SqliteConnection conn = new(this._connectionString);

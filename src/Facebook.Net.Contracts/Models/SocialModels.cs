@@ -1,6 +1,7 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
 using Facebook.Net.Contracts.Primitives;
 
 namespace Facebook.Net.Contracts.Models;
@@ -15,14 +16,17 @@ public sealed record UserSummary(
     FriendshipState Friendship = FriendshipState.Unknown);
 
 /// <summary>
-/// Summary of a feed or group post story.
+/// Summary of a feed or group post story, including engagement metrics and creation timestamp.
 /// </summary>
 public sealed record PostSummary(
     string PostId,
     string AuthorUid,
     string? AuthorName = null,
     string? MessageText = null,
-    string? PermalinkUrl = null);
+    string? PermalinkUrl = null,
+    int ReactionCount = 0,
+    int CommentCount = 0,
+    DateTimeOffset? CreatedAt = null);
 
 /// <summary>
 /// Summary of a community group.
@@ -73,3 +77,32 @@ public sealed record ManagedPageSummary(
     string PageId,
     string Name,
     string? DelegatePageId = null);
+
+/// <summary>
+/// Represents a saved target group configured for automated group posting or feed scraping/commenting.
+/// </summary>
+public sealed record SavedTargetGroup(
+    string GroupId,
+    string GroupName,
+    bool IsEnabled = true,
+    string? Notes = null);
+
+/// <summary>
+/// Represents a reusable Spintax post or sales comment template with an optional media attachment path.
+/// </summary>
+public sealed record CampaignTemplate(
+    string Id,
+    string Title,
+    string SpintaxContent,
+    string? MediaFilePath = null,
+    bool IsCommentTemplate = false);
+
+/// <summary>
+/// Represents an immutable audit record of an executed post or sales comment to prevent duplicate actions.
+/// </summary>
+public sealed record ActionHistoryEntry(
+    string AccountUid,
+    string ActionKind,
+    string TargetId,
+    string? ResultId,
+    DateTimeOffset ExecutedAt);
