@@ -366,22 +366,22 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         await vm.WarmUpAccountCommand.ExecuteAsync(null);
         Assert.True(cometClient.ReactionsCount >= 2);
 
-        // 4. Sync Joined Groups & Save Target Group
+        // 4. Sync Joined Groups & verify TargetGroups auto-seeded
         await vm.SyncJoinedGroupsCommand.ExecuteAsync(null);
         Assert.Equal(2, vm.JoinedGroups.Count);
         vm.SelectedGroup = vm.JoinedGroups[0];
         await vm.AddSelectedGroupToTargetsCommand.ExecuteAsync(null);
-        _ = Assert.Single(vm.TargetGroups);
+        Assert.Equal(2, vm.TargetGroups.Count);
 
         // 5. Publish Campaign to Target Group + Auto-React Own Post + Up-Top Bump
         vm.PublishToTargetGroups = true;
         vm.AutoReactPublishedPost = true;
         vm.PostSpintaxText = "{Chào cả nhà|Xin chào} ngày {date} mã {random_id}!";
         await vm.PublishCampaignCommand.ExecuteAsync(null);
-        Assert.Equal(1, cometClient.PublishedPostsCount);
+        Assert.Equal(2, cometClient.PublishedPostsCount);
 
         await vm.BumpRecentPostsCommand.ExecuteAsync(null);
-        Assert.Equal(1, cometClient.CreatedCommentsCount);
+        Assert.Equal(2, cometClient.CreatedCommentsCount);
 
         // 6. Scan Buyer-Intent Group Leads, Score, Comment Sale, and Export CSV/JSON
         vm.BuyerIntentKeywords = "cần mua, xin giá";
@@ -393,11 +393,11 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         Assert.True(highScore >= 75);
 
         await vm.SendSalesCommentOnSelectedPostCommand.ExecuteAsync(null);
-        Assert.Equal(2, cometClient.CreatedCommentsCount);
+        Assert.Equal(3, cometClient.CreatedCommentsCount);
 
         // Duplicate comment prevention check
         await vm.SendSalesCommentOnSelectedPostCommand.ExecuteAsync(null);
-        Assert.Equal(2, cometClient.CreatedCommentsCount);
+        Assert.Equal(3, cometClient.CreatedCommentsCount);
 
         string csvLeadsPath = Path.Combine(this._tempDir, "leads.csv");
         string jsonLeadsPath = Path.Combine(this._tempDir, "leads.json");
@@ -474,7 +474,7 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         ImportedSessionBundle b1 = UniversalSessionImporter.Parse(rawCookieNoCUser);
         ImportedSessionBundle b2 = UniversalSessionImporter.Parse(rawCookieNoCUser);
         Assert.Equal(b1.AccountUid, b2.AccountUid);
-        Assert.StartsWith("session_", b1.AccountUid, StringComparison.Ordinal);
+        Assert.StartsWith("acc_", b1.AccountUid, StringComparison.Ordinal);
 
         // 2. AppConfig.Normalize clamps delay bounds so MinDelaySeconds <= MaxDelaySeconds
         AppConfig inverted = new(MinDelaySeconds: 90, MaxDelaySeconds: 20);

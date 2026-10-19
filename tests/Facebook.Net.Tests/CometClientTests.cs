@@ -137,14 +137,9 @@ public sealed class CometClientTests
     [Fact]
     public void ProtocolErrorClassifier_ClassifiesActionBlocked368_Checkpoint190_And_TransientRateLimit()
     {
-        GraphQlError err368 = new(368, 1404078, "You're Temporarily Blocked", "It looks like you were misusing this feature", false);
-        Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.Classify(err368));
-
-        GraphQlError err190 = new(190, 490, "Error validating access token: user enrolled in a blocking, logged-in checkpoint", null, false);
-        Assert.Equal(AutomationErrorCategory.CheckpointOrAuthFailure, ProtocolErrorClassifier.Classify(err190));
-
-        GraphQlError errRate = new(1675004, null, "Rate limit exceeded", null, true);
-        Assert.Equal(AutomationErrorCategory.RateLimitedTransient, ProtocolErrorClassifier.Classify(errRate));
+        Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.Classify(368, "You're Temporarily Blocked"));
+        Assert.Equal(AutomationErrorCategory.CheckpointOrAuthFailure, ProtocolErrorClassifier.Classify(190, "Error validating access token: checkpoint"));
+        Assert.Equal(AutomationErrorCategory.TransientRetryable, ProtocolErrorClassifier.Classify(1675004, "Rate limit exceeded"));
 
         InvalidOperationException ex368 = new("GraphQL error 368: SentryBlock");
         Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.ClassifyException(ex368));
