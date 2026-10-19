@@ -85,43 +85,51 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Group,
             AuditSeverity.Info,
-            "Nhóm Mục tiêu",
+            this._context.Localization["Audit.Cat.Group"],
             isEnabled
-                ? $"Đã bật tất cả {this.TargetGroups.Count} nhóm mục tiêu."
-                : $"Đã tạm tắt tất cả {this.TargetGroups.Count} nhóm mục tiêu.").ConfigureAwait(true);
+                ? this.Msg($"Đã bật tất cả {this.TargetGroups.Count} nhóm mục tiêu.", $"Enabled all {this.TargetGroups.Count} target groups.")
+                : this.Msg($"Đã tạm tắt tất cả {this.TargetGroups.Count} nhóm mục tiêu.", $"Disabled all {this.TargetGroups.Count} target groups.")).ConfigureAwait(true);
     }
 
     private async Task SyncJoinedGroupsAsync()
     {
-        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
-        if (session is null)
-        {
-            return;
-        }
-
-        this.IsBusy = true;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
         try
         {
-            await this.SyncJoinedGroupsCoreAsync(session).ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Group"],
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Error,
-                "Đồng bộ Nhóm",
-                $"Lỗi tải danh sách nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
+                this._context.Localization["Audit.Cat.Group"],
+                this.Msg($"Lỗi tải danh sách nhóm: {this.SanitizeErrorMessage(ex)}", $"Failed to sync groups: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
         {
-            this.IsBusy = false;
+            this.EndTaskScope();
         }
     }
 
-    private async Task SyncJoinedGroupsCoreAsync(IBrowserSession session)
+    private async Task SyncJoinedGroupsCoreAsync(IBrowserSession session, System.Threading.CancellationToken ct = default)
     {
         PagedResult<GroupSummary> result = await this._context.CometClient
-            .GetJoinedGroupsAsync(session, count: 30)
+            .GetJoinedGroupsAsync(session, count: 30, ct: ct)
             .ConfigureAwait(true);
 
         this._allCatalogGroups.Clear();
@@ -134,7 +142,7 @@ public sealed partial class ShellViewModel
 
             // Auto-save into SQLite TargetGroups so they persist across app restarts
             SavedTargetGroup target = new(group.GroupId, group.Name, IsEnabled: true);
-            await this._context.AccountStore.UpsertTargetGroupAsync(target).ConfigureAwait(true);
+            await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
         }
 
         if (this.JoinedGroups.Count > 0)
@@ -147,8 +155,10 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Group,
             AuditSeverity.Success,
-            "Danh mục Nhóm",
-            $"Đã tự động đồng bộ {this.JoinedGroups.Count} nhóm đã tham gia vào danh sách chọn trực quan.").ConfigureAwait(true);
+            this._context.Localization["Audit.Cat.Group"],
+            this.Msg(
+                $"Đã tự động đồng bộ {this.JoinedGroups.Count} nhóm đã tham gia vào danh sách chọn trực quan.",
+                $"Automatically synced {this.JoinedGroups.Count} joined groups into the visual catalog.")).ConfigureAwait(true);
     }
 
     private async Task SearchGroupsByKeywordAsync()
@@ -158,29 +168,33 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                "Tìm Nhóm",
-                "Vui lòng nhập từ khóa tìm nhóm (VD: Chợ cư dân, Mua bán nhà đất...).").ConfigureAwait(true);
+                this._context.Localization["Audit.Cat.Group"],
+                this.Msg(
+                    "Vui lòng nhập từ khóa tìm nhóm (VD: Chợ cư dân, Mua bán nhà đất...).",
+                    "Please enter a group search keyword (e.g., Real Estate Deals, Laptop Market...).")).ConfigureAwait(true);
             return;
         }
 
-        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
-        if (session is null)
-        {
-            return;
-        }
-
-        this.IsBusy = true;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
         try
         {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
             string keyword = this.GroupSearchKeyword.Trim();
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Info,
                 keyword,
-                $"Đang tìm kiếm các nhóm Facebook theo từ khóa '{keyword}'...").ConfigureAwait(true);
+                this.Msg(
+                    $"Đang tìm kiếm các nhóm Facebook theo từ khóa '{keyword}'...",
+                    $"Searching Facebook groups matching '{keyword}'...")).ConfigureAwait(true);
 
             PagedResult<GroupSummary> result = await this._context.CometClient
-                .SearchGroupsAsync(session, keyword, count: 15)
+                .SearchGroupsAsync(session, keyword, count: 15, ct: ct)
                 .ConfigureAwait(true);
 
             this._allCatalogGroups.Clear();
@@ -200,7 +214,17 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 keyword,
-                $"Tìm thấy {this.JoinedGroups.Count} nhóm khớp từ khóa '{keyword}'.").ConfigureAwait(true);
+                this.Msg(
+                    $"Tìm thấy {this.JoinedGroups.Count} nhóm khớp từ khóa '{keyword}'.",
+                    $"Found {this.JoinedGroups.Count} groups matching '{keyword}'.")).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Group"],
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -208,11 +232,11 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.GroupSearchKeyword,
-                $"Lỗi tìm kiếm nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
+                this.Msg($"Lỗi tìm kiếm nhóm: {this.SanitizeErrorMessage(ex)}", $"Group search failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
         {
-            this.IsBusy = false;
+            this.EndTaskScope();
         }
     }
 
@@ -231,7 +255,9 @@ public sealed partial class ShellViewModel
             AuditCategory.Group,
             AuditSeverity.Success,
             target.GroupName,
-            $"Đã đưa nhóm '{target.GroupName}' vào danh sách Nhóm Mục tiêu.").ConfigureAwait(true);
+            this.Msg(
+                $"Đã đưa nhóm '{target.GroupName}' vào danh sách Nhóm Mục tiêu.",
+                $"Added group '{target.GroupName}' to Target Campaign Groups.")).ConfigureAwait(true);
     }
 
     private async Task RemoveSelectedTargetGroupAsync()
@@ -249,7 +275,9 @@ public sealed partial class ShellViewModel
             AuditCategory.Group,
             AuditSeverity.Info,
             name,
-            $"Đã xóa nhóm '{name}' khỏi danh sách Nhóm Mục tiêu.").ConfigureAwait(true);
+            this.Msg(
+                $"Đã xóa nhóm '{name}' khỏi danh sách Nhóm Mục tiêu.",
+                $"Removed group '{name}' from Target Campaign Groups.")).ConfigureAwait(true);
     }
 
     private async Task JoinSelectedGroupAsync()
@@ -259,18 +287,18 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
-        if (session is null)
-        {
-            return;
-        }
-
-        this.IsBusy = true;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
         try
         {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
             GroupSummary group = this.SelectedGroup;
             GroupMembershipState state = await this._context.CometClient
-                .JoinGroupAsync(session, group.GroupId)
+                .JoinGroupAsync(session, group.GroupId, ct: ct)
                 .ConfigureAwait(true);
 
             string friendlyState = this._context.Localization.FormatGroupMembership(state);
@@ -278,19 +306,29 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 group.Name,
-                $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' ({friendlyState}).").ConfigureAwait(true);
+                this.Msg(
+                    $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' ({friendlyState}).",
+                    $"Sent request to join group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Group"],
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Error,
-                this.SelectedGroup?.Name ?? "Nhóm",
-                $"Lỗi tham gia nhóm: {SanitizeErrorMessage(ex)}").ConfigureAwait(true);
+                this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"],
+                this.Msg($"Lỗi tham gia nhóm: {this.SanitizeErrorMessage(ex)}", $"Failed to join group: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
         {
-            this.IsBusy = false;
+            this.EndTaskScope();
         }
     }
 

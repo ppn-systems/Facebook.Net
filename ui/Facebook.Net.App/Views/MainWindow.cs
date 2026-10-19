@@ -161,11 +161,22 @@ public sealed partial class MainWindow : Window
             }
         };
 
+        Button stopTaskBtn = CloudflareControls.CreatePrimaryButton(
+            this._theme,
+            this._i18n["Common.BtnStopTask"],
+            this._vm.StopActiveTaskCommand,
+            VectorIcons.StopCircle);
+        stopTaskBtn.IsVisible = this._vm.IsBusy;
+
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
             {
                 activeAccCombo.SelectedItem = this._vm.SelectedAccount;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
+            {
+                stopTaskBtn.IsVisible = this._vm.IsBusy;
             }
         };
 
@@ -180,6 +191,7 @@ public sealed partial class MainWindow : Window
             this._vm.ToggleThemeQuickCommand,
             VectorIcons.Sun);
 
+        rightActions.Children.Add(stopTaskBtn);
         rightActions.Children.Add(activeAccLabel);
         rightActions.Children.Add(activeAccCombo);
         rightActions.Children.Add(langBtn);
@@ -204,6 +216,7 @@ public sealed partial class MainWindow : Window
             appTitle.Foreground = p.TextPrimary;
             appSub.Foreground = p.TextSecondary;
             activeAccLabel.Foreground = p.TextSecondary;
+            stopTaskBtn.Background = p.DangerText;
             CloudflareControls.SetButtonText(
                 themeBtn,
                 this._theme.CurrentMode == AppThemeMode.Dark ? this._i18n["Settings.ThemeDark"] : this._i18n["Settings.ThemeLight"]);
@@ -217,6 +230,7 @@ public sealed partial class MainWindow : Window
             appSub.Text = this._i18n["App.Subtitle"];
             activeAccLabel.Text = this._i18n["TopBar.ActiveAccount"];
             activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
+            CloudflareControls.SetButtonText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
             CloudflareControls.SetButtonText(
                 langBtn,
                 this._i18n.CurrentLanguage == AppLanguage.ViVn ? "VI / EN" : "EN / VI");

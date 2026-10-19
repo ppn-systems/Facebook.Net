@@ -52,6 +52,9 @@ public static class VectorIcons
     /// <summary>Folder / File Picker icon path.</summary>
     public const string Folder = "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z";
 
+    /// <summary>StopCircle / Cancel task icon path.</summary>
+    public const string StopCircle = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M9 9h6v6H9z";
+
     /// <summary>Creates a crisp <see cref="PathIcon"/> from an SVG path string.</summary>
     public static PathIcon Create(string svgPathData, double size = 16, IBrush? foreground = null)
     {

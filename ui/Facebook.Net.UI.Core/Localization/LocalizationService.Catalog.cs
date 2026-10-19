@@ -204,7 +204,14 @@ public sealed partial class LocalizationService
             ["Audit.SearchPlaceholder"] = "Tìm trong nhật ký (tên nhóm, nội dung, trạng thái...)",
             ["Audit.BtnRefresh"] = "Lọc / Làm mới",
             ["Audit.BtnClear"] = "Xóa lịch sử cũ",
-            ["Audit.ReadyTicker"] = "Sẵn sàng — Chưa có tác vụ nào đang chạy."
+            ["Audit.ReadyTicker"] = "Sẵn sàng — Chưa có tác vụ nào đang chạy.",
+
+            ["Common.BtnStopTask"] = "Dừng tác vụ đang chạy",
+            ["Publisher.BtnPreviewSpintax"] = "Xem trước biến thể Spintax",
+            ["Publisher.SpintaxPreviewPrefix"] = "Bản xem trước ngẫu nhiên:",
+            ["Log.TaskStoppedByUser"] = "Đã dừng tác vụ ngay lập tức theo yêu cầu của người dùng.",
+            ["Log.SelectAccountFirst"] = "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.",
+            ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại."
         };
 
     private static Dictionary<string, string> CreateEnglishCatalog() =>
@@ -326,6 +333,13 @@ public sealed partial class LocalizationService
             ["Audit.SearchPlaceholder"] = "Search audit logs (group name, post snippet, status...)",
             ["Audit.BtnRefresh"] = "Filter / Refresh",
             ["Audit.BtnClear"] = "Clear Old Logs",
-            ["Audit.ReadyTicker"] = "Ready — No active automation tasks running."
+            ["Audit.ReadyTicker"] = "Ready — No active automation tasks running.",
+
+            ["Common.BtnStopTask"] = "Stop Active Task",
+            ["Publisher.BtnPreviewSpintax"] = "Preview Spintax Variation",
+            ["Publisher.SpintaxPreviewPrefix"] = "Randomized preview:",
+            ["Log.TaskStoppedByUser"] = "Task stopped immediately as requested by user.",
+            ["Log.SelectAccountFirst"] = "Please select or add an account before running this task.",
+            ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again."
         };
 }

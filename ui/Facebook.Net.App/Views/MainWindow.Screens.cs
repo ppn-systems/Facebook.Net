@@ -49,6 +49,20 @@ public sealed partial class MainWindow
             height: 110);
         cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
 
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountFriendlyNameInput), System.StringComparison.Ordinal) &&
+                !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, System.StringComparison.Ordinal))
+            {
+                nameBox.Text = this._vm.AccountFriendlyNameInput;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SessionImportRawInput), System.StringComparison.Ordinal) &&
+                     !string.Equals(cookieBox.Text, this._vm.SessionImportRawInput, System.StringComparison.Ordinal))
+            {
+                cookieBox.Text = this._vm.SessionImportRawInput;
+            }
+        };
+
         Button pasteClipboardBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Accounts.BtnPasteClipboard"],
@@ -119,21 +133,15 @@ public sealed partial class MainWindow
                 Grid.SetColumn(avatar, 0);
 
                 StackPanel info = new() { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
-                TextBlock displayName = new()
-                {
-                    Text = item.DisplayName,
-                    FontSize = 14,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = this._theme.Palette.TextPrimary
-                };
-                TextBlock subInfo = new()
-                {
-                    Text = item.LastActiveAt.HasValue
+                TextBlock displayName = CloudflareControls.CreateThemedLabel(this._theme, item.DisplayName, 14, FontWeight.SemiBold);
+                TextBlock subInfo = CloudflareControls.CreateThemedLabel(
+                    this._theme,
+                    item.LastActiveAt.HasValue
                         ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
                         : this._i18n["Accounts.ReadyToConnect"],
-                    FontSize = 11,
-                    Foreground = this._theme.Palette.TextSecondary
-                };
+                    11,
+                    FontWeight.Normal,
+                    isSecondary: true);
                 info.Children.Add(displayName);
                 info.Children.Add(subInfo);
                 Grid.SetColumn(info, 1);
@@ -146,6 +154,14 @@ public sealed partial class MainWindow
                     this._i18n.FormatAccountStatus(item.Status),
                     sev);
                 Grid.SetColumn(statusPill, 2);
+
+                this._i18n.LanguageChanged += (_, _) =>
+                {
+                    subInfo.Text = item.LastActiveAt.HasValue
+                        ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
+                        : this._i18n["Accounts.ReadyToConnect"];
+                    CloudflareControls.SetPillText(statusPill, this._i18n.FormatAccountStatus(item.Status));
+                };
 
                 row.Children.Add(avatar);
                 row.Children.Add(info);
@@ -253,15 +269,7 @@ public sealed partial class MainWindow
                 Border badge = CloudflareControls.CreateAvatarBadge(this._theme, grp.Name, 30);
                 Grid.SetColumn(badge, 0);
 
-                TextBlock nameTb = new()
-                {
-                    Text = grp.Name,
-                    FontSize = 13,
-                    FontWeight = FontWeight.Medium,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = this._theme.Palette.TextPrimary
-                };
+                TextBlock nameTb = CloudflareControls.CreateThemedLabel(this._theme, grp.Name, 13, FontWeight.Medium);
                 Grid.SetColumn(nameTb, 1);
 
                 Border statePill = CloudflareControls.CreateStatusPill(
@@ -269,6 +277,9 @@ public sealed partial class MainWindow
                     this._i18n.FormatGroupMembership(grp.MembershipState),
                     grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
                 Grid.SetColumn(statePill, 2);
+
+                this._i18n.LanguageChanged += (_, _) =>
+                    CloudflareControls.SetPillText(statePill, this._i18n.FormatGroupMembership(grp.MembershipState));
 
                 row.Children.Add(badge);
                 row.Children.Add(nameTb);
@@ -318,13 +329,11 @@ public sealed partial class MainWindow
 
         // Right: Selected Target Campaign Groups with CheckBox toggles
         StackPanel rightStack = new() { Spacing = 10 };
-        TextBlock targetListHeader = new()
-        {
-            Text = this._i18n["Groups.TargetListTitle"],
-            FontSize = 15,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextPrimary
-        };
+        TextBlock targetListHeader = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Groups.TargetListTitle"],
+            15,
+            FontWeight.SemiBold);
 
         Grid bulkToggleRow = new()
         {
@@ -382,14 +391,7 @@ public sealed partial class MainWindow
 
                 sp.Children.Add(enabledCheck);
                 sp.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, tg.GroupName, 28));
-                sp.Children.Add(new TextBlock
-                {
-                    Text = tg.GroupName,
-                    FontSize = 13,
-                    FontWeight = FontWeight.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = this._theme.Palette.TextPrimary
-                });
+                sp.Children.Add(CloudflareControls.CreateThemedLabel(this._theme, tg.GroupName, 13, FontWeight.SemiBold));
                 return sp;
             })
         };

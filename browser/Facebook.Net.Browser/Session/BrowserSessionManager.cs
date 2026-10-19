@@ -101,7 +101,9 @@ public sealed class BrowserSessionManager : IBrowserManager
     public IBrowserSession? TryGetSession(string accountUid)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accountUid);
-        return this._sessions.TryGetValue(accountUid, out IBrowserSession? session) ? session : null;
+        return this._sessions.TryGetValue(accountUid, out IBrowserSession? session) && session.State == BrowserState.Running
+            ? session
+            : null;
     }
 
     /// <inheritdoc />

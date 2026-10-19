@@ -143,6 +143,59 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
+    /// Updates the text inside a status pill created by <see cref="CreateStatusPill"/>.
+    /// </summary>
+    public static void SetPillText(Border pill, string text)
+    {
+        ArgumentNullException.ThrowIfNull(pill);
+        if (pill.Child is StackPanel row)
+        {
+            for (int i = 0; i < row.Children.Count; i++)
+            {
+                if (row.Children[i] is TextBlock tb)
+                {
+                    tb.Text = text;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates a <see cref="TextBlock"/> whose foreground color automatically updates when <see cref="ThemeService"/> switches between Dark and Light mode.
+    /// </summary>
+    public static TextBlock CreateThemedLabel(
+        ThemeService theme,
+        string initialText,
+        double fontSize = 13,
+        FontWeight fontWeight = FontWeight.Normal,
+        bool isSecondary = false,
+        bool isBrand = false)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        TextBlock tb = new()
+        {
+            Text = initialText,
+            FontSize = fontSize,
+            FontWeight = fontWeight,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            tb.Foreground = isBrand
+                ? p.BrandPrimary
+                : (isSecondary ? p.TextSecondary : p.TextPrimary);
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return tb;
+    }
+
+    /// <summary>
     /// Creates a circular avatar monogram badge (e.g., first 2 letters of Account or Group name)
     /// so entities are visually identifiable without showing raw numeric UIDs.
     /// </summary>

@@ -117,7 +117,8 @@ public sealed class AppSettingsService
                 case PreferredBrowserKind.Edge:
                     return FirstExisting(
                         Path.Combine(progFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-                        Path.Combine(progFiles, "Microsoft", "Edge", "Application", "msedge.exe"));
+                        Path.Combine(progFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+                        Path.Combine(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"));
 
                 case PreferredBrowserKind.Chrome:
                     return FirstExisting(
@@ -138,14 +139,21 @@ public sealed class AppSettingsService
         }
         else if (OperatingSystem.IsMacOS())
         {
+            string userApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Applications");
             switch (this.Current.PreferredBrowser)
             {
                 case PreferredBrowserKind.Edge:
-                    return FirstExisting("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge");
+                    return FirstExisting(
+                        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                        Path.Combine(userApps, "Microsoft Edge.app/Contents/MacOS/Microsoft Edge"));
                 case PreferredBrowserKind.Chrome:
-                    return FirstExisting("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+                    return FirstExisting(
+                        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                        Path.Combine(userApps, "Google Chrome.app/Contents/MacOS/Google Chrome"));
                 case PreferredBrowserKind.Brave:
-                    return FirstExisting("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser");
+                    return FirstExisting(
+                        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                        Path.Combine(userApps, "Brave Browser.app/Contents/MacOS/Brave Browser"));
                 case PreferredBrowserKind.AutoDetect:
                 default:
                     break;

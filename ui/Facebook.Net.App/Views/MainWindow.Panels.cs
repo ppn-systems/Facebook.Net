@@ -73,8 +73,41 @@ public sealed partial class MainWindow
             this._i18n["Publisher.ContentPlaceholder"],
             this._vm.PostSpintaxText,
             multiline: true,
-            height: 135);
+            height: 120);
         contentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = contentBox.Text ?? string.Empty;
+
+        // Spintax Live Preview Row
+        Grid previewRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 8
+        };
+
+        Button previewSpintaxBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnPreviewSpintax"],
+            this._vm.PreviewSpintaxCommand,
+            VectorIcons.Sync);
+
+        TextBlock previewSpintaxTb = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._vm.SpintaxPreviewText,
+            12,
+            FontWeight.Normal,
+            isSecondary: true);
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SpintaxPreviewText), StringComparison.Ordinal))
+            {
+                previewSpintaxTb.Text = this._vm.SpintaxPreviewText;
+            }
+        };
+
+        Grid.SetColumn(previewSpintaxBtn, 0);
+        Grid.SetColumn(previewSpintaxTb, 1);
+        previewRow.Children.Add(previewSpintaxBtn);
+        previewRow.Children.Add(previewSpintaxTb);
 
         Grid photoRow = new()
         {
@@ -129,14 +162,13 @@ public sealed partial class MainWindow
         btnRow.Children.Add(publishBtn);
 
         // Auto Up-Top (Bump Recent Posts) Section
-        StackPanel bumpStack = new() { Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-        TextBlock bumpTitleTb = new()
-        {
-            Text = this._i18n["Publisher.BumpTitle"],
-            FontSize = 14,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.BrandPrimary
-        };
+        StackPanel bumpStack = new() { Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
+        TextBlock bumpTitleTb = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Publisher.BumpTitle"],
+            14,
+            FontWeight.SemiBold,
+            isBrand: true);
 
         TextBox bumpBox = CloudflareControls.CreateTextBox(
             this._theme,
@@ -156,6 +188,7 @@ public sealed partial class MainWindow
 
         leftStack.Children.Add(targetModeCheck);
         leftStack.Children.Add(contentBox);
+        leftStack.Children.Add(previewRow);
         leftStack.Children.Add(photoRow);
         leftStack.Children.Add(btnRow);
         leftStack.Children.Add(CloudflareControls.CreateInsetWell(this._theme, bumpStack));
@@ -166,13 +199,11 @@ public sealed partial class MainWindow
 
         // Right: Saved Content Library
         StackPanel rightStack = new() { Spacing = 10 };
-        TextBlock tplTitle = new()
-        {
-            Text = this._i18n["Publisher.TemplatesTitle"],
-            FontSize = 15,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextPrimary
-        };
+        TextBlock tplTitle = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Publisher.TemplatesTitle"],
+            15,
+            FontWeight.SemiBold);
 
         ListBox tplList = new()
         {
@@ -186,21 +217,10 @@ public sealed partial class MainWindow
                 }
 
                 StackPanel sp = new() { Spacing = 3, Margin = new Thickness(4) };
-                sp.Children.Add(new TextBlock
-                {
-                    Text = tpl.Title,
-                    FontWeight = FontWeight.SemiBold,
-                    FontSize = 13,
-                    Foreground = this._theme.Palette.TextPrimary
-                });
-                sp.Children.Add(new TextBlock
-                {
-                    Text = tpl.SpintaxContent,
-                    FontSize = 11,
-                    MaxLines = 2,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = this._theme.Palette.TextSecondary
-                });
+                sp.Children.Add(CloudflareControls.CreateThemedLabel(this._theme, tpl.Title, 13, FontWeight.SemiBold));
+                TextBlock bodyTb = CloudflareControls.CreateThemedLabel(this._theme, tpl.SpintaxContent, 11, FontWeight.Normal, isSecondary: true);
+                bodyTb.MaxLines = 2;
+                sp.Children.Add(bodyTb);
                 return sp;
             })
         };
@@ -239,6 +259,7 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Publisher.Desc"];
             targetModeCheck.Content = this._i18n["Publisher.TargetModeGroup"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
+            CloudflareControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
             photoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
             CloudflareControls.SetButtonText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             CloudflareControls.SetButtonText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
@@ -297,27 +318,23 @@ public sealed partial class MainWindow
                 StackPanel card = new() { Spacing = 4, Margin = new Thickness(4) };
                 StackPanel authorRow = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
                 authorRow.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, post.AuthorName ?? this._i18n["Leads.DefaultAuthor"], 26));
-                authorRow.Children.Add(new TextBlock
-                {
-                    Text = string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName,
-                    FontWeight = FontWeight.SemiBold,
-                    FontSize = 13,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = this._theme.Palette.TextPrimary
-                });
+                authorRow.Children.Add(CloudflareControls.CreateThemedLabel(
+                    this._theme,
+                    string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName,
+                    13,
+                    FontWeight.SemiBold));
                 authorRow.Children.Add(CloudflareControls.CreateStatusPill(
                     this._theme,
                     $"👍 {post.ReactionCount}  💬 {post.CommentCount}",
                     AuditSeverity.Info));
 
-                TextBlock snippet = new()
-                {
-                    Text = string.IsNullOrWhiteSpace(post.MessageText) ? this._i18n["Leads.MediaOnlyPost"] : post.MessageText,
-                    FontSize = 12,
-                    MaxLines = 3,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = this._theme.Palette.TextSecondary
-                };
+                TextBlock snippet = CloudflareControls.CreateThemedLabel(
+                    this._theme,
+                    string.IsNullOrWhiteSpace(post.MessageText) ? this._i18n["Leads.MediaOnlyPost"] : post.MessageText,
+                    12,
+                    FontWeight.Normal,
+                    isSecondary: true);
+                snippet.MaxLines = 3;
 
                 card.Children.Add(authorRow);
                 card.Children.Add(snippet);
@@ -325,14 +342,12 @@ public sealed partial class MainWindow
             })
         };
 
-        TextBlock selectedBanner = new()
-        {
-            Text = this._i18n["Leads.NoPostSelected"],
-            FontSize = 12,
-            FontWeight = FontWeight.Medium,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = this._theme.Palette.BrandPrimary
-        };
+        TextBlock selectedBanner = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Leads.NoPostSelected"],
+            12,
+            FontWeight.Medium,
+            isBrand: true);
 
         postsList.SelectionChanged += (_, _) =>
         {
@@ -461,13 +476,12 @@ public sealed partial class MainWindow
         leftStack.Children.Add(header);
 
         // 1. Theme Selector
-        TextBlock themeLabel = new()
-        {
-            Text = this._i18n["Settings.ThemeLabel"],
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextSecondary
-        };
+        TextBlock themeLabel = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.ThemeLabel"],
+            12,
+            FontWeight.SemiBold,
+            isSecondary: true);
 
         ComboBox themeCombo = new()
         {
@@ -475,7 +489,11 @@ public sealed partial class MainWindow
             ItemsSource = new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
             SelectedItem = this._vm.SelectedThemeMode,
             ItemTemplate = new FuncDataTemplate<AppThemeMode>((m, _) =>
-                new TextBlock { Text = this._i18n.FormatThemeMode(m) })
+            {
+                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
+                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatThemeMode(m);
+                return tb;
+            })
         };
         themeCombo.SelectionChanged += (_, _) =>
         {
@@ -486,13 +504,12 @@ public sealed partial class MainWindow
         };
 
         // 2. Language Selector
-        TextBlock langLabel = new()
-        {
-            Text = this._i18n["Settings.LanguageLabel"],
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextSecondary
-        };
+        TextBlock langLabel = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.LanguageLabel"],
+            12,
+            FontWeight.SemiBold,
+            isSecondary: true);
 
         ComboBox langCombo = new()
         {
@@ -500,7 +517,7 @@ public sealed partial class MainWindow
             ItemsSource = new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
             SelectedItem = this._vm.SelectedLanguage,
             ItemTemplate = new FuncDataTemplate<AppLanguage>((l, _) =>
-                new TextBlock { Text = LocalizationService.FormatLanguage(l) })
+                CloudflareControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12))
         };
         langCombo.SelectionChanged += (_, _) =>
         {
@@ -510,14 +527,25 @@ public sealed partial class MainWindow
             }
         };
 
-        // 3. Browser Engine Selector
-        TextBlock browserLabel = new()
+        this._vm.PropertyChanged += (_, e) =>
         {
-            Text = this._i18n["Settings.BrowserEngineLabel"],
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextSecondary
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedThemeMode), StringComparison.Ordinal))
+            {
+                themeCombo.SelectedItem = this._vm.SelectedThemeMode;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedLanguage), StringComparison.Ordinal))
+            {
+                langCombo.SelectedItem = this._vm.SelectedLanguage;
+            }
         };
+
+        // 3. Browser Engine Selector
+        TextBlock browserLabel = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.BrowserEngineLabel"],
+            12,
+            FontWeight.SemiBold,
+            isSecondary: true);
 
         ComboBox browserCombo = new()
         {
@@ -531,7 +559,11 @@ public sealed partial class MainWindow
             },
             SelectedItem = this._vm.SelectedBrowserKind,
             ItemTemplate = new FuncDataTemplate<PreferredBrowserKind>((k, _) =>
-                new TextBlock { Text = this._i18n.FormatBrowserKind(k) })
+            {
+                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
+                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatBrowserKind(k);
+                return tb;
+            })
         };
         browserCombo.SelectionChanged += (_, _) =>
         {
@@ -580,13 +612,12 @@ public sealed partial class MainWindow
             this._vm.RunBrowserHeadless = headlessCheck.IsChecked ?? false;
 
         // 4. Anti-Checkpoint Delay Range Controls
-        TextBlock delayRangeLabel = new()
-        {
-            Text = this._i18n["Settings.DelayRangeLabel"],
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.TextSecondary
-        };
+        TextBlock delayRangeLabel = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.DelayRangeLabel"],
+            12,
+            FontWeight.SemiBold,
+            isSecondary: true);
 
         Grid delayRow = new()
         {
@@ -594,13 +625,10 @@ public sealed partial class MainWindow
             ColumnSpacing = 8
         };
 
-        TextBlock minDelayPrefix = new()
-        {
-            Text = this._i18n["Settings.MinDelayPrefix"],
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = this._theme.Palette.TextPrimary
-        };
+        TextBlock minDelayPrefix = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.MinDelayPrefix"],
+            12);
 
         NumericUpDown minDelayBox = new()
         {
@@ -613,13 +641,10 @@ public sealed partial class MainWindow
         minDelayBox.ValueChanged += (_, _) =>
             this._vm.MinDelaySeconds = (int)(minDelayBox.Value ?? 15);
 
-        TextBlock maxDelayPrefix = new()
-        {
-            Text = this._i18n["Settings.MaxDelayPrefix"],
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = this._theme.Palette.TextPrimary
-        };
+        TextBlock maxDelayPrefix = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.MaxDelayPrefix"],
+            12);
 
         NumericUpDown maxDelayBox = new()
         {
@@ -665,20 +690,16 @@ public sealed partial class MainWindow
 
         // Right: Non-technical User Guide Card
         StackPanel guideStack = new() { Spacing = 8 };
-        TextBlock guideTitle = new()
-        {
-            Text = this._i18n["Settings.GuideTitle"],
-            FontSize = 15,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = this._theme.Palette.BrandPrimary
-        };
-        TextBlock guideBody = new()
-        {
-            Text = this._i18n["Settings.GuideBody"],
-            FontSize = 13,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = this._theme.Palette.TextPrimary
-        };
+        TextBlock guideTitle = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.GuideTitle"],
+            15,
+            FontWeight.SemiBold,
+            isBrand: true);
+        TextBlock guideBody = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Settings.GuideBody"],
+            13);
         guideStack.Children.Add(guideTitle);
         guideStack.Children.Add(guideBody);
 
@@ -790,7 +811,9 @@ public sealed partial class MainWindow
             ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
             {
                 AuditCategory? cat = obj is AuditCategory c ? c : null;
-                return new TextBlock { Text = this._i18n.FormatAuditCategory(cat), FontSize = 12 };
+                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
+                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditCategory(cat);
+                return tb;
             })
         };
         categoryCombo.SelectionChanged += async (_, _) =>
@@ -812,7 +835,11 @@ public sealed partial class MainWindow
             },
             SelectedIndex = 0,
             ItemTemplate = new FuncDataTemplate<AuditTimeRange>((r, _) =>
-                new TextBlock { Text = this._i18n.FormatAuditTimeRange(r), FontSize = 12 })
+            {
+                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
+                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditTimeRange(r);
+                return tb;
+            })
         };
         timeRangeCombo.SelectionChanged += async (_, _) =>
         {
@@ -830,11 +857,7 @@ public sealed partial class MainWindow
             PlaceholderText = this._i18n["Audit.FilterAccountAll"],
             ItemsSource = this._vm.Accounts,
             ItemTemplate = new FuncDataTemplate<AccountProfile>((acc, _) =>
-                new TextBlock
-                {
-                    Text = acc?.DisplayName ?? this._i18n["Audit.FilterAccountAll"],
-                    FontSize = 12
-                })
+                CloudflareControls.CreateThemedLabel(this._theme, acc?.DisplayName ?? this._i18n["Audit.FilterAccountAll"], 12))
         };
         accountFilterCombo.SelectionChanged += async (_, _) =>
         {
@@ -894,22 +917,14 @@ public sealed partial class MainWindow
                     Margin = new Thickness(2, 1)
                 };
 
-                logRow.Children.Add(new TextBlock
-                {
-                    Text = rec.Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
-                    FontSize = 11,
-                    Foreground = this._theme.Palette.TextMuted,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
+                logRow.Children.Add(CloudflareControls.CreateThemedLabel(
+                    this._theme,
+                    rec.Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
+                    11,
+                    FontWeight.Normal,
+                    isSecondary: true));
 
-                TextBlock accTb = new()
-                {
-                    Text = rec.AccountDisplayName,
-                    FontSize = 11,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = this._theme.Palette.TextPrimary,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
+                TextBlock accTb = CloudflareControls.CreateThemedLabel(this._theme, rec.AccountDisplayName, 11, FontWeight.SemiBold);
                 Grid.SetColumn(accTb, 1);
                 logRow.Children.Add(accTb);
 
@@ -917,29 +932,20 @@ public sealed partial class MainWindow
                     this._theme,
                     this._i18n.FormatAuditCategory(rec.Category),
                     rec.Severity);
+                this._i18n.LanguageChanged += (_, _) =>
+                    CloudflareControls.SetPillText(catPill, this._i18n.FormatAuditCategory(rec.Category));
                 Grid.SetColumn(catPill, 2);
                 logRow.Children.Add(catPill);
 
-                TextBlock targetTb = new()
-                {
-                    Text = rec.TargetName,
-                    FontSize = 11,
-                    Foreground = this._theme.Palette.TextSecondary,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                };
+                TextBlock targetTb = CloudflareControls.CreateThemedLabel(this._theme, rec.TargetName, 11, FontWeight.Normal, isSecondary: true);
+                targetTb.TextTrimming = TextTrimming.CharacterEllipsis;
+                targetTb.TextWrapping = TextWrapping.NoWrap;
                 Grid.SetColumn(targetTb, 3);
                 logRow.Children.Add(targetTb);
 
-                TextBlock msgTb = new()
-                {
-                    Text = rec.Message,
-                    FontSize = 12,
-                    Foreground = this._theme.Palette.TextPrimary,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextWrapping = TextWrapping.NoWrap,
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                };
+                TextBlock msgTb = CloudflareControls.CreateThemedLabel(this._theme, rec.Message, 12);
+                msgTb.TextWrapping = TextWrapping.NoWrap;
+                msgTb.TextTrimming = TextTrimming.CharacterEllipsis;
                 Grid.SetColumn(msgTb, 4);
                 logRow.Children.Add(msgTb);
 
@@ -972,6 +978,7 @@ public sealed partial class MainWindow
 
         this._i18n.LanguageChanged += (_, _) =>
         {
+            CloudflareControls.SetPillText(livePill, this._i18n["Audit.TaskbarTitle"]);
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
             searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
             CloudflareControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);

@@ -82,6 +82,7 @@ public sealed partial class ShellViewModel
 
     private async Task SaveSettingsAsync()
     {
+        AppConfig previous = this._context.Settings.Current;
         this._context.Theme.SetTheme(this.SelectedThemeMode);
         this._context.Localization.SetLanguage(this.SelectedLanguage);
 
@@ -99,6 +100,17 @@ public sealed partial class ShellViewModel
 
         this._context.Settings.Save(updated);
 
+        // If browser engine or headless mode changed, recycle active browser sessions so the next launch uses the new browser
+        if (previous.PreferredBrowser != updated.PreferredBrowser ||
+            previous.RunBrowserHeadless != updated.RunBrowserHeadless ||
+            !string.Equals(previous.CustomBrowserExecutablePath, updated.CustomBrowserExecutablePath, System.StringComparison.Ordinal))
+        {
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                await this._context.SessionManager.CloseSessionAsync(this.Accounts[i].Uid).ConfigureAwait(true);
+            }
+        }
+
         string friendlyTheme = this._context.Localization.FormatThemeMode(updated.Theme);
         string friendlyLang = LocalizationService.FormatLanguage(updated.Language);
         string friendlyBrowser = this._context.Localization.FormatBrowserKind(updated.PreferredBrowser);
@@ -107,6 +119,8 @@ public sealed partial class ShellViewModel
             AuditCategory.System,
             AuditSeverity.Success,
             this._context.Localization["Nav.Settings"],
-            $"Đã lưu cấu hình: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Giãn cách {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.").ConfigureAwait(true);
+            this.Msg(
+                $"Đã lưu cấu hình: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Giãn cách {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.",
+                $"Saved settings: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Delay {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.")).ConfigureAwait(true);
     }
 }

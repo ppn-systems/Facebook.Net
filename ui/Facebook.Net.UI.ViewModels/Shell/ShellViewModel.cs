@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.ViewModels.Audit;
 using Facebook.Net.UI.ViewModels.Services;
 
@@ -45,9 +47,10 @@ public enum NavigationSection
 /// - <c>ShellViewModel.PublisherAndLeads.cs</c> (Group/Timeline publishing, keyword lead scanner &amp; sales commenting)
 /// - <c>ShellViewModel.Settings.cs</c> (Cloudflare Dark/Light theme, vi-VN/en-US language &amp; browser selection)
 /// </summary>
-public sealed partial class ShellViewModel : ObservableObject
+public sealed partial class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly UiServiceContext _context;
+    private CancellationTokenSource? _activeTaskCts;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShellViewModel"/> class.
@@ -64,7 +67,7 @@ public sealed partial class ShellViewModel : ObservableObject
         this.SavedTemplates = new ObservableCollection<CampaignTemplate>();
         this.ScrapedPosts = new ObservableCollection<PostSummary>();
 
-        // Navigation commands
+        // Navigation & global commands
         this.NavigateAccountsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Accounts);
         this.NavigateGroupsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Groups);
         this.NavigatePublisherCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Publisher);
@@ -72,6 +75,7 @@ public sealed partial class ShellViewModel : ObservableObject
         this.NavigateSettingsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Settings);
         this.ToggleThemeQuickCommand = new RelayCommand(this.ToggleThemeQuick);
         this.ToggleLanguageQuickCommand = new RelayCommand(this.ToggleLanguageQuick);
+        this.StopActiveTaskCommand = new RelayCommand(this.StopActiveTask);
 
         // Account commands
         this.QuickImportSessionCommand = new AsyncRelayCommand(this.QuickImportSessionAsync);
@@ -88,6 +92,7 @@ public sealed partial class ShellViewModel : ObservableObject
         this.DisableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(false));
 
         // Publisher & Sales Leads commands
+        this.PreviewSpintaxCommand = new RelayCommand(this.GenerateSpintaxPreview);
         this.SaveTemplateCommand = new AsyncRelayCommand(this.SaveTemplateAsync);
         this.DeleteSelectedTemplateCommand = new AsyncRelayCommand(this.DeleteSelectedTemplateAsync);
         this.PublishCampaignCommand = new AsyncRelayCommand(this.PublishCampaignAsync);
@@ -151,6 +156,9 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Gets the command to toggle `vi-VN` / `en-US` language from the top bar.</summary>
     public IRelayCommand ToggleLanguageQuickCommand { get; }
 
+    /// <summary>Gets the command to immediately cancel any running automation campaign or delay timer.</summary>
+    public IRelayCommand StopActiveTaskCommand { get; }
+
     /// <summary>Gets the command to import a J2Team / Cookie session without typing a UID.</summary>
     public IAsyncRelayCommand QuickImportSessionCommand { get; }
 
@@ -180,6 +188,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>Gets the command to disable all target groups for campaigns.</summary>
     public IAsyncRelayCommand DisableAllTargetGroupsCommand { get; }
+
+    /// <summary>Gets the command to generate a live randomized Spintax preview.</summary>
+    public IRelayCommand PreviewSpintaxCommand { get; }
 
     /// <summary>Gets the command to save the current Spintax content as a reusable template.</summary>
     public IAsyncRelayCommand SaveTemplateCommand { get; }
@@ -224,8 +235,43 @@ public sealed partial class ShellViewModel : ObservableObject
             AuditCategory.System,
             AuditSeverity.Info,
             targetName: this._context.Localization["Audit.Cat.System"],
-            message: $"Khởi động hoàn tất ({this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu).").ConfigureAwait(true);
+            message: this.Msg(
+                $"Khởi động hoàn tất ({this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu).",
+                $"System initialized ({this.Accounts.Count} accounts, {this.TargetGroups.Count} target groups).")).ConfigureAwait(true);
     }
+
+    /// <summary>
+    /// Immediately cancels any running automation task or anti-checkpoint delay.
+    /// </summary>
+    public void StopActiveTask()
+    {
+        if (this._activeTaskCts is not null && !this._activeTaskCts.IsCancellationRequested)
+        {
+            this._activeTaskCts.Cancel();
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        this._activeTaskCts?.Cancel();
+        this._activeTaskCts?.Dispose();
+        this._activeTaskCts = null;
+    }
+
+    private CancellationToken BeginTaskScope()
+    {
+        this._activeTaskCts?.Cancel();
+        this._activeTaskCts?.Dispose();
+        this._activeTaskCts = new CancellationTokenSource();
+        this.IsBusy = true;
+        return this._activeTaskCts.Token;
+    }
+
+    private void EndTaskScope() => this.IsBusy = false;
+
+    private string Msg(string vi, string en) =>
+        this._context.Localization.CurrentLanguage == AppLanguage.EnUs ? en : vi;
 
     private Task<AuditLogRecord> LogAuditAsync(
         AuditCategory category,
@@ -239,12 +285,20 @@ public sealed partial class ShellViewModel : ObservableObject
         return this._context.AuditStore.AppendAsync(category, severity, uid, name, targetName, message, permalinkUrl);
     }
 
-    private static string SanitizeErrorMessage(Exception ex)
+    private string SanitizeErrorMessage(Exception ex)
     {
         string raw = ex.Message;
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return "Kết nối tạm thời bị gián đoạn, vui lòng thử lại.";
+            return this._context.Localization["Log.ConnectionInterrupted"];
+        }
+
+        if (this._context.Localization.CurrentLanguage == AppLanguage.EnUs)
+        {
+            return raw
+                .Replace("UID", "account profile", StringComparison.OrdinalIgnoreCase)
+                .Replace("fb_dtsg", "session security token", StringComparison.OrdinalIgnoreCase)
+                .Replace("c_user", "login session", StringComparison.OrdinalIgnoreCase);
         }
 
         return raw
@@ -253,7 +307,7 @@ public sealed partial class ShellViewModel : ObservableObject
             .Replace("c_user", "phiên đăng nhập", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<IBrowserSession?> TryGetOrLaunchActiveSessionAsync()
+    private async Task<IBrowserSession?> TryGetOrLaunchActiveSessionAsync(CancellationToken ct = default)
     {
         if (this.SelectedAccount is null)
         {
@@ -261,7 +315,7 @@ public sealed partial class ShellViewModel : ObservableObject
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Account"],
-                "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.").ConfigureAwait(true);
+                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
             return null;
         }
 
@@ -271,16 +325,18 @@ public sealed partial class ShellViewModel : ObservableObject
             return existing;
         }
 
+        string? preferredExe = this._context.Settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions options = new(
             AccountUid: this.SelectedAccount.Uid,
             UserDataDir: this.SelectedAccount.ProfileDirectory,
             UserAgent: this.SelectedAccount.UserAgent,
-            Headless: this._context.Settings.Current.RunBrowserHeadless);
+            Headless: this._context.Settings.Current.RunBrowserHeadless,
+            ExecutablePath: preferredExe);
 
-        IBrowserSession session = await this._context.SessionManager.AcquireSessionAsync(options).ConfigureAwait(true);
+        IBrowserSession session = await this._context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.CookieHeader))
         {
-            _ = await session.ImportCookiesAsync(this.SelectedAccount.CookieHeader).ConfigureAwait(true);
+            _ = await session.ImportCookiesAsync(this.SelectedAccount.CookieHeader, ct: ct).ConfigureAwait(true);
         }
 
         return session;

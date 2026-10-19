@@ -108,7 +108,9 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Success,
             profile.DisplayName,
-            $"Đã lưu phiên đăng nhập cho tài khoản '{profile.DisplayName}' thành công.").ConfigureAwait(true);
+            this.Msg(
+                $"Đã lưu phiên đăng nhập cho tài khoản '{profile.DisplayName}' thành công.",
+                $"Saved login session for account '{profile.DisplayName}' successfully.")).ConfigureAwait(true);
     }
 
     private async Task OpenBrowserAndSyncAsync()
@@ -124,7 +126,7 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        this.IsBusy = true;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
         try
         {
             AccountProfile account = this.SelectedAccount;
@@ -132,16 +134,18 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 account.DisplayName,
-                $"Đang mở trình duyệt cho '{account.DisplayName}'...").ConfigureAwait(true);
+                this.Msg(
+                    $"Đang mở trình duyệt cho '{account.DisplayName}'...",
+                    $"Launching browser for '{account.DisplayName}'...")).ConfigureAwait(true);
 
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
                 return;
             }
 
-            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin).ConfigureAwait(true);
-            SessionMaterial material = await session.ExtractMaterialAsync().ConfigureAwait(true);
+            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
 
             // If the account was created as a placeholder before login, update its internal session identifier cleanly
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
@@ -162,10 +166,10 @@ public sealed partial class ShellViewModel
 
             if (!string.Equals(account.Uid, realUid, StringComparison.Ordinal))
             {
-                _ = await this._context.AccountStore.DeleteAccountAsync(account.Uid).ConfigureAwait(true);
+                _ = await this._context.AccountStore.DeleteAccountAsync(account.Uid, ct).ConfigureAwait(true);
             }
 
-            await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+            await this._context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
             this.SelectedAccount = updated;
 
@@ -173,22 +177,34 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Success,
                 updated.DisplayName,
-                "Đã đồng bộ phiên trình duyệt thành công! Đang tự động tải danh sách Nhóm đã tham gia...").ConfigureAwait(true);
+                this.Msg(
+                    "Đã đồng bộ phiên trình duyệt thành công! Đang tự động tải danh sách Nhóm đã tham gia...",
+                    "Browser session synced! Automatically loading joined Groups...")).ConfigureAwait(true);
 
             // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
-            await this.SyncJoinedGroupsCoreAsync(session).ConfigureAwait(true);
+            await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this.SelectedAccount?.DisplayName ?? "Tài khoản",
-                $"Trình duyệt đã mở — vui lòng đăng nhập Facebook trên cửa sổ trình duyệt rồi bấm lại để đồng bộ ({SanitizeErrorMessage(ex)}).").ConfigureAwait(true);
+                this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
+                this.Msg(
+                    $"Trình duyệt đã mở — vui lòng đăng nhập Facebook trên cửa sổ trình duyệt rồi bấm lại để đồng bộ ({this.SanitizeErrorMessage(ex)}).",
+                    $"Browser opened — please sign in to Facebook in the browser window and click again to sync ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
         }
         finally
         {
-            this.IsBusy = false;
+            this.EndTaskScope();
         }
     }
 
@@ -209,6 +225,8 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Info,
             removedName,
-            $"Đã gỡ tài khoản '{removedName}' khỏi danh sách.").ConfigureAwait(true);
+            this.Msg(
+                $"Đã gỡ tài khoản '{removedName}' khỏi danh sách.",
+                $"Removed account '{removedName}' from the vault.")).ConfigureAwait(true);
     }
 }
