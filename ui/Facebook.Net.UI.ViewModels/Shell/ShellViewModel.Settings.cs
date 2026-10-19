@@ -60,7 +60,7 @@ public sealed partial class ShellViewModel
     {
         this._context.Theme.ToggleTheme();
         this.SelectedThemeMode = this._context.Theme.CurrentMode;
-        this._context.Settings.Save(this._context.Settings.Current with
+        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
         {
             Theme = this.SelectedThemeMode
         });
@@ -74,7 +74,7 @@ public sealed partial class ShellViewModel
 
         this._context.Localization.SetLanguage(next);
         this.SelectedLanguage = next;
-        this._context.Settings.Save(this._context.Settings.Current with
+        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
         {
             Language = next
         });
@@ -86,7 +86,7 @@ public sealed partial class ShellViewModel
         this._context.Theme.SetTheme(this.SelectedThemeMode);
         this._context.Localization.SetLanguage(this.SelectedLanguage);
 
-        AppConfig updated = new(
+        AppConfig updated = new AppConfig(
             Theme: this.SelectedThemeMode,
             Language: this.SelectedLanguage,
             PreferredBrowser: this.SelectedBrowserKind,
@@ -94,11 +94,13 @@ public sealed partial class ShellViewModel
                 ? null
                 : this.CustomBrowserExecutablePath.Trim(),
             RunBrowserHeadless: this.RunBrowserHeadless,
-            MinDelaySeconds: this.MinDelaySeconds <= 0 ? 5 : this.MinDelaySeconds,
-            MaxDelaySeconds: this.MaxDelaySeconds < this.MinDelaySeconds ? this.MinDelaySeconds + 15 : this.MaxDelaySeconds,
-            IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded);
+            MinDelaySeconds: this.MinDelaySeconds,
+            MaxDelaySeconds: this.MaxDelaySeconds,
+            IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded).Normalize();
 
-        this._context.Settings.Save(updated);
+        this.MinDelaySeconds = updated.MinDelaySeconds;
+        this.MaxDelaySeconds = updated.MaxDelaySeconds;
+        await this._context.Settings.SaveAsync(updated).ConfigureAwait(true);
 
         // If browser engine or headless mode changed, recycle active browser sessions so the next launch uses the new browser
         if (previous.PreferredBrowser != updated.PreferredBrowser ||

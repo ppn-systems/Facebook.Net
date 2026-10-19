@@ -14,6 +14,7 @@ using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
+using Facebook.Net.UI.Core.Threading;
 
 namespace Facebook.Net.UI.ViewModels.Services;
 
@@ -69,9 +70,15 @@ public sealed class UiServiceContext : IDisposable
     /// </summary>
     /// <param name="platformBrowserAdapter">The OS-specific browser adapter.</param>
     /// <param name="customDataDir">Optional custom root data directory (for testing).</param>
-    public UiServiceContext(IBrowserAdapter platformBrowserAdapter, string? customDataDir = null)
+    /// <param name="dispatcher">Optional UI thread dispatcher abstraction.</param>
+    public UiServiceContext(
+        IBrowserAdapter platformBrowserAdapter,
+        string? customDataDir = null,
+        IUiDispatcher? dispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
+
+        this.Dispatcher = dispatcher ?? AvaloniaUiDispatcher.Instance;
 
         string rootDir = string.IsNullOrWhiteSpace(customDataDir)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Facebook.Net")
@@ -86,7 +93,7 @@ public sealed class UiServiceContext : IDisposable
         string settingsPath = Path.Combine(rootDir, "appsettings.json");
         this.Settings = new AppSettingsService(settingsPath);
 
-        this.Theme = new ThemeService();
+        this.Theme = new ThemeService(this.Dispatcher);
         this.Theme.SetTheme(this.Settings.Current.Theme);
 
         this.Localization = new LocalizationService();
@@ -102,6 +109,9 @@ public sealed class UiServiceContext : IDisposable
         this.SessionManager = new BrowserSessionManager(this.BrowserAdapter);
         this.CometClient = new CometClient();
     }
+
+    /// <summary>Gets the UI thread dispatcher abstraction.</summary>
+    public IUiDispatcher Dispatcher { get; }
 
     /// <summary>Gets the root data directory.</summary>
     public string DataDirectory { get; }

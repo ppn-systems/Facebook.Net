@@ -3,8 +3,11 @@
 
 using System;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 
@@ -39,7 +42,27 @@ public sealed record AppConfig(
     bool RunBrowserHeadless = false,
     int MinDelaySeconds = 15,
     int MaxDelaySeconds = 45,
-    bool IsAuditDrawerExpanded = false);
+    bool IsAuditDrawerExpanded = false)
+{
+    /// <summary>
+    /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
+    /// </summary>
+    public AppConfig Normalize()
+    {
+        int clampedMin = Math.Clamp(this.MinDelaySeconds, 1, 3600);
+        int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
+        string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
+            ? null
+            : this.CustomBrowserExecutablePath.Trim();
+
+        return this with
+        {
+            MinDelaySeconds = clampedMin,
+            MaxDelaySeconds = clampedMax,
+            CustomBrowserExecutablePath = cleanedPath
+        };
+    }
+}
 
 /// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for Native AOT serialization of <see cref="AppConfig"/>.
@@ -54,7 +77,7 @@ public partial class UiCoreJsonContext : JsonSerializerContext
 }
 
 /// <summary>
-/// Loads and saves <see cref="AppConfig"/> and resolves the user's preferred Chromium executable path.
+/// Loads and saves <see cref="AppConfig"/> atomically and resolves the user's preferred Chromium executable path.
 /// </summary>
 public sealed class AppSettingsService
 {
@@ -77,12 +100,13 @@ public sealed class AppSettingsService
     public AppConfig Current { get; private set; }
 
     /// <summary>
-    /// Saves the updated <see cref="AppConfig"/> to disk.
+    /// Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.
     /// </summary>
     public void Save(AppConfig updated)
     {
         ArgumentNullException.ThrowIfNull(updated);
-        this.Current = updated;
+        AppConfig normalized = updated.Normalize();
+        this.Current = normalized;
 
         string? dir = Path.GetDirectoryName(this._settingsFilePath);
         if (!string.IsNullOrWhiteSpace(dir))
@@ -90,8 +114,31 @@ public sealed class AppSettingsService
             _ = Directory.CreateDirectory(dir);
         }
 
-        string json = JsonSerializer.Serialize(updated, UiCoreJsonContext.Default.AppConfig);
-        File.WriteAllText(this._settingsFilePath, json);
+        string json = JsonSerializer.Serialize(normalized, UiCoreJsonContext.Default.AppConfig);
+        string tempPath = $"{this._settingsFilePath}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(tempPath, json, Encoding.UTF8);
+        File.Move(tempPath, this._settingsFilePath, overwrite: true);
+    }
+
+    /// <summary>
+    /// Asynchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap without blocking the UI thread.
+    /// </summary>
+    public async Task SaveAsync(AppConfig updated, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(updated);
+        AppConfig normalized = updated.Normalize();
+        this.Current = normalized;
+
+        string? dir = Path.GetDirectoryName(this._settingsFilePath);
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            _ = Directory.CreateDirectory(dir);
+        }
+
+        string json = JsonSerializer.Serialize(normalized, UiCoreJsonContext.Default.AppConfig);
+        string tempPath = $"{this._settingsFilePath}.{Guid.NewGuid():N}.tmp";
+        await File.WriteAllTextAsync(tempPath, json, Encoding.UTF8, ct).ConfigureAwait(false);
+        File.Move(tempPath, this._settingsFilePath, overwrite: true);
     }
 
     /// <summary>
@@ -173,16 +220,16 @@ public sealed class AppSettingsService
                 AppConfig? loaded = JsonSerializer.Deserialize(json, UiCoreJsonContext.Default.AppConfig);
                 if (loaded is not null)
                 {
-                    return loaded;
+                    return loaded.Normalize();
                 }
             }
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            // Fall back to default config on corrupt file
+            // Fall back to default normalized config when file is unreadable or contains invalid JSON
         }
 
-        return new AppConfig();
+        return new AppConfig().Normalize();
     }
 
     private static string? FirstExisting(params string[] paths)

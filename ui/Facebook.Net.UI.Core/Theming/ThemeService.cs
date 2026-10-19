@@ -8,6 +8,8 @@ using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Styling;
 
+using Facebook.Net.UI.Core.Threading;
+
 namespace Facebook.Net.UI.Core.Theming;
 
 /// <summary>
@@ -108,7 +110,14 @@ public sealed class ThemeService : INotifyPropertyChanged
         InfoFill: new ImmutableSolidColorBrush(Color.Parse("#E0F2FE")),
         InfoBorder: new ImmutableSolidColorBrush(Color.Parse("#7DD3FC")));
 
+    private readonly IUiDispatcher _dispatcher;
     private AppThemeMode _currentMode = AppThemeMode.Dark;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ThemeService"/> class.
+    /// </summary>
+    public ThemeService(IUiDispatcher? dispatcher = null) =>
+        this._dispatcher = dispatcher ?? AvaloniaUiDispatcher.Instance;
 
     /// <inheritdoc />
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -130,7 +139,7 @@ public sealed class ThemeService : INotifyPropertyChanged
         this._currentMode == AppThemeMode.Light ? s_lightPalette : s_darkPalette;
 
     /// <summary>
-    /// Switches the application theme and notifies all bound UI controls.
+    /// Switches the application theme and notifies all bound UI controls on the UI thread.
     /// </summary>
     /// <param name="mode">The target theme mode.</param>
     public void SetTheme(AppThemeMode mode)
@@ -141,13 +150,19 @@ public sealed class ThemeService : INotifyPropertyChanged
         }
 
         this._currentMode = mode;
-        Application.Current?.RequestedThemeVariant = mode == AppThemeMode.Light
-            ? ThemeVariant.Light
-            : ThemeVariant.Dark;
 
-        this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentMode)));
-        this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Palette)));
-        this.ThemeChanged?.Invoke(this, mode);
+        void ApplyOnUiThread()
+        {
+            Application.Current?.RequestedThemeVariant = mode == AppThemeMode.Light
+                ? ThemeVariant.Light
+                : ThemeVariant.Dark;
+
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentMode)));
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Palette)));
+            this.ThemeChanged?.Invoke(this, mode);
+        }
+
+        this._dispatcher.Post(ApplyOnUiThread);
     }
 
     /// <summary>

@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Facebook.Net.UI.Core.Audit;
@@ -172,7 +171,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     private void ToggleDrawer()
     {
         this.IsExpanded = !this.IsExpanded;
-        this._context.Settings.Save(this._context.Settings.Current with
+        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
         {
             IsAuditDrawerExpanded = this.IsExpanded
         });
@@ -215,14 +214,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             }
         }
 
-        if (Dispatcher.UIThread.CheckAccess())
-        {
-            UpdateUi();
-        }
-        else
-        {
-            Dispatcher.UIThread.Post(UpdateUi);
-        }
+        this._context.Dispatcher.Post(UpdateUi);
     }
 
     /// <inheritdoc />
