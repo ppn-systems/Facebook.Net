@@ -220,6 +220,7 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
                     result = await this._webSocket.ReceiveAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
+                        this.FailAllPending("CDP WebSocket closed by remote peer.");
                         return;
                     }
 

@@ -54,10 +54,15 @@ public sealed class BrowserSessionManager : IBrowserManager
         await this._launchGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (this._sessions.TryGetValue(options.AccountUid, out existing) &&
-                existing.State == BrowserState.Running)
+            if (this._sessions.TryGetValue(options.AccountUid, out existing))
             {
-                return existing;
+                if (existing.State == BrowserState.Running)
+                {
+                    return existing;
+                }
+
+                _ = this._sessions.TryRemove(options.AccountUid, out _);
+                await existing.DisposeAsync().ConfigureAwait(false);
             }
 
             if (this._lastLaunchTime != DateTimeOffset.MinValue && this._staggerDelay > TimeSpan.Zero)

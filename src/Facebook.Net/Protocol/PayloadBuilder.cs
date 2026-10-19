@@ -86,7 +86,7 @@ public static class PayloadBuilder
                 {
                     if (currentChoice == targetChoice)
                     {
-                        picked = inner.Slice(segStart, i - segStart);
+                        picked = inner[segStart..i];
                         break;
                     }
 
