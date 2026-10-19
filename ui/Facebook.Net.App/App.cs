@@ -41,9 +41,21 @@ public sealed class App : Application
                 context.Dispose();
             };
 
-            _ = shellViewModel.InitializeAsync();
+            InitializeShellSafeAsync(shellViewModel);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async void InitializeShellSafeAsync(ShellViewModel shellViewModel)
+    {
+        try
+        {
+            await shellViewModel.InitializeAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            shellViewModel.AuditDrawer.LatestTickerText = $"Startup error: {ex.Message}";
+        }
     }
 }

@@ -174,7 +174,7 @@ public static class UniversalSessionImporter
 
         // Case 3: Raw semicolon-delimited cookie header (c_user=...; xs=...)
         string extractedUid = ExtractCookieValue(trimmed.AsSpan(), "c_user".AsSpan())
-            ?? $"acc_{Math.Abs(trimmed.GetHashCode(StringComparison.Ordinal))}";
+            ?? ComputeDeterministicId("acc_", trimmed);
 
         string prefix = defaultImportedPrefix ?? "FB Account";
         string display = !string.IsNullOrWhiteSpace(friendlyName)
@@ -187,6 +187,19 @@ public static class UniversalSessionImporter
             CookieHeader: trimmed,
             UserAgent: null,
             TwoFactorSecret: null);
+    }
+
+    /// <summary>
+    /// Computes a deterministic 12-character hex identifier from arbitrary session material using SHA-256
+    /// so that importing the same cookie string across processes always yields the exact same fallback UID.
+    /// </summary>
+    public static string ComputeDeterministicId(string prefix, string material)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(material);
+        Span<byte> hash = stackalloc byte[32];
+        _ = System.Security.Cryptography.SHA256.HashData(bytes, hash);
+        string hex = Convert.ToHexStringLower(hash[..6]);
+        return string.Concat(prefix, hex);
     }
 
     private static bool TryParseJsonBundle(string json, string? friendlyName, out ImportedSessionBundle? result)
@@ -225,7 +238,7 @@ public static class UniversalSessionImporter
                     string cookieStr = BuildCookieHeaderFromArray(cookiesArr, out string? cUserFromArr);
                     string resolvedUid = !string.IsNullOrWhiteSpace(cUserFromArr)
                         ? cUserFromArr
-                        : (explicitUid ?? $"j2team_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
+                        : (explicitUid ?? ComputeDeterministicId("j2team_", cookieStr));
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
@@ -239,7 +252,7 @@ public static class UniversalSessionImporter
                 {
                     string resolvedUid = !string.IsNullOrWhiteSpace(explicitUid)
                         ? explicitUid
-                        : (ExtractCookieValue(explicitCookieHeader.AsSpan(), "c_user".AsSpan()) ?? "session_1");
+                        : (ExtractCookieValue(explicitCookieHeader.AsSpan(), "c_user".AsSpan()) ?? ComputeDeterministicId("session_", explicitCookieHeader));
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
@@ -257,7 +270,7 @@ public static class UniversalSessionImporter
                 {
                     string resolvedUid = !string.IsNullOrWhiteSpace(cUser)
                         ? cUser
-                        : $"cookie_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+                        : ComputeDeterministicId("cookie_", cookieStr);
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
@@ -341,7 +354,7 @@ public static class UniversalSessionImporter
             }
         }
 
-        string resolvedUid = uid ?? $"acc_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        string resolvedUid = uid ?? ComputeDeterministicId("acc_", input);
         string prefix = defaultImportedPrefix ?? "FB Account";
         string label = !string.IsNullOrWhiteSpace(friendlyName)
             ? friendlyName.Trim()

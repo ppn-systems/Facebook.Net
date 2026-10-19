@@ -53,14 +53,13 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
-
         titleBlock = title;
         subtitleBlock = sub;
 
         StackPanel stack = new() { Spacing = 3 };
         stack.Children.Add(title);
         stack.Children.Add(sub);
+        BindThemeLifecycle(stack, theme, ApplyColors);
         return stack;
     }
 
@@ -101,62 +100,84 @@ public static partial class CloudflareControls
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8, 2),
             VerticalAlignment = VerticalAlignment.Center,
+            Tag = severity,
             Child = row
         };
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
-            switch (severity)
-            {
-                case AuditSeverity.Success:
-                    pill.Background = p.SuccessFill;
-                    pill.BorderBrush = p.SuccessBorder;
-                    label.Foreground = p.SuccessText;
-                    dot.Fill = p.SuccessText;
-                    break;
-                case AuditSeverity.Warning:
-                    pill.Background = p.WarningFill;
-                    pill.BorderBrush = p.WarningBorder;
-                    label.Foreground = p.WarningText;
-                    dot.Fill = p.WarningText;
-                    break;
-                case AuditSeverity.Error:
-                    pill.Background = p.DangerFill;
-                    pill.BorderBrush = p.DangerBorder;
-                    label.Foreground = p.DangerText;
-                    dot.Fill = p.DangerText;
-                    break;
-                case AuditSeverity.Info:
-                default:
-                    pill.Background = p.InfoFill;
-                    pill.BorderBrush = p.InfoBorder;
-                    label.Foreground = p.InfoText;
-                    dot.Fill = p.InfoText;
-                    break;
-            }
+            AuditSeverity activeSeverity = pill.Tag is AuditSeverity s ? s : severity;
+            ApplyPillColors(pill, dot, label, theme.Palette, activeSeverity);
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(pill, theme, ApplyColors);
         return pill;
     }
 
+    private static void ApplyPillColors(Border pill, Ellipse dot, TextBlock label, CloudflarePalette p, AuditSeverity severity)
+    {
+        switch (severity)
+        {
+            case AuditSeverity.Success:
+                pill.Background = p.SuccessFill;
+                pill.BorderBrush = p.SuccessBorder;
+                label.Foreground = p.SuccessText;
+                dot.Fill = p.SuccessText;
+                break;
+            case AuditSeverity.Warning:
+                pill.Background = p.WarningFill;
+                pill.BorderBrush = p.WarningBorder;
+                label.Foreground = p.WarningText;
+                dot.Fill = p.WarningText;
+                break;
+            case AuditSeverity.Error:
+                pill.Background = p.DangerFill;
+                pill.BorderBrush = p.DangerBorder;
+                label.Foreground = p.DangerText;
+                dot.Fill = p.DangerText;
+                break;
+            case AuditSeverity.Info:
+            default:
+                pill.Background = p.InfoFill;
+                pill.BorderBrush = p.InfoBorder;
+                label.Foreground = p.InfoText;
+                dot.Fill = p.InfoText;
+                break;
+        }
+    }
+
     /// <summary>
-    /// Updates the text inside a status pill created by <see cref="CreateStatusPill"/>.
+    /// Updates the text and optionally the severity inside a status pill created by <see cref="CreateStatusPill"/>.
     /// </summary>
-    public static void SetPillText(Border pill, string text)
+    public static void SetPillText(Border pill, string text, ThemeService? theme = null, AuditSeverity? newSeverity = null)
     {
         ArgumentNullException.ThrowIfNull(pill);
+        if (newSeverity.HasValue)
+        {
+            pill.Tag = newSeverity.Value;
+        }
+
         if (pill.Child is StackPanel row)
         {
+            Ellipse? dot = null;
+            TextBlock? label = null;
             for (int i = 0; i < row.Children.Count; i++)
             {
-                if (row.Children[i] is TextBlock tb)
+                if (row.Children[i] is Ellipse el)
+                {
+                    dot = el;
+                }
+                else if (row.Children[i] is TextBlock tb)
                 {
                     tb.Text = text;
-                    break;
+                    label = tb;
                 }
+            }
+
+            if (theme is not null && dot is not null && label is not null && pill.Tag is AuditSeverity sev)
+            {
+                ApplyPillColors(pill, dot, label, theme.Palette, sev);
             }
         }
     }
@@ -191,7 +212,7 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(tb, theme, ApplyColors);
         return tb;
     }
 
@@ -231,7 +252,7 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(circle, theme, ApplyColors);
         return circle;
     }
 
@@ -273,7 +294,7 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(box, theme, ApplyColors);
         return box;
     }
 

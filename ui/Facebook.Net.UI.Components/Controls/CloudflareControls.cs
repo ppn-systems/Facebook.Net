@@ -44,7 +44,7 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(card, theme, ApplyColors);
         return card;
     }
 
@@ -72,7 +72,7 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(well, theme, ApplyColors);
         return well;
     }
 
@@ -119,11 +119,14 @@ public static partial class CloudflareControls
             Padding = new Thickness(14, 8),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            Background = theme.Palette.BrandPrimary,
             Foreground = Brushes.White,
             BorderThickness = new Thickness(0)
         };
 
+        void ApplyColors() => btn.Background = theme.Palette.BrandPrimary;
+
+        ApplyColors();
+        BindThemeLifecycle(btn, theme, ApplyColors);
         return btn;
     }
 
@@ -186,8 +189,48 @@ public static partial class CloudflareControls
         }
 
         ApplyColors();
-        theme.ThemeChanged += (_, _) => ApplyColors();
+        BindThemeLifecycle(btn, theme, ApplyColors);
         return btn;
+    }
+
+    /// <summary>
+    /// Attaches a theme change listener to a control and automatically unsubscribes when the control detaches
+    /// from the visual tree (and re-subscribes if re-attached), eliminating event handler memory leaks.
+    /// </summary>
+    public static void BindThemeLifecycle(Visual control, ThemeService theme, Action applyColors)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(applyColors);
+
+        bool subscribed = false;
+        void OnThemeChanged(object? sender, AppThemeMode mode) => applyColors();
+
+        void Subscribe()
+        {
+            if (!subscribed)
+            {
+                theme.ThemeChanged += OnThemeChanged;
+                subscribed = true;
+            }
+        }
+
+        void Unsubscribe()
+        {
+            if (subscribed)
+            {
+                theme.ThemeChanged -= OnThemeChanged;
+                subscribed = false;
+            }
+        }
+
+        Subscribe();
+        control.AttachedToVisualTree += (_, _) =>
+        {
+            Subscribe();
+            applyColors();
+        };
+        control.DetachedFromVisualTree += (_, _) => Unsubscribe();
     }
 
     /// <summary>
