@@ -62,9 +62,7 @@ public sealed partial class CometClient : ICometClient
 
             GraphQlResult result = ResponseParser.ParseGraphQlResult(session.AccountUid, rawResponse);
 
-            // If first attempt returned an empty response or transient token mismatch (1357004 is thrown as CheckpointException,
-            // while 1357031 / empty stream can happen on stale fb_dtsg), refresh SessionMaterial once and retry
-            if (!result.IsSuccess && attempt == 0 && (result.JsonPayloads.Count == 0 || result.ErrorCode == 1357031))
+            if (!result.IsSuccess && attempt == 0 && ProtocolErrorClassifier.Classify(result) == AutomationErrorCategory.TransientRetryable)
             {
                 material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
                 continue;

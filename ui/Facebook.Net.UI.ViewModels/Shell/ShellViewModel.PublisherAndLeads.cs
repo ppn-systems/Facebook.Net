@@ -319,11 +319,7 @@ public sealed partial class ShellViewModel
         }
         catch (Exception ex)
         {
-            _ = await this.LogAuditAsync(
-                AuditCategory.Post,
-                AuditSeverity.Error,
-                this._context.Localization["Audit.Cat.Post"],
-                this.Msg($"Lỗi khi đăng bài: {this.SanitizeErrorMessage(ex)}", $"Publish failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, this._context.Localization["Audit.Cat.Post"], ex, ct).ConfigureAwait(true);
         }
         finally
         {
@@ -582,16 +578,57 @@ public sealed partial class ShellViewModel
         }
         catch (Exception ex)
         {
-            _ = await this.LogAuditAsync(
-                AuditCategory.SalesComment,
-                AuditSeverity.Error,
-                this._context.Localization["Audit.Cat.SalesComment"],
-                this.Msg($"Lỗi trong quá trình Auto Comment: {this.SanitizeErrorMessage(ex)}", $"Auto-comment error: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.SalesComment, this._context.Localization["Audit.Cat.SalesComment"], ex, ct).ConfigureAwait(true);
         }
         finally
         {
             this.EndTaskScope();
         }
+    }
+
+    private async Task HandleClassifiedCampaignExceptionAsync(
+        AuditCategory category,
+        string targetName,
+        Exception ex,
+        CancellationToken ct)
+    {
+        AutomationErrorCategory errorCategory = ProtocolErrorClassifier.ClassifyException(ex);
+        if (errorCategory == AutomationErrorCategory.CheckpointOrAuthFailure && this.SelectedAccount is not null)
+        {
+            AccountProfile updated = this.SelectedAccount with { Status = AccountStatus.Checkpoint };
+            await this._context.AccountStore
+                .UpsertAccountAsync(updated, CancellationToken.None)
+                .ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                category,
+                AuditSeverity.Error,
+                targetName,
+                this.Msg(
+                    "Ngắt mạch an toàn (Circuit Breaker): Phát hiện phiên đăng nhập hết hạn hoặc Checkpoint. Đã dừng chiến dịch ngay lập tức để bảo vệ tài khoản!",
+                    "Safety Circuit Breaker tripped: Session expired or Checkpoint detected. Campaign halted immediately to protect account!")).ConfigureAwait(true);
+            return;
+        }
+
+        if (errorCategory == AutomationErrorCategory.ActionBlocked368)
+        {
+            _ = await this.LogAuditAsync(
+                category,
+                AuditSeverity.Error,
+                targetName,
+                this.Msg(
+                    "Ngắt mạch an toàn (Circuit Breaker - Mã 368): Facebook báo giới hạn tốc độ thao tác. Đã tự động dừng chiến dịch để tránh khóa tính năng!",
+                    "Safety Circuit Breaker tripped (Code 368): Facebook action rate-limit detected. Campaign paused automatically to protect account!")).ConfigureAwait(true);
+            return;
+        }
+
+        _ = await this.LogAuditAsync(
+            category,
+            AuditSeverity.Error,
+            targetName,
+            this.Msg($"Lỗi tác vụ: {this.SanitizeErrorMessage(ex)}", $"Task error: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+        _ = ct;
     }
 
     private async Task OpenSelectedPostInBrowserAsync()
