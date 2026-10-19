@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.Browser - Chromium CDP Controller &amp; Profile Engine</Title>
+    <Description>Cross-platform Chromium DevTools Protocol (CDP) controller and profile management engine for Facebook.Net.</Description>
+    <PackageTags>facebook;chromium;cdp;browser-automation;net10;aot</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

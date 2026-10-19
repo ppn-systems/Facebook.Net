@@ -1,8 +1,21 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Facebook.Net.Contracts/Facebook.Net.Contracts.csproj" />
+    <Project Path="src/Facebook.Net.Storage/Facebook.Net.Storage.csproj" />
     <Project Path="src/Facebook.Net/Facebook.Net.csproj" />
   </Folder>
+  <Folder Name="/browser/">
+    <Project Path="browser/Facebook.Net.Browser/Facebook.Net.Browser.csproj" />
+    <Project Path="browser/Facebook.Net.Browser.Windows/Facebook.Net.Browser.Windows.csproj" />
+    <Project Path="browser/Facebook.Net.Browser.MacOS/Facebook.Net.Browser.MacOS.csproj" />
+  </Folder>
+  <Folder Name="/ui/">
+    <Project Path="ui/Facebook.Net.App/Facebook.Net.App.csproj" />
+  </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Facebook.Net.Contracts.Tests/Facebook.Net.Contracts.Tests.csproj" />
+    <Project Path="tests/Facebook.Net.Storage.Tests/Facebook.Net.Storage.Tests.csproj" />
+    <Project Path="tests/Facebook.Net.Browser.Tests/Facebook.Net.Browser.Tests.csproj" />
     <Project Path="tests/Facebook.Net.Tests/Facebook.Net.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.Contracts - Abstractions &amp; Models</Title>
+    <Description>Data contracts, record models, events, browser and client interfaces, and constants for Facebook.Net SDK.</Description>
+    <PackageTags>facebook;facebook-contracts;facebook-models;dto;abstractions;net10;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>
