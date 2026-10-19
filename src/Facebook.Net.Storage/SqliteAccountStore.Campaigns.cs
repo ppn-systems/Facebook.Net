@@ -246,7 +246,7 @@ public sealed partial class SqliteAccountStore
         string rawTime = reader.GetString(4);
         DateTimeOffset executedAt = DateTimeOffset.TryParse(rawTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)
             ? parsed
-            : DateTimeOffset.UtcNow;
+            : DateTimeOffset.UnixEpoch;
 
         return new ActionHistoryEntry(
             AccountUid: reader.GetString(0),

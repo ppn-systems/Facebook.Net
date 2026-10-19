@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.ViewModels.Services;
 
 namespace Facebook.Net.UI.ViewModels.Audit;
@@ -30,7 +31,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
 
         this.IsExpanded = context.Settings.Current.IsAuditDrawerExpanded;
         this.LatestTickerText = context.Localization["Audit.ReadyTicker"];
-        this.FilteredLogs = new ObservableCollection<AuditLogRecord>();
+        this.FilteredLogs = new BulkObservableCollection<AuditLogRecord>();
 
         this.ToggleDrawerCommand = new RelayCommand(this.ToggleDrawer);
         this.RefreshFilterCommand = new AsyncRelayCommand(this.RefreshLogsAsync);
@@ -89,7 +90,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     public partial int ErrorCount { get; set; }
 
     /// <summary>Gets the filtered audit log records displayed in the drawer.</summary>
-    public ObservableCollection<AuditLogRecord> FilteredLogs { get; }
+    public BulkObservableCollection<AuditLogRecord> FilteredLogs { get; }
 
     /// <summary>Gets the command to expand or collapse the bottom taskbar drawer.</summary>
     public IRelayCommand ToggleDrawerCommand { get; }
@@ -116,7 +117,6 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             Limit: 250);
 
         List<AuditLogRecord> records = await this._context.AuditStore.QueryAsync(filter).ConfigureAwait(true);
-        this.FilteredLogs.Clear();
 
         int ok = 0;
         int warn = 0;
@@ -125,7 +125,6 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         for (int i = 0; i < records.Count; i++)
         {
             AuditLogRecord item = records[i];
-            this.FilteredLogs.Add(item);
             switch (item.Severity)
             {
                 case AuditSeverity.Success:
@@ -143,6 +142,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             }
         }
 
+        this.FilteredLogs.ReplaceAll(records);
         this.SuccessCount = ok;
         this.WarningCount = warn;
         this.ErrorCount = err;

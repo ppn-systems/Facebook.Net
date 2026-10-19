@@ -62,6 +62,8 @@ public sealed class ConfigurableBrowserAdapter : IBrowserAdapter
 /// Central UI application service context aggregating theme, localization, settings,
 /// main SQLite store (<c>facebook_net.db</c>), dedicated Audit Log SQLite store (<c>facebook_audit.db</c>),
 /// browser session manager, and Comet GraphQL client.
+/// Exposes contract interfaces (<see cref="IAccountStore"/>, <see cref="IAuditLogStore"/>, <see cref="IBrowserManager"/>, <see cref="ICometClient"/>)
+/// and accepts optional test doubles for full unit testability.
 /// </summary>
 public sealed class UiServiceContext : IDisposable
 {
@@ -71,10 +73,18 @@ public sealed class UiServiceContext : IDisposable
     /// <param name="platformBrowserAdapter">The OS-specific browser adapter.</param>
     /// <param name="customDataDir">Optional custom root data directory (for testing).</param>
     /// <param name="dispatcher">Optional UI thread dispatcher abstraction.</param>
+    /// <param name="accountStore">Optional custom account store implementation (for testing).</param>
+    /// <param name="auditStore">Optional custom audit log store implementation (for testing).</param>
+    /// <param name="sessionManager">Optional custom browser session manager implementation (for testing).</param>
+    /// <param name="cometClient">Optional custom Comet GraphQL client implementation (for testing).</param>
     public UiServiceContext(
         IBrowserAdapter platformBrowserAdapter,
         string? customDataDir = null,
-        IUiDispatcher? dispatcher = null)
+        IUiDispatcher? dispatcher = null,
+        IAccountStore? accountStore = null,
+        IAuditLogStore? auditStore = null,
+        IBrowserManager? sessionManager = null,
+        ICometClient? cometClient = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
 
@@ -100,14 +110,14 @@ public sealed class UiServiceContext : IDisposable
         this.Localization.SetLanguage(this.Settings.Current.Language);
 
         string mainDbPath = Path.Combine(rootDir, "facebook_net.db");
-        this.AccountStore = new SqliteAccountStore(mainDbPath);
+        this.AccountStore = accountStore ?? new SqliteAccountStore(mainDbPath);
 
         string auditDbPath = Path.Combine(rootDir, "facebook_audit.db");
-        this.AuditStore = new SqliteAuditLogStore(auditDbPath);
+        this.AuditStore = auditStore ?? new SqliteAuditLogStore(auditDbPath);
 
         this.BrowserAdapter = new ConfigurableBrowserAdapter(platformBrowserAdapter, this.Settings);
-        this.SessionManager = new BrowserSessionManager(this.BrowserAdapter);
-        this.CometClient = new CometClient();
+        this.SessionManager = sessionManager ?? new BrowserSessionManager(this.BrowserAdapter);
+        this.CometClient = cometClient ?? new CometClient();
     }
 
     /// <summary>Gets the UI thread dispatcher abstraction.</summary>
@@ -128,20 +138,20 @@ public sealed class UiServiceContext : IDisposable
     /// <summary>Gets the bilingual (`vi-VN` / `en-US`) localization service.</summary>
     public LocalizationService Localization { get; }
 
-    /// <summary>Gets the main SQLite account, group, and campaign store (<c>facebook_net.db</c>).</summary>
-    public SqliteAccountStore AccountStore { get; }
+    /// <summary>Gets the main account, group, and campaign store (<c>facebook_net.db</c>).</summary>
+    public IAccountStore AccountStore { get; }
 
-    /// <summary>Gets the dedicated SQLite audit log store (<c>facebook_audit.db</c>).</summary>
-    public SqliteAuditLogStore AuditStore { get; }
+    /// <summary>Gets the dedicated audit log store (<c>facebook_audit.db</c>).</summary>
+    public IAuditLogStore AuditStore { get; }
 
     /// <summary>Gets the configurable browser adapter.</summary>
-    public ConfigurableBrowserAdapter BrowserAdapter { get; }
+    public IBrowserAdapter BrowserAdapter { get; }
 
     /// <summary>Gets the multi-profile browser session manager.</summary>
-    public BrowserSessionManager SessionManager { get; }
+    public IBrowserManager SessionManager { get; }
 
     /// <summary>Gets the Comet GraphQL client.</summary>
-    public CometClient CometClient { get; }
+    public ICometClient CometClient { get; }
 
     /// <inheritdoc />
     public void Dispose() => this.SessionManager.Dispose();

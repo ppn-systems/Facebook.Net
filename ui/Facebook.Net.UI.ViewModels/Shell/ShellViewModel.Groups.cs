@@ -43,15 +43,23 @@ public sealed partial class ShellViewModel
         this.GroupFilterText = filterText ?? string.Empty;
         string kw = this.GroupFilterText.Trim();
 
-        this.JoinedGroups.Clear();
+        if (string.IsNullOrWhiteSpace(kw))
+        {
+            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
+            return;
+        }
+
+        System.Collections.Generic.List<GroupSummary> filtered = new(this._allCatalogGroups.Count);
         for (int i = 0; i < this._allCatalogGroups.Count; i++)
         {
             GroupSummary grp = this._allCatalogGroups[i];
-            if (string.IsNullOrWhiteSpace(kw) || grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            if (grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
             {
-                this.JoinedGroups.Add(grp);
+                filtered.Add(grp);
             }
         }
+
+        this.JoinedGroups.ReplaceAll(filtered);
     }
 
     /// <summary>

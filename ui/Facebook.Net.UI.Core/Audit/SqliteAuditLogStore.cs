@@ -11,10 +11,49 @@ using Microsoft.Data.Sqlite;
 namespace Facebook.Net.UI.Core.Audit;
 
 /// <summary>
+/// Abstraction for persisting and querying structured application audit logs.
+/// </summary>
+public interface IAuditLogStore
+{
+    /// <summary>
+    /// Occurs whenever a new <see cref="AuditLogRecord"/> is appended to the store.
+    /// </summary>
+    event EventHandler<AuditLogRecord>? LogAppended;
+
+    /// <summary>
+    /// Initializes the underlying audit log storage schema.
+    /// </summary>
+    Task InitializeAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Appends a structured audit log entry and notifies live listeners.
+    /// </summary>
+    Task<AuditLogRecord> AppendAsync(
+        AuditCategory category,
+        AuditSeverity severity,
+        string accountUid,
+        string accountDisplayName,
+        string targetName,
+        string message,
+        string? permalinkUrl = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Queries audit log records matching the specified <see cref="AuditLogFilter"/> criteria.
+    /// </summary>
+    Task<List<AuditLogRecord>> QueryAsync(AuditLogFilter? filter = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Clears all stored audit log records.
+    /// </summary>
+    Task ClearAllAsync(CancellationToken ct = default);
+}
+
+/// <summary>
 /// Dedicated Native AOT-compatible SQLite store (<c>facebook_audit.db</c>) for persisting and filtering
 /// application audit logs by event category, severity, account, timestamp range, and search keyword.
 /// </summary>
-public sealed class SqliteAuditLogStore
+public sealed class SqliteAuditLogStore : IAuditLogStore
 {
     private readonly string _connectionString;
 
@@ -35,9 +74,7 @@ public sealed class SqliteAuditLogStore
         this._connectionString = builder.ToString();
     }
 
-    /// <summary>
-    /// Occurs whenever a new <see cref="AuditLogRecord"/> is appended to the store.
-    /// </summary>
+    /// <inheritdoc />
     public event EventHandler<AuditLogRecord>? LogAppended;
 
     /// <summary>
@@ -202,7 +239,7 @@ public sealed class SqliteAuditLogStore
         string rawTime = reader.GetString(1);
         DateTimeOffset ts = DateTimeOffset.TryParse(rawTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)
             ? parsed
-            : DateTimeOffset.UtcNow;
+            : DateTimeOffset.UnixEpoch;
 
         return new AuditLogRecord(
             Id: id,

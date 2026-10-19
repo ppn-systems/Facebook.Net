@@ -66,17 +66,17 @@ public sealed partial class ShellViewModel
     {
         string? targetUid = preferredUid ?? this.SelectedAccount?.Uid;
         IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
-        this.Accounts.Clear();
+        this.Accounts.ReplaceAll(storedAccounts);
 
         AccountProfile? matched = null;
         for (int i = 0; i < storedAccounts.Count; i++)
         {
             AccountProfile acc = storedAccounts[i];
-            this.Accounts.Add(acc);
             if (!string.IsNullOrWhiteSpace(targetUid) &&
                 string.Equals(acc.Uid, targetUid, StringComparison.Ordinal))
             {
                 matched = acc;
+                break;
             }
         }
 
@@ -94,22 +94,18 @@ public sealed partial class ShellViewModel
         }
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
-        this.TargetGroups.Clear();
-        for (int i = 0; i < storedGroups.Count; i++)
-        {
-            this.TargetGroups.Add(storedGroups[i]);
-        }
+        this.TargetGroups.ReplaceAll(storedGroups);
 
         // Only seed _allCatalogGroups and JoinedGroups from storedGroups if no live catalog has been loaded yet
         if (this._allCatalogGroups.Count == 0)
         {
-            this.JoinedGroups.Clear();
             for (int i = 0; i < storedGroups.Count; i++)
             {
                 GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member);
                 this._allCatalogGroups.Add(summary);
-                this.JoinedGroups.Add(summary);
             }
+
+            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
         }
 
         if (this.SelectedGroup is null && this.JoinedGroups.Count > 0)

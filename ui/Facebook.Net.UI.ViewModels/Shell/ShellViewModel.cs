@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.ViewModels.Audit;
 using Facebook.Net.UI.ViewModels.Services;
@@ -61,11 +62,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this._context = context;
         this.AuditDrawer = new AuditLogDrawerViewModel(context);
 
-        this.Accounts = new ObservableCollection<AccountProfile>();
-        this.JoinedGroups = new ObservableCollection<GroupSummary>();
-        this.TargetGroups = new ObservableCollection<SavedTargetGroup>();
-        this.SavedTemplates = new ObservableCollection<CampaignTemplate>();
-        this.ScrapedPosts = new ObservableCollection<PostSummary>();
+        this.Accounts = new BulkObservableCollection<AccountProfile>();
+        this.JoinedGroups = new BulkObservableCollection<GroupSummary>();
+        this.TargetGroups = new BulkObservableCollection<SavedTargetGroup>();
+        this.SavedTemplates = new BulkObservableCollection<CampaignTemplate>();
+        this.ScrapedPosts = new BulkObservableCollection<PostSummary>();
 
         // Navigation & global commands
         this.NavigateAccountsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Accounts);
@@ -130,19 +131,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     public partial bool IsBusy { get; set; }
 
     /// <summary>Gets the collection of managed Facebook accounts (displayed visually without raw UIDs).</summary>
-    public ObservableCollection<AccountProfile> Accounts { get; }
+    public BulkObservableCollection<AccountProfile> Accounts { get; }
 
     /// <summary>Gets the collection of synced/discovered Facebook groups.</summary>
-    public ObservableCollection<GroupSummary> JoinedGroups { get; }
+    public BulkObservableCollection<GroupSummary> JoinedGroups { get; }
 
     /// <summary>Gets the collection of saved target groups selected for publishing and lead scanning.</summary>
-    public ObservableCollection<SavedTargetGroup> TargetGroups { get; }
+    public BulkObservableCollection<SavedTargetGroup> TargetGroups { get; }
 
     /// <summary>Gets the collection of saved Spintax post/comment templates.</summary>
-    public ObservableCollection<CampaignTemplate> SavedTemplates { get; }
+    public BulkObservableCollection<CampaignTemplate> SavedTemplates { get; }
 
     /// <summary>Gets the collection of scraped group posts (selected visually as cards).</summary>
-    public ObservableCollection<PostSummary> ScrapedPosts { get; }
+    public BulkObservableCollection<PostSummary> ScrapedPosts { get; }
 
     /// <summary>Gets the command to navigate to Accounts screen.</summary>
     public IRelayCommand NavigateAccountsCommand { get; }
