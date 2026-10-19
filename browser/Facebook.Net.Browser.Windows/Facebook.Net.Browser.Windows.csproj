@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.Browser.Windows - Windows Chromium Adapter</Title>
+    <Description>Windows-specific Chromium process, registry discovery, and window management adapter for Facebook.Net.</Description>
+    <PackageTags>facebook;chromium;windows;adapter;net10;aot</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />
+  </ItemGroup>
+
+</Project>
