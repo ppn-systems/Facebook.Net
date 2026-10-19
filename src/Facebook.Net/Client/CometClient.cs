@@ -46,25 +46,40 @@ public sealed partial class CometClient : ICometClient
         SessionMaterial material = session.CurrentMaterial
             ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
-        int reqNum = Interlocked.Increment(ref this._requestSequence);
-        Dictionary<string, string> headers = PayloadBuilder.BuildGraphQlHeaders(material, request.FriendlyName);
-        string formBody = PayloadBuilder.BuildGraphQlFormBody(material, request, reqNum);
-
-        string rawResponse = await session.ExecuteInPagePostAsync(
-            ProtocolConstants.Endpoints.GraphQl,
-            headers,
-            formBody,
-            ct).ConfigureAwait(false);
-
-        GraphQlResult result = ResponseParser.ParseGraphQlResult(session.AccountUid, rawResponse);
-
-        if (result.IsSuccess && !string.IsNullOrWhiteSpace(request.PostNavigateUrl))
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            string fullPostUrl = ResolveFullUrl(request.PostNavigateUrl);
-            await session.NavigateAsync(fullPostUrl, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
+            int reqNum = Interlocked.Increment(ref this._requestSequence);
+            Dictionary<string, string> headers = PayloadBuilder.BuildGraphQlHeaders(material, request.FriendlyName);
+            string formBody = PayloadBuilder.BuildGraphQlFormBody(material, request, reqNum);
+
+            string rawResponse = await session.ExecuteInPagePostAsync(
+                ProtocolConstants.Endpoints.GraphQl,
+                headers,
+                formBody,
+                ct).ConfigureAwait(false);
+
+            GraphQlResult result = ResponseParser.ParseGraphQlResult(session.AccountUid, rawResponse);
+
+            // If first attempt returned an empty response or transient token mismatch (1357004 is thrown as CheckpointException,
+            // while 1357031 / empty stream can happen on stale fb_dtsg), refresh SessionMaterial once and retry
+            if (!result.IsSuccess && attempt == 0 && (result.JsonPayloads.Count == 0 || result.ErrorCode == 1357031))
+            {
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (result.IsSuccess && !string.IsNullOrWhiteSpace(request.PostNavigateUrl))
+            {
+                string fullPostUrl = ResolveFullUrl(request.PostNavigateUrl);
+                await session.NavigateAsync(fullPostUrl, ct).ConfigureAwait(false);
+            }
+
+            return result;
         }
 
-        return result;
+        return new GraphQlResult(IsSuccess: false, Array.Empty<string>(), ErrorMessage: "Exhausted GraphQL execution retries.");
     }
 
     private static string ResolveFullUrl(string pathOrUrl)

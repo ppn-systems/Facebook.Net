@@ -489,7 +489,7 @@ public sealed partial class CometClient
                 return decoded[(underscoreIdx + 1)..];
             }
         }
-        catch
+        catch (FormatException)
         {
             // Fallback to raw ID if not Base64
         }

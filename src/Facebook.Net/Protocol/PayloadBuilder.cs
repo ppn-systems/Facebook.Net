@@ -65,13 +65,39 @@ public static class PayloadBuilder
                 break;
             }
 
-            string inner = current.Substring(openIdx + 1, closeIdx - openIdx - 1);
-            string[] choices = inner.Split('|');
-            string picked = choices[Random.Shared.Next(choices.Length)];
+            ReadOnlySpan<char> inner = current.AsSpan(openIdx + 1, closeIdx - openIdx - 1);
+            int choiceCount = 1;
+            for (int i = 0; i < inner.Length; i++)
+            {
+                if (inner[i] == '|')
+                {
+                    choiceCount++;
+                }
+            }
+
+            int targetChoice = Random.Shared.Next(choiceCount);
+            int currentChoice = 0;
+            int segStart = 0;
+            ReadOnlySpan<char> picked = inner;
+
+            for (int i = 0; i <= inner.Length; i++)
+            {
+                if (i == inner.Length || inner[i] == '|')
+                {
+                    if (currentChoice == targetChoice)
+                    {
+                        picked = inner.Slice(segStart, i - segStart);
+                        break;
+                    }
+
+                    currentChoice++;
+                    segStart = i + 1;
+                }
+            }
 
             current = string.Concat(
                 current.AsSpan(0, openIdx),
-                picked.AsSpan(),
+                picked,
                 current.AsSpan(closeIdx + 1));
         }
 
