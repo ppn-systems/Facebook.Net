@@ -87,4 +87,10 @@ public sealed partial class LocalizationService : INotifyPropertyChanged
         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
         this.LanguageChanged?.Invoke(this, language);
     }
+
+    /// <summary>
+    /// Returns all registered localization keys for the specified language catalog.
+    /// </summary>
+    public static Dictionary<string, string>.KeyCollection GetKeys(AppLanguage language) =>
+        language == AppLanguage.EnUs ? s_enUs.Keys : s_viVn.Keys;
 }

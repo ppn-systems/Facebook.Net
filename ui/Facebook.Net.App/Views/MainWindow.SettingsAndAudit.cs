@@ -337,6 +337,7 @@ public sealed partial class MainWindow
             Text = $"✔ {drawerVm.SuccessCount}   ⚠ {drawerVm.WarningCount}   ✖ {drawerVm.ErrorCount}",
             FontSize = 12,
             FontWeight = FontWeight.SemiBold,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace"),
             VerticalAlignment = VerticalAlignment.Center
         };
         Grid.SetColumn(countersText, 2);
@@ -534,6 +535,14 @@ public sealed partial class MainWindow
         Grid.SetRow(filterRow, 0);
         drawerBody.Children.Add(filterRow);
 
+        Border emptyLogsBanner = CloudflareControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.AuditLogs"],
+            VectorIcons.AuditLog,
+            out TextBlock emptyLogsMsg);
+        emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
+        drawerVm.FilteredLogs.CollectionChanged += (_, _) => emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
+
         ListBox logList = new()
         {
             ItemsSource = drawerVm.FilteredLogs,
@@ -551,12 +560,14 @@ public sealed partial class MainWindow
                     Margin = new Thickness(2, 1)
                 };
 
-                logRow.Children.Add(CloudflareControls.CreateThemedLabel(
+                TextBlock tsTb = CloudflareControls.CreateThemedLabel(
                     this._theme,
                     rec.Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
                     11,
                     FontWeight.Normal,
-                    isSecondary: true));
+                    isSecondary: true);
+                tsTb.FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace");
+                logRow.Children.Add(tsTb);
 
                 TextBlock accTb = CloudflareControls.CreateThemedLabel(this._theme, rec.AccountDisplayName, 11, FontWeight.SemiBold);
                 Grid.SetColumn(accTb, 1);
@@ -586,8 +597,12 @@ public sealed partial class MainWindow
                 return logRow;
             })
         };
-        Grid.SetRow(logList, 1);
-        drawerBody.Children.Add(logList);
+
+        Grid logContentHost = new();
+        logContentHost.Children.Add(logList);
+        logContentHost.Children.Add(emptyLogsBanner);
+        Grid.SetRow(logContentHost, 1);
+        drawerBody.Children.Add(logContentHost);
 
         container.Children.Add(barGrid);
         container.Children.Add(drawerBody);
@@ -615,6 +630,7 @@ public sealed partial class MainWindow
             CloudflareControls.SetPillText(livePill, this._i18n["Audit.TaskbarTitle"]);
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
             searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
+            emptyLogsMsg.Text = this._i18n["Empty.AuditLogs"];
             CloudflareControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
             CloudflareControls.SetButtonText(exportBtn, this._i18n["Audit.BtnExport"]);
             CloudflareControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
