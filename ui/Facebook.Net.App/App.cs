@@ -2,14 +2,16 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
+using Facebook.Net.App.Services;
+using Facebook.Net.App.ViewModels;
+using Facebook.Net.App.Views;
 
 namespace Facebook.Net.App;
 
 /// <summary>
-/// Root Avalonia application class.
+/// Root Avalonia application class wiring OS-specific services and the main desktop window.
 /// </summary>
 public sealed class App : Application
 {
@@ -22,12 +24,12 @@ public sealed class App : Application
     {
         if (this.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new Window
-            {
-                Title = "Facebook.Net Desktop",
-                Width = 1200,
-                Height = 800
-            };
+            AppServiceBootstrapper services = new();
+            MainWindowViewModel mainViewModel = new(services);
+            desktop.MainWindow = new MainWindow(mainViewModel);
+            desktop.Exit += (_, _) => services.Dispose();
+
+            _ = mainViewModel.InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
