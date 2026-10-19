@@ -75,33 +75,83 @@ public static class PayloadBuilder
                 }
             }
 
-            int targetChoice = Random.Shared.Next(choiceCount);
-            int currentChoice = 0;
-            int segStart = 0;
-            ReadOnlySpan<char> picked = inner;
-
-            for (int i = 0; i <= inner.Length; i++)
+            string replacement;
+            if (choiceCount == 1 && TryExpandDynamicMacro(inner, out string? macroValue))
             {
-                if (i == inner.Length || inner[i] == '|')
-                {
-                    if (currentChoice == targetChoice)
-                    {
-                        picked = inner[segStart..i];
-                        break;
-                    }
+                replacement = macroValue;
+            }
+            else
+            {
+                int targetChoice = Random.Shared.Next(choiceCount);
+                int currentChoice = 0;
+                int segStart = 0;
+                ReadOnlySpan<char> picked = inner;
 
-                    currentChoice++;
-                    segStart = i + 1;
+                for (int i = 0; i <= inner.Length; i++)
+                {
+                    if (i == inner.Length || inner[i] == '|')
+                    {
+                        if (currentChoice == targetChoice)
+                        {
+                            picked = inner[segStart..i];
+                            break;
+                        }
+
+                        currentChoice++;
+                        segStart = i + 1;
+                    }
                 }
+
+                replacement = picked.ToString();
             }
 
             current = string.Concat(
                 current.AsSpan(0, openIdx),
-                picked,
+                replacement.AsSpan(),
                 current.AsSpan(closeIdx + 1));
         }
 
         return current;
+    }
+
+    private static bool TryExpandDynamicMacro(ReadOnlySpan<char> token, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? expanded)
+    {
+        ReadOnlySpan<char> trimmed = token.Trim();
+        if (trimmed.Equals("date", StringComparison.OrdinalIgnoreCase))
+        {
+            expanded = DateTimeOffset.Now.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (trimmed.Equals("time", StringComparison.OrdinalIgnoreCase))
+        {
+            expanded = DateTimeOffset.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (trimmed.Equals("datetime", StringComparison.OrdinalIgnoreCase))
+        {
+            expanded = DateTimeOffset.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (trimmed.Equals("day", StringComparison.OrdinalIgnoreCase))
+        {
+            expanded = DateTimeOffset.Now.ToString("dddd", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        if (trimmed.Equals("random_id", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("ref", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            int code = Random.Shared.Next(1000, 9999);
+            expanded = string.Create(CultureInfo.InvariantCulture, $"#{code}");
+            return true;
+        }
+
+        expanded = null;
+        return false;
     }
 
     /// <summary>

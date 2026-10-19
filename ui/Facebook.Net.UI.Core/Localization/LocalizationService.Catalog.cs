@@ -221,6 +221,9 @@ public sealed partial class LocalizationService
             ["Accounts.NoProxyBadge"] = "Mạng trực tiếp",
             ["Groups.BtnAutoJoinDiscovered"] = "Tham gia Hàng loạt Nhóm tìm được",
             ["Audit.BtnExport"] = "Xuất báo cáo (.csv)",
+            ["Leads.BtnExportLeads"] = "Xuất DS Khách hàng (.csv / .json)",
+            ["Leads.IntentHigh"] = "Nhu cầu cao",
+            ["Leads.IntentWarm"] = "Quan tâm",
             ["Log.TaskStoppedByUser"] = "Đã dừng tác vụ ngay lập tức theo yêu cầu của người dùng.",
             ["Log.SelectAccountFirst"] = "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.",
             ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại."
@@ -362,6 +365,9 @@ public sealed partial class LocalizationService
             ["Accounts.NoProxyBadge"] = "Direct connection",
             ["Groups.BtnAutoJoinDiscovered"] = "Batch Auto-Join Discovered Groups",
             ["Audit.BtnExport"] = "Export Report (.csv)",
+            ["Leads.BtnExportLeads"] = "Export Buyer Leads (.csv / .json)",
+            ["Leads.IntentHigh"] = "High Intent",
+            ["Leads.IntentWarm"] = "Warm Inquiry",
             ["Log.TaskStoppedByUser"] = "Task stopped immediately as requested by user.",
             ["Log.SelectAccountFirst"] = "Please select or add an account before running this task.",
             ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again."

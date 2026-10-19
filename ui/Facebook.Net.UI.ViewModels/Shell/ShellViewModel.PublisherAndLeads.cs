@@ -444,16 +444,21 @@ public sealed partial class ShellViewModel
                 ? Array.Empty<string>()
                 : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            this.ScrapedPosts.Clear();
+            List<PostSummary> matched = new(feed.Items.Count);
             for (int i = 0; i < feed.Items.Count; i++)
             {
                 PostSummary post = feed.Items[i];
                 if (MatchesBuyerKeywords(post.MessageText, keywords))
                 {
-                    this.ScrapedPosts.Add(post);
+                    matched.Add(post);
                 }
             }
 
+            matched.Sort((a, b) =>
+                CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
+                    .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+
+            this.ScrapedPosts.ReplaceAll(matched);
             this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
 
             _ = await this.LogAuditAsync(
@@ -693,6 +698,140 @@ public sealed partial class ShellViewModel
                 $"Posted Sales Comment on '{targetLabel}' successfully!"),
             post.PermalinkUrl).ConfigureAwait(true);
     }
+
+    /// <summary>
+    /// Computes a buyer-intent score (0..100) for a scraped group post based on matched keywords and question/inquiry signals.
+    /// </summary>
+    public static int CalculateBuyerIntentScore(string? messageText, string? rawKeywords)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return 25;
+        }
+
+        int score = 40;
+        string[] keywords = string.IsNullOrWhiteSpace(rawKeywords)
+            ? Array.Empty<string>()
+            : rawKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        int matchedCount = 0;
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            if (messageText.Contains(keywords[i], StringComparison.OrdinalIgnoreCase))
+            {
+                matchedCount++;
+            }
+        }
+
+        score += Math.Min(45, matchedCount * 20);
+        if (messageText.Contains('?', StringComparison.Ordinal) ||
+            messageText.Contains("cần", StringComparison.OrdinalIgnoreCase) ||
+            messageText.Contains("tìm", StringComparison.OrdinalIgnoreCase) ||
+            messageText.Contains("mua", StringComparison.OrdinalIgnoreCase) ||
+            messageText.Contains("tư vấn", StringComparison.OrdinalIgnoreCase) ||
+            messageText.Contains("looking for", StringComparison.OrdinalIgnoreCase) ||
+            messageText.Contains("price", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 15;
+        }
+
+        return Math.Clamp(score, 0, 100);
+    }
+
+    /// <summary>
+    /// Formats a localized buyer-intent badge label for a scraped post card.
+    /// </summary>
+    public string FormatBuyerIntentBadge(PostSummary post)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+        int score = CalculateBuyerIntentScore(post.MessageText, this.BuyerIntentKeywords);
+        string prefix = score >= 75
+            ? this._context.Localization["Leads.IntentHigh"]
+            : this._context.Localization["Leads.IntentWarm"];
+        return $"{prefix} ({score}%)";
+    }
+
+    /// <summary>
+    /// Exports all currently discovered <see cref="ShellViewModel.ScrapedPosts"/> to a UTF-8 CSV or JSON file.
+    /// </summary>
+    public async Task ExportScrapedLeadsAsync(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        if (filePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            System.Text.StringBuilder json = new(4096);
+            _ = json.AppendLine("[");
+            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            {
+                PostSummary p = this.ScrapedPosts[i];
+                int score = CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
+                string comma = i + 1 < this.ScrapedPosts.Count ? "," : string.Empty;
+                _ = json.Append("  {\"author\":\"")
+                    .Append(EscapeLeadJson(p.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"]))
+                    .Append("\",\"intentScore\":")
+                    .Append(score.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(",\"reactions\":")
+                    .Append(p.ReactionCount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(",\"comments\":")
+                    .Append(p.CommentCount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(",\"permalink\":\"")
+                    .Append(EscapeLeadJson(p.PermalinkUrl))
+                    .Append("\",\"message\":\"")
+                    .Append(EscapeLeadJson(p.MessageText))
+                    .Append("\"}")
+                    .AppendLine(comma);
+            }
+
+            _ = json.AppendLine("]");
+            await File.WriteAllTextAsync(filePath, json.ToString(), System.Text.Encoding.UTF8).ConfigureAwait(true);
+        }
+        else
+        {
+            System.Text.StringBuilder csv = new(4096);
+            _ = csv.AppendLine("Author,IntentScore,Reactions,Comments,Permalink,Message");
+            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            {
+                PostSummary p = this.ScrapedPosts[i];
+                int score = CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
+                _ = csv.Append(EscapeLeadCsv(p.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"]))
+                    .Append(',')
+                    .Append(score.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(',')
+                    .Append(p.ReactionCount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(',')
+                    .Append(p.CommentCount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(',')
+                    .Append(EscapeLeadCsv(p.PermalinkUrl))
+                    .Append(',')
+                    .AppendLine(EscapeLeadCsv(p.MessageText));
+            }
+
+            await File.WriteAllTextAsync(filePath, csv.ToString(), System.Text.Encoding.UTF8).ConfigureAwait(true);
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Success,
+            this._context.Localization["Audit.Cat.Scrape"],
+            this.Msg(
+                $"Đã xuất {this.ScrapedPosts.Count} khách hàng tiềm năng ra tệp '{Path.GetFileName(filePath)}' thành công!",
+                $"Exported {this.ScrapedPosts.Count} buyer leads to '{Path.GetFileName(filePath)}' successfully!")).ConfigureAwait(true);
+    }
+
+    private static string EscapeLeadCsv(string? value) =>
+        string.IsNullOrEmpty(value)
+            ? "\"\""
+            : $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal)}\"";
+
+    private static string EscapeLeadJson(string? value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal)
+                .Replace("\r", " ", StringComparison.Ordinal)
+                .Replace("\n", " ", StringComparison.Ordinal);
 
     private static bool MatchesBuyerKeywords(string? messageText, string[] keywords)
     {

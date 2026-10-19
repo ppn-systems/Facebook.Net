@@ -309,11 +309,46 @@ public sealed partial class MainWindow
             this._vm.BuyerIntentKeywords);
         buyerKwBox.TextChanged += (_, _) => this._vm.BuyerIntentKeywords = buyerKwBox.Text ?? string.Empty;
 
+        Grid scanRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
+
         Button scanBtn = CloudflareControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Leads.BtnScanGroupPosts"],
             this._vm.ScanGroupLeadsCommand,
             VectorIcons.Search);
+
+        Button exportLeadsBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Leads.BtnExportLeads"]);
+        exportLeadsBtn.Click += async (_, _) =>
+        {
+            if (this.StorageProvider is null)
+            {
+                return;
+            }
+
+            IStorageFile? file = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = this._i18n["Leads.BtnExportLeads"],
+                SuggestedFileName = $"facebook-net-leads-{DateTimeOffset.Now:yyyyMMdd-HHmm}.csv",
+                DefaultExtension = "csv"
+            }).ConfigureAwait(true);
+
+            string? path = file?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await this._vm.ExportScrapedLeadsAsync(path).ConfigureAwait(true);
+            }
+        };
+
+        Grid.SetColumn(scanBtn, 0);
+        Grid.SetColumn(exportLeadsBtn, 1);
+        scanRow.Children.Add(scanBtn);
+        scanRow.Children.Add(exportLeadsBtn);
 
         ListBox postsList = new()
         {
@@ -337,6 +372,16 @@ public sealed partial class MainWindow
                     13,
                     FontWeight.SemiBold);
                 authorRow.Children.Add(authorTb);
+
+                int intentScore = Facebook.Net.UI.ViewModels.Shell.ShellViewModel.CalculateBuyerIntentScore(
+                    post.MessageText,
+                    this._vm.BuyerIntentKeywords);
+                Border intentPill = CloudflareControls.CreateStatusPill(
+                    this._theme,
+                    this._vm.FormatBuyerIntentBadge(post),
+                    intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning);
+                authorRow.Children.Add(intentPill);
+
                 authorRow.Children.Add(CloudflareControls.CreateStatusPill(
                     this._theme,
                     $"👍 {post.ReactionCount}  💬 {post.CommentCount}",
@@ -361,6 +406,8 @@ public sealed partial class MainWindow
                     {
                         snippet.Text = this._i18n["Leads.MediaOnlyPost"];
                     }
+
+                    CloudflareControls.SetPillText(intentPill, this._vm.FormatBuyerIntentBadge(post));
                 };
 
                 card.Children.Add(authorRow);
@@ -402,7 +449,7 @@ public sealed partial class MainWindow
         };
 
         leftStack.Children.Add(buyerKwBox);
-        leftStack.Children.Add(scanBtn);
+        leftStack.Children.Add(scanRow);
         leftStack.Children.Add(postsList);
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
@@ -508,6 +555,7 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Leads.Desc"];
             buyerKwBox.PlaceholderText = this._i18n["Leads.BuyerKeywordPlaceholder"];
             CloudflareControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
+            CloudflareControls.SetButtonText(exportLeadsBtn, this._i18n["Leads.BtnExportLeads"]);
             UpdateSelectedPostBanner();
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
