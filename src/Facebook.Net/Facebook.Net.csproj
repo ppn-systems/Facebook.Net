@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net - High-Performance C# SDK for Facebook</Title>
+    <Description>High-performance, lightweight C# SDK for Facebook built on .NET 10 with Native AOT compatibility.</Description>
+    <PackageTags>facebook;facebook-api;facebook-sdk;net10;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>
