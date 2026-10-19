@@ -30,12 +30,120 @@ public sealed record ImportedSessionBundle(
 public static class UniversalSessionImporter
 {
     /// <summary>
+    /// Parses a user-friendly proxy specification string (<c>host:port</c>, <c>host:port:user:pass</c>,
+    /// <c>http://host:port</c>, or <c>socks5://user:pass@host:port</c>) into a <see cref="Facebook.Net.Contracts.Models.ProxyConfig"/>.
+    /// </summary>
+    public static bool TryParseProxySpec(string? rawProxy, string proxyId, out Facebook.Net.Contracts.Models.ProxyConfig? proxy)
+    {
+        proxy = null;
+        if (string.IsNullOrWhiteSpace(rawProxy))
+        {
+            return false;
+        }
+
+        string trimmed = rawProxy.Trim();
+        Facebook.Net.Contracts.Primitives.ProxyProtocol protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Http;
+
+        if (trimmed.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase))
+        {
+            protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5;
+            trimmed = trimmed["socks5://".Length..];
+        }
+        else if (trimmed.StartsWith("socks://", StringComparison.OrdinalIgnoreCase))
+        {
+            protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5;
+            trimmed = trimmed["socks://".Length..];
+        }
+        else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["http://".Length..];
+        }
+        else if (trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["https://".Length..];
+        }
+
+        // Format A: user:pass@host:port
+        int atIdx = trimmed.LastIndexOf('@');
+        if (atIdx > 0)
+        {
+            string credsPart = trimmed[..atIdx];
+            string hostPortPart = trimmed[(atIdx + 1)..];
+            string[] hp = hostPortPart.Split(':', StringSplitOptions.TrimEntries);
+            if (hp.Length == 2 &&
+                !string.IsNullOrWhiteSpace(hp[0]) &&
+                int.TryParse(hp[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int atPort) &&
+                atPort > 0 &&
+                atPort <= 65535)
+            {
+                string[] creds = credsPart.Split(':', 2);
+                proxy = new Facebook.Net.Contracts.Models.ProxyConfig(
+                    Id: proxyId,
+                    Host: hp[0],
+                    Port: atPort,
+                    Protocol: protocol,
+                    Username: !string.IsNullOrWhiteSpace(creds[0]) ? creds[0] : null,
+                    Password: creds.Length > 1 && !string.IsNullOrWhiteSpace(creds[1]) ? creds[1] : null);
+                return true;
+            }
+        }
+
+        // Format B: host:port or host:port:user:pass
+        string[] parts = trimmed.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length >= 2 &&
+            !string.IsNullOrWhiteSpace(parts[0]) &&
+            int.TryParse(parts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int port) &&
+            port > 0 &&
+            port <= 65535)
+        {
+            string? username = parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]) ? parts[2] : null;
+            string? password = parts.Length >= 4 && !string.IsNullOrWhiteSpace(parts[3]) ? parts[3] : null;
+
+            proxy = new Facebook.Net.Contracts.Models.ProxyConfig(
+                Id: proxyId,
+                Host: parts[0],
+                Port: port,
+                Protocol: protocol,
+                Username: username,
+                Password: password);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Formats a <see cref="Facebook.Net.Contracts.Models.ProxyConfig"/> back into a clean string for editing in UI.
+    /// </summary>
+    public static string FormatProxySpec(Facebook.Net.Contracts.Models.ProxyConfig? proxy)
+    {
+        if (proxy is null)
+        {
+            return string.Empty;
+        }
+
+        string scheme = proxy.Protocol == Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5 ? "socks5://" : "http://";
+        if (!string.IsNullOrWhiteSpace(proxy.Username))
+        {
+            return $"{scheme}{proxy.Host}:{proxy.Port}:{proxy.Username}:{proxy.Password}";
+        }
+
+        return $"{scheme}{proxy.Host}:{proxy.Port}";
+    }
+
+    /// <summary>
     /// Parses any supported cookie/session text or creates an interactive browser login profile if empty.
     /// </summary>
     /// <param name="rawInput">Raw JSON, pipe-delimited string, or cookie header pasted by the user.</param>
     /// <param name="friendlyName">Optional friendly display name provided by the user.</param>
+    /// <param name="defaultBrowserLoginName">Optional localized fallback name when creating an interactive browser login profile.</param>
+    /// <param name="defaultImportedPrefix">Optional localized fallback prefix when importing a cookie string.</param>
     /// <returns>A normalized <see cref="ImportedSessionBundle"/>.</returns>
-    public static ImportedSessionBundle Parse(string? rawInput, string? friendlyName = null)
+    public static ImportedSessionBundle Parse(
+        string? rawInput,
+        string? friendlyName = null,
+        string? defaultBrowserLoginName = null,
+        string? defaultImportedPrefix = null)
     {
         string trimmed = rawInput?.Trim() ?? string.Empty;
 
@@ -43,7 +151,7 @@ public static class UniversalSessionImporter
         {
             string pendingId = $"login_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
             string label = string.IsNullOrWhiteSpace(friendlyName)
-                ? "Tài khoản Đăng nhập Trình duyệt"
+                ? (defaultBrowserLoginName ?? "Facebook Login Profile")
                 : friendlyName.Trim();
 
             return new ImportedSessionBundle(pendingId, label, string.Empty, null, null);
@@ -61,16 +169,17 @@ public static class UniversalSessionImporter
         // Case 2: Pipe-delimited format (UID|Pass|2FA|Cookie... or Cookie|UserAgent)
         if (trimmed.Contains('|', StringComparison.Ordinal))
         {
-            return ParsePipeDelimited(trimmed, friendlyName);
+            return ParsePipeDelimited(trimmed, friendlyName, defaultImportedPrefix);
         }
 
         // Case 3: Raw semicolon-delimited cookie header (c_user=...; xs=...)
         string extractedUid = ExtractCookieValue(trimmed.AsSpan(), "c_user".AsSpan())
             ?? $"acc_{Math.Abs(trimmed.GetHashCode(StringComparison.Ordinal))}";
 
+        string prefix = defaultImportedPrefix ?? "FB Account";
         string display = !string.IsNullOrWhiteSpace(friendlyName)
             ? friendlyName.Trim()
-            : $"Tài khoản FB ({MaskIdentifier(extractedUid)})";
+            : $"{prefix} ({MaskIdentifier(extractedUid)})";
 
         return new ImportedSessionBundle(
             AccountUid: extractedUid,
@@ -134,7 +243,7 @@ public static class UniversalSessionImporter
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
-                        : $"Phiên Đã Lưu ({MaskIdentifier(resolvedUid)})";
+                        : $"Facebook ({MaskIdentifier(resolvedUid)})";
 
                     result = new ImportedSessionBundle(resolvedUid, label, explicitCookieHeader, userAgent, null);
                     return true;
@@ -202,7 +311,7 @@ public static class UniversalSessionImporter
         return sb.ToString();
     }
 
-    private static ImportedSessionBundle ParsePipeDelimited(string input, string? friendlyName)
+    private static ImportedSessionBundle ParsePipeDelimited(string input, string? friendlyName, string? defaultImportedPrefix)
     {
         string[] parts = input.Split('|', StringSplitOptions.TrimEntries);
         string? cookieHeader = null;
@@ -233,9 +342,10 @@ public static class UniversalSessionImporter
         }
 
         string resolvedUid = uid ?? $"acc_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        string prefix = defaultImportedPrefix ?? "FB Account";
         string label = !string.IsNullOrWhiteSpace(friendlyName)
             ? friendlyName.Trim()
-            : $"Tài khoản FB ({MaskIdentifier(resolvedUid)})";
+            : $"{prefix} ({MaskIdentifier(resolvedUid)})";
 
         return new ImportedSessionBundle(
             AccountUid: resolvedUid,

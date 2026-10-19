@@ -32,6 +32,36 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string SessionImportRawInput { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the optional dedicated proxy string (<c>host:port</c> or <c>socks5://host:port:user:pass</c>) for the account.</summary>
+    [ObservableProperty]
+    public partial string AccountProxyInput { get; set; } = string.Empty;
+
+    partial void OnSelectedAccountChanged(AccountProfile? value)
+    {
+        if (value is null || string.IsNullOrWhiteSpace(value.ProxyId))
+        {
+            this.AccountProxyInput = string.Empty;
+            return;
+        }
+
+        _ = this.LoadSelectedAccountProxyTextAsync(value.ProxyId);
+    }
+
+    private async Task LoadSelectedAccountProxyTextAsync(string proxyId)
+    {
+        IReadOnlyList<ProxyConfig> proxies = await this._context.AccountStore.GetAllProxiesAsync().ConfigureAwait(true);
+        for (int i = 0; i < proxies.Count; i++)
+        {
+            if (string.Equals(proxies[i].Id, proxyId, StringComparison.Ordinal))
+            {
+                this.AccountProxyInput = UniversalSessionImporter.FormatProxySpec(proxies[i]);
+                return;
+            }
+        }
+
+        this.AccountProxyInput = string.Empty;
+    }
+
     private async Task ReloadAllStoredDataAsync()
     {
         IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
@@ -48,11 +78,21 @@ public sealed partial class ShellViewModel
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
         this.TargetGroups.Clear();
-        this.JoinedGroups.Clear();
         for (int i = 0; i < storedGroups.Count; i++)
         {
             this.TargetGroups.Add(storedGroups[i]);
-            this.JoinedGroups.Add(new GroupSummary(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member));
+        }
+
+        // Only seed _allCatalogGroups and JoinedGroups from storedGroups if no live catalog has been loaded yet
+        if (this._allCatalogGroups.Count == 0)
+        {
+            this.JoinedGroups.Clear();
+            for (int i = 0; i < storedGroups.Count; i++)
+            {
+                GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member);
+                this._allCatalogGroups.Add(summary);
+                this.JoinedGroups.Add(summary);
+            }
         }
 
         if (this.SelectedGroup is null && this.JoinedGroups.Count > 0)
@@ -60,6 +100,11 @@ public sealed partial class ShellViewModel
             this.SelectedGroup = this.JoinedGroups[0];
         }
 
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+    }
+
+    private async Task ReloadTemplatesOnlyAsync()
+    {
         IReadOnlyList<CampaignTemplate> storedTemplates = await this._context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
         this.SavedTemplates.Clear();
         for (int i = 0; i < storedTemplates.Count; i++)
@@ -75,7 +120,9 @@ public sealed partial class ShellViewModel
     {
         ImportedSessionBundle bundle = UniversalSessionImporter.Parse(
             this.SessionImportRawInput,
-            this.AccountFriendlyNameInput);
+            this.AccountFriendlyNameInput,
+            this._context.Localization["Accounts.DefaultBrowserLoginName"],
+            this._context.Localization["Accounts.DefaultImportedName"]);
 
         string profileDir = Path.Combine(this._context.ProfilesRootDirectory, bundle.AccountUid);
         _ = Directory.CreateDirectory(profileDir);
@@ -86,13 +133,25 @@ public sealed partial class ShellViewModel
                 ? ProtocolConstants.Protocol.DefaultMacOsUserAgent
                 : ProtocolConstants.Protocol.DefaultWindowsUserAgent);
 
+        string? proxyId = null;
+        if (!string.IsNullOrWhiteSpace(this.AccountProxyInput))
+        {
+            string candidateId = $"proxy_{bundle.AccountUid}";
+            if (UniversalSessionImporter.TryParseProxySpec(this.AccountProxyInput, candidateId, out ProxyConfig? parsedProxy) &&
+                parsedProxy is not null)
+            {
+                await this._context.AccountStore.UpsertProxyAsync(parsedProxy).ConfigureAwait(true);
+                proxyId = parsedProxy.Id;
+            }
+        }
+
         AccountProfile profile = new(
             Uid: bundle.AccountUid,
             DisplayName: bundle.SuggestedDisplayName,
             CookieHeader: bundle.CookieHeader,
             UserAgent: resolvedUa,
             ProfileDirectory: profileDir,
-            ProxyId: null,
+            ProxyId: proxyId,
             TwoFactorSecret: bundle.TwoFactorSecret,
             Status: string.IsNullOrWhiteSpace(bundle.CookieHeader) ? AccountStatus.Idle : AccountStatus.Active,
             LastActiveAt: DateTimeOffset.UtcNow);
@@ -111,6 +170,186 @@ public sealed partial class ShellViewModel
             this.Msg(
                 $"Đã lưu phiên đăng nhập cho tài khoản '{profile.DisplayName}' thành công.",
                 $"Saved login session for account '{profile.DisplayName}' successfully.")).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Assigns, updates, or clears the dedicated HTTP/SOCKS5 proxy for the currently selected account.
+    /// </summary>
+    public async Task SaveAccountProxyAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Account"],
+                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile current = this.SelectedAccount;
+        string rawProxy = this.AccountProxyInput.Trim();
+
+        if (string.IsNullOrWhiteSpace(rawProxy))
+        {
+            if (!string.IsNullOrWhiteSpace(current.ProxyId))
+            {
+                _ = await this._context.AccountStore.DeleteProxyAsync(current.ProxyId).ConfigureAwait(true);
+            }
+
+            AccountProfile cleared = current with { ProxyId = null };
+            await this._context.AccountStore.UpsertAccountAsync(cleared).ConfigureAwait(true);
+            await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+            this.SelectedAccount = cleared;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Info,
+                cleared.DisplayName,
+                this.Msg(
+                    $"Đã gỡ Proxy và chuyển tài khoản '{cleared.DisplayName}' về kết nối mạng trực tiếp.",
+                    $"Removed proxy and switched account '{cleared.DisplayName}' to direct connection.")).ConfigureAwait(true);
+            return;
+        }
+
+        string proxyId = $"proxy_{current.Uid}";
+        if (!UniversalSessionImporter.TryParseProxySpec(rawProxy, proxyId, out ProxyConfig? parsed) || parsed is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                current.DisplayName,
+                this.Msg(
+                    "Định dạng Proxy chưa hợp lệ (VD đúng: 103.1.2.3:8080 hoặc socks5://103.1.2.3:1080:user:pass).",
+                    "Invalid proxy format (valid examples: 103.1.2.3:8080 or socks5://103.1.2.3:1080:user:pass).")).ConfigureAwait(true);
+            return;
+        }
+
+        await this._context.AccountStore.UpsertProxyAsync(parsed).ConfigureAwait(true);
+        AccountProfile updated = current with { ProxyId = parsed.Id };
+        await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+        await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+        this.SelectedAccount = updated;
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Account,
+            AuditSeverity.Success,
+            updated.DisplayName,
+            this.Msg(
+                $"Đã lưu cấu hình Proxy ({parsed.Protocol.ToString().ToUpperInvariant()} {parsed.Host}:{parsed.Port}) cho '{updated.DisplayName}'.",
+                $"Saved proxy ({parsed.Protocol.ToString().ToUpperInvariant()} {parsed.Host}:{parsed.Port}) for '{updated.DisplayName}'.")).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Performs a 1-click live health check on the selected account's session cookies and updates its <see cref="AccountStatus"/>.
+    /// </summary>
+    public async Task CheckAccountHealthAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Account"],
+                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile current = this.SelectedAccount;
+
+        // Fast offline cookie check first
+        bool hasCUser = current.CookieHeader.Contains("c_user=", StringComparison.Ordinal);
+        bool hasXs = current.CookieHeader.Contains("xs=", StringComparison.Ordinal);
+
+        if (!hasCUser || !hasXs)
+        {
+            AccountProfile expired = current with { Status = AccountStatus.CookieExpired };
+            await this._context.AccountStore.UpsertAccountAsync(expired).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+            this.SelectedAccount = expired;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                expired.DisplayName,
+                this.Msg(
+                    $"Tài khoản '{expired.DisplayName}' chưa có phiên Cookie hợp lệ — vui lòng bấm 'Mở Trình duyệt Đăng nhập & Đồng bộ'.",
+                    $"Account '{expired.DisplayName}' does not have valid session cookies — please click 'Open Browser to Log In & Sync'.")).ConfigureAwait(true);
+            return;
+        }
+
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+
+            bool isHealthy = !string.IsNullOrWhiteSpace(material.FbDtsg) && !string.IsNullOrWhiteSpace(material.Uid);
+            AccountStatus resolvedStatus = isHealthy ? AccountStatus.Active : AccountStatus.CookieExpired;
+
+            AccountProfile checkedProfile = current with
+            {
+                CookieHeader = !string.IsNullOrWhiteSpace(material.CookieHeader) ? material.CookieHeader : current.CookieHeader,
+                Status = resolvedStatus,
+                LastActiveAt = DateTimeOffset.UtcNow
+            };
+
+            await this._context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+            this.SelectedAccount = checkedProfile;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                isHealthy ? AuditSeverity.Success : AuditSeverity.Warning,
+                checkedProfile.DisplayName,
+                isHealthy
+                    ? this.Msg(
+                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đang HOẠT ĐỘNG TỐT (Live).",
+                        $"Session for '{checkedProfile.DisplayName}' is HEALTHY and ACTIVE (Live).")
+                    : this.Msg(
+                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đã hết hạn, cần đăng nhập lại.",
+                        $"Session for '{checkedProfile.DisplayName}' has expired and needs re-login.")).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                current.DisplayName,
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            string msg = ex.Message;
+            AccountStatus faultStatus = msg.Contains("checkpoint", StringComparison.OrdinalIgnoreCase)
+                ? AccountStatus.Checkpoint
+                : AccountStatus.CookieExpired;
+
+            AccountProfile updated = current with { Status = faultStatus };
+            await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+            this.SelectedAccount = updated;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                updated.DisplayName,
+                this.Msg(
+                    $"Kiểm tra trạng thái '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} ({this.SanitizeErrorMessage(ex)}).",
+                    $"Health check for '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
     }
 
     private async Task OpenBrowserAndSyncAsync()
@@ -150,7 +389,12 @@ public sealed partial class ShellViewModel
             // If the account was created as a placeholder before login, update its internal session identifier cleanly
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
             string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
-            string displayName = account.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal)
+            bool isDefaultPlaceholder =
+                account.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
+                account.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
+                account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+
+            string displayName = isDefaultPlaceholder
                 ? $"Facebook ({suffix})"
                 : account.DisplayName;
 
@@ -217,8 +461,16 @@ public sealed partial class ShellViewModel
 
         string removedName = this.SelectedAccount.DisplayName;
         string removedUid = this.SelectedAccount.Uid;
+        string? removedProxyId = this.SelectedAccount.ProxyId;
 
+        if (!string.IsNullOrWhiteSpace(removedProxyId))
+        {
+            _ = await this._context.AccountStore.DeleteProxyAsync(removedProxyId).ConfigureAwait(true);
+        }
+
+        await this._context.SessionManager.CloseSessionAsync(removedUid).ConfigureAwait(true);
         _ = await this._context.AccountStore.DeleteAccountAsync(removedUid).ConfigureAwait(true);
+        this.SelectedAccount = null;
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(

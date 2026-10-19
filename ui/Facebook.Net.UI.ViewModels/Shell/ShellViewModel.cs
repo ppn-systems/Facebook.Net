@@ -80,6 +80,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // Account commands
         this.QuickImportSessionCommand = new AsyncRelayCommand(this.QuickImportSessionAsync);
         this.OpenBrowserAndSyncCommand = new AsyncRelayCommand(this.OpenBrowserAndSyncAsync);
+        this.CheckAccountHealthCommand = new AsyncRelayCommand(this.CheckAccountHealthAsync);
+        this.SaveAccountProxyCommand = new AsyncRelayCommand(this.SaveAccountProxyAsync);
         this.DeleteSelectedAccountCommand = new AsyncRelayCommand(this.DeleteSelectedAccountAsync);
 
         // Group commands
@@ -88,6 +90,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.AddSelectedGroupToTargetsCommand = new AsyncRelayCommand(this.AddSelectedGroupToTargetsAsync);
         this.RemoveSelectedTargetGroupCommand = new AsyncRelayCommand(this.RemoveSelectedTargetGroupAsync);
         this.JoinSelectedGroupCommand = new AsyncRelayCommand(this.JoinSelectedGroupAsync);
+        this.AutoJoinDiscoveredGroupsCommand = new AsyncRelayCommand(this.AutoJoinDiscoveredGroupsAsync);
         this.EnableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(true));
         this.DisableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(false));
 
@@ -104,6 +107,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         // Settings commands
         this.SaveSettingsCommand = new AsyncRelayCommand(this.SaveSettingsAsync);
+
+        this.PostSpintaxText = this._context.Localization["Publisher.DefaultPostSpintax"];
+        this.BumpCommentSpintaxText = this._context.Localization["Publisher.DefaultBumpSpintax"];
+        this.SalesCommentSpintaxText = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
+        this._context.Localization.LanguageChanged += (_, _) => this.SyncLocalizedDefaultPrompts();
     }
 
     /// <summary>Gets the shared UI service context.</summary>
@@ -165,6 +173,12 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the command to open the browser for interactive login and automatic group sync.</summary>
     public IAsyncRelayCommand OpenBrowserAndSyncCommand { get; }
 
+    /// <summary>Gets the command to verify live session health of the selected account.</summary>
+    public IAsyncRelayCommand CheckAccountHealthCommand { get; }
+
+    /// <summary>Gets the command to assign or update a dedicated HTTP/SOCKS5 proxy on the selected account.</summary>
+    public IAsyncRelayCommand SaveAccountProxyCommand { get; }
+
     /// <summary>Gets the command to delete the selected account.</summary>
     public IAsyncRelayCommand DeleteSelectedAccountCommand { get; }
 
@@ -182,6 +196,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to request joining the selected group.</summary>
     public IAsyncRelayCommand JoinSelectedGroupCommand { get; }
+
+    /// <summary>Gets the command to batch auto-join discovered groups with anti-checkpoint delays.</summary>
+    public IAsyncRelayCommand AutoJoinDiscoveredGroupsCommand { get; }
 
     /// <summary>Gets the command to enable all target groups for campaigns.</summary>
     public IAsyncRelayCommand EnableAllTargetGroupsCommand { get; }
@@ -325,11 +342,27 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             return existing;
         }
 
+        ProxyConfig? resolvedProxy = null;
+        if (!string.IsNullOrWhiteSpace(this.SelectedAccount.ProxyId))
+        {
+            System.Collections.Generic.IReadOnlyList<ProxyConfig> proxies =
+                await this._context.AccountStore.GetAllProxiesAsync(ct).ConfigureAwait(true);
+            for (int i = 0; i < proxies.Count; i++)
+            {
+                if (string.Equals(proxies[i].Id, this.SelectedAccount.ProxyId, StringComparison.Ordinal))
+                {
+                    resolvedProxy = proxies[i];
+                    break;
+                }
+            }
+        }
+
         string? preferredExe = this._context.Settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions options = new(
             AccountUid: this.SelectedAccount.Uid,
             UserDataDir: this.SelectedAccount.ProfileDirectory,
             UserAgent: this.SelectedAccount.UserAgent,
+            Proxy: resolvedProxy,
             Headless: this._context.Settings.Current.RunBrowserHeadless,
             ExecutablePath: preferredExe);
 

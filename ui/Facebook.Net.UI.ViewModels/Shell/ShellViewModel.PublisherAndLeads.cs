@@ -27,7 +27,7 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the Spintax post body to publish.</summary>
     [ObservableProperty]
-    public partial string PostSpintaxText { get; set; } = "{Xin chào cả nhà|Chào anh chị em trong nhóm}! Bên mình {đang sẵn hàng|mới về lô hàng} chính hãng giá ưu đãi, {inbox|nhắn tin} nhận báo giá chi tiết nhé!";
+    public partial string PostSpintaxText { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the live randomized Spintax preview text shown on the Publisher screen.</summary>
     [ObservableProperty]
@@ -43,7 +43,7 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the Spintax comment text used to bump (Up-Top) recently published group posts.</summary>
     [ObservableProperty]
-    public partial string BumpCommentSpintaxText { get; set; } = "{Chấm đẩy bài ạ|Hàng vẫn sẵn kho anh chị nhé|Quan tâm nhắn tin giúp em nhé|Up cho anh chị cần ạ}!";
+    public partial string BumpCommentSpintaxText { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the buyer-intent filter keywords when scanning group feeds (e.g. "cần mua, xin giá, ib").</summary>
     [ObservableProperty]
@@ -55,13 +55,20 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the Spintax sales comment text.</summary>
     [ObservableProperty]
-    public partial string SalesCommentSpintaxText { get; set; } = "{Check inbox giúp em nhé|Em đã gửi báo giá chi tiết qua tin nhắn rồi ạ|Anh/chị kiểm tra tin nhắn chờ nhé}!";
+    public partial string SalesCommentSpintaxText { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the optional local product/price photo path for sales commenting.</summary>
     [ObservableProperty]
     public partial string SalesCommentPhotoPath { get; set; } = string.Empty;
 
     private readonly List<string> _recentPublishedPostIds = new();
+
+    private void SyncLocalizedDefaultPrompts()
+    {
+        this.PostSpintaxText = this._context.Localization["Publisher.DefaultPostSpintax"];
+        this.BumpCommentSpintaxText = this._context.Localization["Publisher.DefaultBumpSpintax"];
+        this.SalesCommentSpintaxText = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
+    }
 
     /// <summary>
     /// Generates a randomized variation from <see cref="PostSpintaxText"/> so the user can preview `{a|b|c}` syntax before publishing.
@@ -91,7 +98,7 @@ public sealed partial class ShellViewModel
             IsCommentTemplate: false);
 
         await this._context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
-        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Post,
@@ -112,7 +119,7 @@ public sealed partial class ShellViewModel
         string title = this.SelectedTemplate.Title;
         _ = await this._context.AccountStore.DeleteCampaignTemplateAsync(this.SelectedTemplate.Id).ConfigureAwait(true);
         this.SelectedTemplate = null;
-        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Post,
@@ -321,7 +328,7 @@ public sealed partial class ShellViewModel
             }
 
             string bumpText = string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText)
-                ? "{Up|Chấm đẩy bài ạ}"
+                ? this._context.Localization["Publisher.DefaultBumpSpintax"]
                 : this.BumpCommentSpintaxText;
 
             for (int i = 0; i < this._recentPublishedPostIds.Count; i++)

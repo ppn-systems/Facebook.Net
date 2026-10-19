@@ -46,8 +46,13 @@ public sealed partial class MainWindow
             this._theme,
             this._i18n["Accounts.CookiePlaceholder"],
             multiline: true,
-            height: 110);
+            height: 95);
         cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
+
+        TextBox proxyBox = CloudflareControls.CreateTextBox(
+            this._theme,
+            this._i18n["Accounts.ProxyPlaceholder"]);
+        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -60,6 +65,11 @@ public sealed partial class MainWindow
                      !string.Equals(cookieBox.Text, this._vm.SessionImportRawInput, System.StringComparison.Ordinal))
             {
                 cookieBox.Text = this._vm.SessionImportRawInput;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountProxyInput), System.StringComparison.Ordinal) &&
+                     !string.Equals(proxyBox.Text, this._vm.AccountProxyInput, System.StringComparison.Ordinal))
+            {
+                proxyBox.Text = this._vm.AccountProxyInput;
             }
         };
 
@@ -95,6 +105,18 @@ public sealed partial class MainWindow
             this._vm.OpenBrowserAndSyncCommand,
             VectorIcons.Browser);
 
+        Button checkHealthBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnCheckHealth"],
+            this._vm.CheckAccountHealthCommand,
+            VectorIcons.CheckCircle);
+
+        Button saveProxyBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnSaveProxy"],
+            this._vm.SaveAccountProxyCommand,
+            VectorIcons.Settings);
+
         Button deleteBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Accounts.BtnDelete"],
@@ -102,16 +124,19 @@ public sealed partial class MainWindow
 
         leftStack.Children.Add(nameBox);
         leftStack.Children.Add(cookieBox);
+        leftStack.Children.Add(proxyBox);
         leftStack.Children.Add(pasteClipboardBtn);
         leftStack.Children.Add(quickImportBtn);
         leftStack.Children.Add(openBrowserBtn);
+        leftStack.Children.Add(checkHealthBtn);
+        leftStack.Children.Add(saveProxyBtn);
         leftStack.Children.Add(deleteBtn);
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
         Grid.SetColumn(leftCard, 0);
         grid.Children.Add(leftCard);
 
-        // Right Card: Visual Account Vault (Avatar + DisplayName + Status Pill, NO raw UID)
+        // Right Card: Visual Account Vault (Avatar + DisplayName + Proxy Status + Status Pill, NO raw UID)
         ListBox accountList = new()
         {
             ItemsSource = this._vm.Accounts,
@@ -132,13 +157,22 @@ public sealed partial class MainWindow
                 Border avatar = CloudflareControls.CreateAvatarBadge(this._theme, item.DisplayName, 36);
                 Grid.SetColumn(avatar, 0);
 
+                string FormatSubInfo()
+                {
+                    string timePart = item.LastActiveAt.HasValue
+                        ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
+                        : this._i18n["Accounts.ReadyToConnect"];
+                    string netPart = !string.IsNullOrWhiteSpace(item.ProxyId)
+                        ? $"{this._i18n["Accounts.ProxyBadgePrefix"]} ✓"
+                        : this._i18n["Accounts.NoProxyBadge"];
+                    return $"{timePart}  •  {netPart}";
+                }
+
                 StackPanel info = new() { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
                 TextBlock displayName = CloudflareControls.CreateThemedLabel(this._theme, item.DisplayName, 14, FontWeight.SemiBold);
                 TextBlock subInfo = CloudflareControls.CreateThemedLabel(
                     this._theme,
-                    item.LastActiveAt.HasValue
-                        ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
-                        : this._i18n["Accounts.ReadyToConnect"],
+                    FormatSubInfo(),
                     11,
                     FontWeight.Normal,
                     isSecondary: true);
@@ -157,9 +191,7 @@ public sealed partial class MainWindow
 
                 this._i18n.LanguageChanged += (_, _) =>
                 {
-                    subInfo.Text = item.LastActiveAt.HasValue
-                        ? $"{this._i18n["Accounts.LastActivePrefix"]} {item.LastActiveAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}"
-                        : this._i18n["Accounts.ReadyToConnect"];
+                    subInfo.Text = FormatSubInfo();
                     CloudflareControls.SetPillText(statusPill, this._i18n.FormatAccountStatus(item.Status));
                 };
 
@@ -188,9 +220,12 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Accounts.Desc"];
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
+            proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
             CloudflareControls.SetButtonText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
             CloudflareControls.SetButtonText(quickImportBtn, this._i18n["Accounts.BtnQuickImport"]);
             CloudflareControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            CloudflareControls.SetButtonText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            CloudflareControls.SetButtonText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
             CloudflareControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };
 
@@ -250,7 +285,7 @@ public sealed partial class MainWindow
 
         ListBox groupsList = new()
         {
-            Height = 270,
+            Height = 250,
             ItemsSource = this._vm.JoinedGroups,
             ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
             {
@@ -317,11 +352,18 @@ public sealed partial class MainWindow
         actionRow.Children.Add(saveTargetBtn);
         actionRow.Children.Add(joinBtn);
 
+        Button autoJoinAllBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Groups.BtnAutoJoinDiscovered"],
+            this._vm.AutoJoinDiscoveredGroupsCommand,
+            VectorIcons.Groups);
+
         leftStack.Children.Add(syncJoinedBtn);
         leftStack.Children.Add(searchRow);
         leftStack.Children.Add(localFilterBox);
         leftStack.Children.Add(groupsList);
         leftStack.Children.Add(actionRow);
+        leftStack.Children.Add(autoJoinAllBtn);
 
         Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
         Grid.SetColumn(leftCard, 0);
@@ -428,6 +470,7 @@ public sealed partial class MainWindow
             CloudflareControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
             CloudflareControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
             CloudflareControls.SetButtonText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
+            CloudflareControls.SetButtonText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
             targetListHeader.Text = this._i18n["Groups.TargetListTitle"];
             CloudflareControls.SetButtonText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
             CloudflareControls.SetButtonText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);

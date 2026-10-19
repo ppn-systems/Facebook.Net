@@ -301,6 +301,17 @@ public sealed partial class ShellViewModel
                 .JoinGroupAsync(session, group.GroupId, ct: ct)
                 .ConfigureAwait(true);
 
+            GroupSummary updatedGroup = group with { MembershipState = state };
+            this.UpdateCatalogGroupState(updatedGroup);
+            this.SelectedGroup = updatedGroup;
+
+            if (state == GroupMembershipState.Member)
+            {
+                SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true);
+                await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+                await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+            }
+
             string friendlyState = this._context.Localization.FormatGroupMembership(state);
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
@@ -329,6 +340,122 @@ public sealed partial class ShellViewModel
         finally
         {
             this.EndTaskScope();
+        }
+    }
+
+    /// <summary>
+    /// Batch auto-joins all discovered groups in <see cref="JoinedGroups"/> that are not yet joined,
+    /// enforcing safe anti-checkpoint delays and supporting immediate cancellation.
+    /// </summary>
+    public async Task AutoJoinDiscoveredGroupsAsync()
+    {
+        System.Collections.Generic.List<GroupSummary> candidates = new();
+        for (int i = 0; i < this.JoinedGroups.Count; i++)
+        {
+            if (this.JoinedGroups[i].MembershipState != GroupMembershipState.Member &&
+                this.JoinedGroups[i].MembershipState != GroupMembershipState.Requested)
+            {
+                candidates.Add(this.JoinedGroups[i]);
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Group"],
+                this.Msg(
+                    "Không có nhóm mới nào chưa tham gia trong danh sách hiện tại — hãy tìm kiếm nhóm theo từ khóa trước.",
+                    "No unjoined groups in the current catalog — please search for groups by keyword first.")).ConfigureAwait(true);
+            return;
+        }
+
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            int joinedOrRequested = 0;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync(candidates[i].Name, ct).ConfigureAwait(true);
+                }
+
+                GroupSummary group = candidates[i];
+                GroupMembershipState state = await this._context.CometClient
+                    .JoinGroupAsync(session, group.GroupId, ct: ct)
+                    .ConfigureAwait(true);
+
+                GroupSummary updatedGroup = group with { MembershipState = state };
+                this.UpdateCatalogGroupState(updatedGroup);
+                joinedOrRequested++;
+
+                if (state == GroupMembershipState.Member)
+                {
+                    SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true);
+                    await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+                }
+
+                string friendlyState = this._context.Localization.FormatGroupMembership(state);
+                _ = await this.LogAuditAsync(
+                    AuditCategory.Group,
+                    AuditSeverity.Success,
+                    group.Name,
+                    this.Msg(
+                        $"[{joinedOrRequested}/{candidates.Count}] Đã tham gia nhóm '{group.Name}' ({friendlyState}).",
+                        $"[{joinedOrRequested}/{candidates.Count}] Joined group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
+            }
+
+            await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Group"],
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Group,
+                AuditSeverity.Error,
+                this._context.Localization["Audit.Cat.Group"],
+                this.Msg($"Lỗi tham gia nhóm hàng loạt: {this.SanitizeErrorMessage(ex)}", $"Batch group join failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+
+    private void UpdateCatalogGroupState(GroupSummary updated)
+    {
+        for (int i = 0; i < this._allCatalogGroups.Count; i++)
+        {
+            if (string.Equals(this._allCatalogGroups[i].GroupId, updated.GroupId, StringComparison.Ordinal))
+            {
+                this._allCatalogGroups[i] = updated;
+                break;
+            }
+        }
+
+        for (int i = 0; i < this.JoinedGroups.Count; i++)
+        {
+            if (string.Equals(this.JoinedGroups[i].GroupId, updated.GroupId, StringComparison.Ordinal))
+            {
+                this.JoinedGroups[i] = updated;
+                break;
+            }
         }
     }
 

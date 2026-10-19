@@ -27,6 +27,14 @@ namespace Facebook.Net.App.Views;
 /// </summary>
 public sealed partial class MainWindow
 {
+    private static readonly string[] s_csvPatterns = ["*.csv"];
+    private static readonly string[] s_jsonPatterns = ["*.json"];
+    private static readonly FilePickerFileType[] s_exportFileTypeChoices =
+    [
+        new("CSV Report (*.csv)") { Patterns = s_csvPatterns },
+        new("JSON Report (*.json)") { Patterns = s_jsonPatterns }
+    ];
+
     private async Task<string?> PickSingleFileAsync(string title)
     {
         if (this.StorageProvider is null)
@@ -790,7 +798,7 @@ public sealed partial class MainWindow
         // 4-Way Filter Bar: Category (Sự kiện), Time Range (Thời gian), Account (Tài khoản), Keyword (Từ khóa)
         Grid filterRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("155,155,180,*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("150,150,175,*,Auto,Auto,Auto"),
             ColumnSpacing = 8
         };
 
@@ -878,24 +886,46 @@ public sealed partial class MainWindow
             this._theme,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand);
-        refreshBtn.Click += (_, _) =>
-        {
-            accountFilterCombo.SelectedItem = null;
-            drawerVm.SelectedAccountUid = null;
-        };
         Grid.SetColumn(refreshBtn, 4);
+
+        Button exportBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Audit.BtnExport"]);
+        exportBtn.Click += async (_, _) =>
+        {
+            if (this.StorageProvider is null)
+            {
+                return;
+            }
+
+            IStorageFile? saveFile = await this.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = this._i18n["Audit.BtnExport"],
+                SuggestedFileName = $"facebook_audit_{DateTimeOffset.Now:yyyyMMdd_HHmmss}.csv",
+                DefaultExtension = "csv",
+                FileTypeChoices = s_exportFileTypeChoices
+            }).ConfigureAwait(true);
+
+            string? localPath = saveFile?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(localPath))
+            {
+                await drawerVm.ExportFilteredLogsAsync(localPath).ConfigureAwait(true);
+            }
+        };
+        Grid.SetColumn(exportBtn, 5);
 
         Button clearBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnClear"],
             drawerVm.ClearLogsCommand);
-        Grid.SetColumn(clearBtn, 5);
+        Grid.SetColumn(clearBtn, 6);
 
         filterRow.Children.Add(categoryCombo);
         filterRow.Children.Add(timeRangeCombo);
         filterRow.Children.Add(accountFilterCombo);
         filterRow.Children.Add(searchBox);
         filterRow.Children.Add(refreshBtn);
+        filterRow.Children.Add(exportBtn);
         filterRow.Children.Add(clearBtn);
         Grid.SetRow(filterRow, 0);
         drawerBody.Children.Add(filterRow);
@@ -982,6 +1012,7 @@ public sealed partial class MainWindow
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
             searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
             CloudflareControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
+            CloudflareControls.SetButtonText(exportBtn, this._i18n["Audit.BtnExport"]);
             CloudflareControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
             CloudflareControls.SetButtonText(
                 toggleBtn,

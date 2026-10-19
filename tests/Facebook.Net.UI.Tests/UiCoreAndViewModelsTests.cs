@@ -135,6 +135,39 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal("Trong 24 giờ qua", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
     }
 
+    [Fact]
+    public void UniversalSessionImporter_TryParseProxySpec_HandlesHttpAndSocks5Formats()
+    {
+        bool okHttp = UniversalSessionImporter.TryParseProxySpec(
+            "103.45.67.89:8080:myuser:mypass",
+            "proxy_1",
+            out Facebook.Net.Contracts.Models.ProxyConfig? httpProxy);
+
+        Assert.True(okHttp);
+        Assert.NotNull(httpProxy);
+        Assert.Equal("103.45.67.89", httpProxy.Host);
+        Assert.Equal(8080, httpProxy.Port);
+        Assert.Equal(Facebook.Net.Contracts.Primitives.ProxyProtocol.Http, httpProxy.Protocol);
+        Assert.Equal("myuser", httpProxy.Username);
+        Assert.Equal("mypass", httpProxy.Password);
+
+        bool okSocks = UniversalSessionImporter.TryParseProxySpec(
+            "socks5://203.0.113.10:1080:socksuser:sockspass",
+            "proxy_2",
+            out Facebook.Net.Contracts.Models.ProxyConfig? socksProxy);
+
+        Assert.True(okSocks);
+        Assert.NotNull(socksProxy);
+        Assert.Equal("203.0.113.10", socksProxy.Host);
+        Assert.Equal(1080, socksProxy.Port);
+        Assert.Equal(Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5, socksProxy.Protocol);
+        Assert.Equal("socksuser", socksProxy.Username);
+        Assert.Equal("sockspass", socksProxy.Password);
+
+        string formatted = UniversalSessionImporter.FormatProxySpec(socksProxy);
+        Assert.Equal("socks5://203.0.113.10:1080:socksuser:sockspass", formatted);
+    }
+
     public void Dispose()
     {
         try
