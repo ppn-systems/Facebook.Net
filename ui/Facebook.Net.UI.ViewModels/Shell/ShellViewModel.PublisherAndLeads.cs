@@ -65,6 +65,14 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
+    /// <summary>Gets or sets the optional countdown delay in minutes before starting a publishing campaign (0 = start immediately).</summary>
+    [ObservableProperty]
+    public partial int ScheduleDelayMinutes { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether to automatically react (Love/Like) to newly published posts.</summary>
+    [ObservableProperty]
+    public partial bool AutoReactPublishedPost { get; set; } = true;
+
     private readonly List<string> _recentPublishedPostIds = new();
 
     private string _lastDefaultPostSpintax = string.Empty;
@@ -178,6 +186,19 @@ public sealed partial class ShellViewModel
         CancellationToken ct = this.BeginTaskScope();
         try
         {
+            if (this.ScheduleDelayMinutes > 0)
+            {
+                int waitMins = Math.Clamp(this.ScheduleDelayMinutes, 1, 1440);
+                _ = await this.LogAuditAsync(
+                    AuditCategory.Post,
+                    AuditSeverity.Info,
+                    this._context.Localization["Audit.Cat.Post"],
+                    this.Msg(
+                        $"Đã hẹn giờ chiến dịch đăng bài — sẽ tự động bắt đầu sau {waitMins} phút nữa...",
+                        $"Scheduled publishing campaign — starting automatically in {waitMins} minute(s)...")).ConfigureAwait(true);
+                await Task.Delay(TimeSpan.FromMinutes(waitMins), ct).ConfigureAwait(true);
+            }
+
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
@@ -214,6 +235,12 @@ public sealed partial class ShellViewModel
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
                     this._recentPublishedPostIds.Add(postId);
+                    if (this.AutoReactPublishedPost)
+                    {
+                        _ = await this._context.CometClient
+                            .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
+                            .ConfigureAwait(true);
+                    }
                 }
 
                 await this._context.AccountStore.RecordActionAsync(
@@ -288,6 +315,12 @@ public sealed partial class ShellViewModel
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
                     this._recentPublishedPostIds.Add(postId);
+                    if (this.AutoReactPublishedPost)
+                    {
+                        _ = await this._context.CometClient
+                            .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
+                            .ConfigureAwait(true);
+                    }
                 }
 
                 await this._context.AccountStore.RecordActionAsync(

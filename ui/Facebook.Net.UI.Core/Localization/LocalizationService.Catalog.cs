@@ -235,6 +235,8 @@ public sealed partial class LocalizationService
             ["Empty.Leads"] = "Chưa có bài viết khách hàng — hãy chọn Nhóm và bấm 'Quét Bài viết mới trong Nhóm'.",
             ["Accounts.BtnWarmUp"] = "Tương tác Nuôi Tài khoản (Lướt Feed & Thả tim)",
             ["Leads.AutoReactToggle"] = "Tự động Thả cảm xúc (Like/Tim) vào bài viết trước khi gửi Comment Sale",
+            ["Publisher.AutoReactOwnPost"] = "Tự động Thả tim (Love) bài viết vừa đăng để tăng tương tác đầu",
+            ["Publisher.ScheduleDelayLabel"] = "Hẹn giờ bắt đầu sau (phút, 0 = chạy ngay):",
             ["Log.TaskStoppedByUser"] = "Đã dừng tác vụ ngay lập tức theo yêu cầu của người dùng.",
             ["Log.SelectAccountFirst"] = "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.",
             ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại."
@@ -390,6 +392,8 @@ public sealed partial class LocalizationService
             ["Empty.Leads"] = "No buyer posts discovered yet — select a Group and click 'Scan Recent Posts'.",
             ["Accounts.BtnWarmUp"] = "Warm Up Account (Scroll Newsfeed & React)",
             ["Leads.AutoReactToggle"] = "Automatically react (Like/Love) to post before sending Sales Comment",
+            ["Publisher.AutoReactOwnPost"] = "Automatically react (Love) to newly published posts",
+            ["Publisher.ScheduleDelayLabel"] = "Schedule start delay (minutes, 0 = start immediately):",
             ["Log.TaskStoppedByUser"] = "Task stopped immediately as requested by user.",
             ["Log.SelectAccountFirst"] = "Please select or add an account before running this task.",
             ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again."

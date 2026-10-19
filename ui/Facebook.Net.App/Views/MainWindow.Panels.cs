@@ -64,6 +64,41 @@ public sealed partial class MainWindow
         targetModeCheck.IsCheckedChanged += (_, _) =>
             this._vm.PublishToTargetGroups = targetModeCheck.IsChecked ?? false;
 
+        CheckBox autoReactOwnPostCheck = new()
+        {
+            Content = this._i18n["Publisher.AutoReactOwnPost"],
+            IsChecked = this._vm.AutoReactPublishedPost
+        };
+        autoReactOwnPostCheck.IsCheckedChanged += (_, _) =>
+            this._vm.AutoReactPublishedPost = autoReactOwnPostCheck.IsChecked ?? false;
+
+        Grid scheduleDelayRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,100"),
+            ColumnSpacing = 10
+        };
+        TextBlock scheduleDelayLbl = CloudflareControls.CreateThemedLabel(
+            this._theme,
+            this._i18n["Publisher.ScheduleDelayLabel"],
+            12,
+            FontWeight.Medium,
+            isSecondary: true);
+        TextBox scheduleDelayBox = CloudflareControls.CreateTextBox(
+            this._theme,
+            "0",
+            this._vm.ScheduleDelayMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        scheduleDelayBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(scheduleDelayBox.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int mins))
+            {
+                this._vm.ScheduleDelayMinutes = Math.Clamp(mins, 0, 1440);
+            }
+        };
+        Grid.SetColumn(scheduleDelayLbl, 0);
+        Grid.SetColumn(scheduleDelayBox, 1);
+        scheduleDelayRow.Children.Add(scheduleDelayLbl);
+        scheduleDelayRow.Children.Add(scheduleDelayBox);
+
         TextBox contentBox = CloudflareControls.CreateTextBox(
             this._theme,
             this._i18n["Publisher.ContentPlaceholder"],
@@ -198,6 +233,8 @@ public sealed partial class MainWindow
         bumpStack.Children.Add(bumpBtn);
 
         leftStack.Children.Add(targetModeCheck);
+        leftStack.Children.Add(autoReactOwnPostCheck);
+        leftStack.Children.Add(scheduleDelayRow);
         leftStack.Children.Add(contentBox);
         leftStack.Children.Add(previewRow);
         leftStack.Children.Add(photoRow);
@@ -280,6 +317,8 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Publisher.Desc"];
             emptyTplTb.Text = this._i18n["Empty.Templates"];
             targetModeCheck.Content = this._i18n["Publisher.TargetModeGroup"];
+            autoReactOwnPostCheck.Content = this._i18n["Publisher.AutoReactOwnPost"];
+            scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             CloudflareControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
             photoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
