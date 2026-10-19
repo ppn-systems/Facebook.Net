@@ -160,7 +160,7 @@ public sealed class CometClientTests
     [Fact]
     public async Task CometClient_JoinGroup_SendFriendRequest_And_ReactToPost_SucceedWithMockSession()
     {
-        FakeBrowserSession joinSession = new("{\"data\":{\"group_join\":{\"group\":{\"group_member_Join_state\":\"MEMBER\"}}}}");
+        FakeBrowserSession joinSession = new("{\"data\":{\"group_join\":{\"group\":{\"viewer_join_state\":\"MEMBER\"}}}}");
         CometClient client = new();
 
         GroupMembershipState state = await client.JoinGroupAsync(joinSession, "777888");
