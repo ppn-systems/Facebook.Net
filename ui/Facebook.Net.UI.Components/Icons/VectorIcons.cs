@@ -1,6 +1,8 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
+using System.Collections.Concurrent;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -10,9 +12,12 @@ namespace Facebook.Net.UI.Components.Icons;
 /// <summary>
 /// Provides crisp 24x24 Lucide/Tabler SVG path geometries and helper methods to create vector icons
 /// for the Cloudflare-styled UI without requiring external font files.
+/// Caches parsed <see cref="StreamGeometry"/> instances in memory to eliminate repeated SVG parsing overhead.
 /// </summary>
 public static class VectorIcons
 {
+    private static readonly ConcurrentDictionary<string, StreamGeometry> s_geometryCache = new(StringComparer.Ordinal);
+
     /// <summary>Users / Accounts icon path.</summary>
     public const string Accounts = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75";
 
@@ -55,15 +60,22 @@ public static class VectorIcons
     /// <summary>StopCircle / Cancel task icon path.</summary>
     public const string StopCircle = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M9 9h6v6H9z";
 
-    /// <summary>Creates a crisp <see cref="PathIcon"/> from an SVG path string.</summary>
-    public static PathIcon Create(string svgPathData, double size = 16, IBrush? foreground = null)
+    /// <summary>Creates a crisp <see cref="PathIcon"/> from a cached SVG path geometry.</summary>
+    public static PathIcon Create(
+        string svgPathData,
+        double size = 16,
+        IBrush? foreground = null,
+        Thickness? margin = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(svgPathData);
+        StreamGeometry geometry = s_geometryCache.GetOrAdd(svgPathData, static path => StreamGeometry.Parse(path));
+
         PathIcon icon = new()
         {
-            Data = StreamGeometry.Parse(svgPathData),
+            Data = geometry,
             Width = size,
             Height = size,
-            Margin = new Thickness(0, 0, 6, 0)
+            Margin = margin ?? new Thickness(0, 0, 6, 0)
         };
 
         if (foreground is not null)

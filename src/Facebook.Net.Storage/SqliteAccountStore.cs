@@ -34,7 +34,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
         {
             DataSource = databaseFilePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true
+            Pooling = true,
+            DefaultTimeout = 5
         };
         this._connectionString = builder.ToString();
     }
@@ -45,6 +46,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
         const string sql = """
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
 
             CREATE TABLE IF NOT EXISTS proxies (
                 id TEXT PRIMARY KEY NOT NULL,

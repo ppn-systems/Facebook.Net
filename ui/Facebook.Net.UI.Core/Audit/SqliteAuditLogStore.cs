@@ -69,7 +69,8 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
         {
             DataSource = databaseFilePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true
+            Pooling = true,
+            DefaultTimeout = 5
         };
         this._connectionString = builder.ToString();
     }
@@ -85,6 +86,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
         const string sql = """
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
 
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,11 +223,16 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
     }
 
     /// <summary>
-    /// Clears all stored audit log records.
+    /// Clears all stored audit log records and reclaims SQLite database pages via <c>VACUUM</c>.
     /// </summary>
     public async Task ClearAllAsync(CancellationToken ct = default)
     {
-        const string sql = "DELETE FROM audit_logs;";
+        const string sql = """
+            DELETE FROM audit_logs;
+            DELETE FROM sqlite_sequence WHERE name = 'audit_logs';
+            PRAGMA wal_checkpoint(TRUNCATE);
+            VACUUM;
+            """;
         using SqliteConnection conn = new(this._connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
