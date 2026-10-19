@@ -1,0 +1,219 @@
+// Copyright (c) 2026 PPN Corporation. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
+using System;
+using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Theming;
+
+namespace Facebook.Net.UI.Components.Controls;
+
+/// <summary>
+/// Reusable Cloudflare Dashboard UI component factory (`CFCard`, `CFButton`, `CFStatusPill`, `CFTextBox`, `CFSectionHeader`)
+/// that automatically reacts to Dark/Light theme changes via <see cref="ThemeService"/>.
+/// Split into partial files for core containers/buttons and entity cards/pills.
+/// </summary>
+public static partial class CloudflareControls
+{
+    /// <summary>
+    /// Creates a Cloudflare-styled elevated surface card with a crisp 1px border (`#E2E8F0` light / `#27272A` dark)
+    /// and 8px rounded corners. Automatically updates colors when <see cref="ThemeService"/> toggles.
+    /// </summary>
+    public static Border CreateCard(ThemeService theme, Control content, Thickness? padding = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(content);
+
+        Border card = new()
+        {
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = padding ?? new Thickness(16),
+            Child = content
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            card.Background = p.ElevatedSurface;
+            card.BorderBrush = p.SubtleBorder;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return card;
+    }
+
+    /// <summary>
+    /// Creates a secondary inset container (well) for lists, code snippets, or filter bars.
+    /// </summary>
+    public static Border CreateInsetWell(ThemeService theme, Control content, Thickness? padding = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(content);
+
+        Border well = new()
+        {
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            Padding = padding ?? new Thickness(10),
+            Child = content
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            well.Background = p.SecondarySurface;
+            well.BorderBrush = p.SubtleBorder;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return well;
+    }
+
+    /// <summary>
+    /// Creates a primary Call-To-Action button in Cloudflare Orange (`#F6821F`) with an optional vector icon.
+    /// </summary>
+    public static Button CreatePrimaryButton(
+        ThemeService theme,
+        string initialText,
+        ICommand? command = null,
+        string? iconSvg = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock label = new()
+        {
+            Text = initialText,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 13,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Control buttonContent = label;
+        if (!string.IsNullOrWhiteSpace(iconSvg))
+        {
+            StackPanel row = new()
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 4
+            };
+            row.Children.Add(VectorIcons.Create(iconSvg, 15, Brushes.White));
+            row.Children.Add(label);
+            buttonContent = row;
+        }
+
+        Button btn = new()
+        {
+            Content = buttonContent,
+            Command = command,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(14, 8),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Background = theme.Palette.BrandPrimary,
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(0)
+        };
+
+        return btn;
+    }
+
+    /// <summary>
+    /// Creates a secondary outlined button that adapts to Cloudflare Dark and Light mode.
+    /// </summary>
+    public static Button CreateSecondaryButton(
+        ThemeService theme,
+        string initialText,
+        ICommand? command = null,
+        string? iconSvg = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock label = new()
+        {
+            Text = initialText,
+            FontWeight = FontWeight.Medium,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        PathIcon? icon = !string.IsNullOrWhiteSpace(iconSvg)
+            ? VectorIcons.Create(iconSvg, 15)
+            : null;
+
+        Control buttonContent = label;
+        if (icon is not null)
+        {
+            StackPanel row = new()
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 4
+            };
+            row.Children.Add(icon);
+            row.Children.Add(label);
+            buttonContent = row;
+        }
+
+        Button btn = new()
+        {
+            Content = buttonContent,
+            Command = command,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12, 7),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            BorderThickness = new Thickness(1)
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            btn.Background = p.SecondarySurface;
+            btn.BorderBrush = p.InteractiveBorder;
+            label.Foreground = p.TextPrimary;
+            icon?.Foreground = p.TextSecondary;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return btn;
+    }
+
+    /// <summary>
+    /// Updates the text inside a button created by <see cref="CreatePrimaryButton"/> or <see cref="CreateSecondaryButton"/>.
+    /// </summary>
+    public static void SetButtonText(Button button, string text)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+        if (button.Content is TextBlock tb)
+        {
+            tb.Text = text;
+        }
+        else if (button.Content is StackPanel sp)
+        {
+            for (int i = 0; i < sp.Children.Count; i++)
+            {
+                if (sp.Children[i] is TextBlock innerTb)
+                {
+                    innerTb.Text = text;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            button.Content = text;
+        }
+    }
+}

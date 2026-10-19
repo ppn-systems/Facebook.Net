@@ -1,0 +1,245 @@
+// Copyright (c) 2026 PPN Corporation. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
+using System;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Theming;
+
+namespace Facebook.Net.UI.Components.Controls;
+
+/// <summary>
+/// Partial implementation of <see cref="CloudflareControls"/> providing status pills, avatar chips,
+/// section headers, and styled text inputs.
+/// </summary>
+public static partial class CloudflareControls
+{
+    /// <summary>
+    /// Creates a Cloudflare section header with a primary title and muted subtitle.
+    /// </summary>
+    public static StackPanel CreateSectionHeader(
+        ThemeService theme,
+        string initialTitle,
+        string initialSubtitle,
+        out TextBlock titleBlock,
+        out TextBlock subtitleBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock title = new()
+        {
+            Text = initialTitle,
+            FontSize = 16,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        TextBlock sub = new()
+        {
+            Text = initialSubtitle,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            title.Foreground = p.TextPrimary;
+            sub.Foreground = p.TextSecondary;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+
+        titleBlock = title;
+        subtitleBlock = sub;
+
+        StackPanel stack = new() { Spacing = 3 };
+        stack.Children.Add(title);
+        stack.Children.Add(sub);
+        return stack;
+    }
+
+    /// <summary>
+    /// Creates a semantic Cloudflare Status Pill (`Success`, `Warning`, `Error`, `Info`) with a 6px dot and 1px tinted border.
+    /// </summary>
+    public static Border CreateStatusPill(ThemeService theme, string text, AuditSeverity severity)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        Ellipse dot = new()
+        {
+            Width = 6,
+            Height = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock label = new()
+        {
+            Text = text,
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        row.Children.Add(dot);
+        row.Children.Add(label);
+
+        Border pill = new()
+        {
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = row
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            switch (severity)
+            {
+                case AuditSeverity.Success:
+                    pill.Background = p.SuccessFill;
+                    pill.BorderBrush = p.SuccessBorder;
+                    label.Foreground = p.SuccessText;
+                    dot.Fill = p.SuccessText;
+                    break;
+                case AuditSeverity.Warning:
+                    pill.Background = p.WarningFill;
+                    pill.BorderBrush = p.WarningBorder;
+                    label.Foreground = p.WarningText;
+                    dot.Fill = p.WarningText;
+                    break;
+                case AuditSeverity.Error:
+                    pill.Background = p.DangerFill;
+                    pill.BorderBrush = p.DangerBorder;
+                    label.Foreground = p.DangerText;
+                    dot.Fill = p.DangerText;
+                    break;
+                case AuditSeverity.Info:
+                default:
+                    pill.Background = p.InfoFill;
+                    pill.BorderBrush = p.InfoBorder;
+                    label.Foreground = p.InfoText;
+                    dot.Fill = p.InfoText;
+                    break;
+            }
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return pill;
+    }
+
+    /// <summary>
+    /// Creates a circular avatar monogram badge (e.g., first 2 letters of Account or Group name)
+    /// so entities are visually identifiable without showing raw numeric UIDs.
+    /// </summary>
+    public static Border CreateAvatarBadge(ThemeService theme, string displayName, double size = 32)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        string initials = ExtractInitials(displayName);
+        TextBlock text = new()
+        {
+            Text = initials,
+            FontSize = size * 0.38,
+            FontWeight = FontWeight.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Border circle = new()
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            BorderThickness = new Thickness(1),
+            Child = text
+        };
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            circle.Background = p.BrandSubtleFill;
+            circle.BorderBrush = p.BrandSubtleBorder;
+            text.Foreground = p.BrandPrimary;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return circle;
+    }
+
+    /// <summary>
+    /// Creates a Cloudflare-styled <see cref="TextBox"/> with 6px corner radius and subtle border.
+    /// </summary>
+    public static TextBox CreateTextBox(
+        ThemeService theme,
+        string placeholder,
+        string initialText = "",
+        bool multiline = false,
+        double? height = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBox box = new()
+        {
+            PlaceholderText = placeholder,
+            Text = initialText,
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10, 7),
+            FontSize = 13,
+            AcceptsReturn = multiline,
+            TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap
+        };
+
+        if (height.HasValue)
+        {
+            box.Height = height.Value;
+        }
+
+        void ApplyColors()
+        {
+            CloudflarePalette p = theme.Palette;
+            box.Background = p.SecondarySurface;
+            box.BorderBrush = p.InteractiveBorder;
+            box.Foreground = p.TextPrimary;
+        }
+
+        ApplyColors();
+        theme.ThemeChanged += (_, _) => ApplyColors();
+        return box;
+    }
+
+    private static string ExtractInitials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "FB";
+        }
+
+        string trimmed = name.Trim();
+        string[] words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length >= 2)
+        {
+            return string.Concat(char.ToUpperInvariant(words[0][0]), char.ToUpperInvariant(words[^1][0]));
+        }
+
+        return trimmed.Length >= 2
+            ? trimmed[..2].ToUpperInvariant()
+            : trimmed.ToUpperInvariant();
+    }
+}

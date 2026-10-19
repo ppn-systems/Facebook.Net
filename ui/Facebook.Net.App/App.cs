@@ -1,17 +1,21 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
-using Facebook.Net.App.Services;
-using Facebook.Net.App.ViewModels;
 using Facebook.Net.App.Views;
+using Facebook.Net.Browser.MacOS;
+using Facebook.Net.Browser.Windows;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.UI.ViewModels.Services;
+using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App;
 
 /// <summary>
-/// Root Avalonia application class wiring OS-specific services and the main desktop window.
+/// Root Avalonia application class wiring OS-specific services, Cloudflare theme, i18n, and the multi-screen Shell window.
 /// </summary>
 public sealed class App : Application
 {
@@ -24,12 +28,16 @@ public sealed class App : Application
     {
         if (this.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            AppServiceBootstrapper services = new();
-            MainWindowViewModel mainViewModel = new(services);
-            desktop.MainWindow = new MainWindow(mainViewModel);
-            desktop.Exit += (_, _) => services.Dispose();
+            IBrowserAdapter platformAdapter = OperatingSystem.IsMacOS()
+                ? new MacOsBrowserAdapter()
+                : new WindowsBrowserAdapter();
 
-            _ = mainViewModel.InitializeAsync();
+            UiServiceContext context = new(platformAdapter);
+            ShellViewModel shellViewModel = new(context);
+            desktop.MainWindow = new MainWindow(shellViewModel);
+            desktop.Exit += (_, _) => context.Dispose();
+
+            _ = shellViewModel.InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();

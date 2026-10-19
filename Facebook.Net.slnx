@@ -10,6 +10,9 @@
     <Project Path="browser/Facebook.Net.Browser.MacOS/Facebook.Net.Browser.MacOS.csproj" />
   </Folder>
   <Folder Name="/ui/">
+    <Project Path="ui/Facebook.Net.UI.Core/Facebook.Net.UI.Core.csproj" />
+    <Project Path="ui/Facebook.Net.UI.Components/Facebook.Net.UI.Components.csproj" />
+    <Project Path="ui/Facebook.Net.UI.ViewModels/Facebook.Net.UI.ViewModels.csproj" />
     <Project Path="ui/Facebook.Net.App/Facebook.Net.App.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -17,5 +20,6 @@
     <Project Path="tests/Facebook.Net.Storage.Tests/Facebook.Net.Storage.Tests.csproj" />
     <Project Path="tests/Facebook.Net.Browser.Tests/Facebook.Net.Browser.Tests.csproj" />
     <Project Path="tests/Facebook.Net.Tests/Facebook.Net.Tests.csproj" />
+    <Project Path="tests/Facebook.Net.UI.Tests/Facebook.Net.UI.Tests.csproj" />
   </Folder>
 </Solution>

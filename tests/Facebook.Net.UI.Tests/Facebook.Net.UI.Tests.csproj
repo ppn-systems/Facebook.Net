@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.UI.Tests - Unit Tests for UI Core, i18n, Theme, Audit DB &amp; ViewModels</Title>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ui\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+    <ProjectReference Include="..\..\ui\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
+    <ProjectReference Include="..\..\ui\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
+  </ItemGroup>
+
+</Project>

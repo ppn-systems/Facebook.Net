@@ -3,11 +3,16 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <Title>Facebook.Net.App - Cross-Platform Avalonia Desktop Application</Title>
-    <Description>Cross-platform Desktop UI (Windows &amp; macOS) built with Avalonia UI and Native AOT for Facebook.Net.</Description>
+    <Description>Cross-platform Desktop UI (Windows &amp; macOS) built with Avalonia UI, Cloudflare Design System, and Native AOT for Facebook.Net.</Description>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" />
@@ -25,6 +30,9 @@
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser.Windows\Facebook.Net.Browser.Windows.csproj" />
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser.MacOS\Facebook.Net.Browser.MacOS.csproj" />
+    <ProjectReference Include="..\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+    <ProjectReference Include="..\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
+    <ProjectReference Include="..\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

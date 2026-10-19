@@ -1,0 +1,108 @@
+// Copyright (c) 2026 PPN Corporation. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Theming;
+
+namespace Facebook.Net.UI.ViewModels.Shell;
+
+/// <summary>
+/// Partial implementation of <see cref="ShellViewModel"/> managing Cloudflare Dark/Light theme switching,
+/// bilingual (`vi-VN` / `en-US`) language selection, browser engine preferences, and anti-checkpoint delays.
+/// </summary>
+public sealed partial class ShellViewModel
+{
+    /// <summary>Gets or sets the selected theme mode in Settings.</summary>
+    [ObservableProperty]
+    public partial AppThemeMode SelectedThemeMode { get; set; } = AppThemeMode.Dark;
+
+    /// <summary>Gets or sets the selected UI language in Settings.</summary>
+    [ObservableProperty]
+    public partial AppLanguage SelectedLanguage { get; set; } = AppLanguage.ViVn;
+
+    /// <summary>Gets or sets the preferred Chromium browser family.</summary>
+    [ObservableProperty]
+    public partial PreferredBrowserKind SelectedBrowserKind { get; set; } = PreferredBrowserKind.AutoDetect;
+
+    /// <summary>Gets or sets an optional custom browser executable file path.</summary>
+    [ObservableProperty]
+    public partial string CustomBrowserExecutablePath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a value indicating whether browsers should launch in headless mode.</summary>
+    [ObservableProperty]
+    public partial bool RunBrowserHeadless { get; set; }
+
+    /// <summary>Gets or sets the minimum safe human delay in seconds between actions.</summary>
+    [ObservableProperty]
+    public partial int MinDelaySeconds { get; set; } = 15;
+
+    /// <summary>Gets or sets the maximum safe human delay in seconds between actions.</summary>
+    [ObservableProperty]
+    public partial int MaxDelaySeconds { get; set; } = 45;
+
+    private void LoadSettingsIntoProperties()
+    {
+        AppConfig cfg = this._context.Settings.Current;
+        this.SelectedThemeMode = cfg.Theme;
+        this.SelectedLanguage = cfg.Language;
+        this.SelectedBrowserKind = cfg.PreferredBrowser;
+        this.CustomBrowserExecutablePath = cfg.CustomBrowserExecutablePath ?? string.Empty;
+        this.RunBrowserHeadless = cfg.RunBrowserHeadless;
+        this.MinDelaySeconds = cfg.MinDelaySeconds;
+        this.MaxDelaySeconds = cfg.MaxDelaySeconds;
+    }
+
+    private void ToggleThemeQuick()
+    {
+        this._context.Theme.ToggleTheme();
+        this.SelectedThemeMode = this._context.Theme.CurrentMode;
+        this._context.Settings.Save(this._context.Settings.Current with
+        {
+            Theme = this.SelectedThemeMode
+        });
+    }
+
+    private void ToggleLanguageQuick()
+    {
+        AppLanguage next = this._context.Localization.CurrentLanguage == AppLanguage.ViVn
+            ? AppLanguage.EnUs
+            : AppLanguage.ViVn;
+
+        this._context.Localization.SetLanguage(next);
+        this.SelectedLanguage = next;
+        this._context.Settings.Save(this._context.Settings.Current with
+        {
+            Language = next
+        });
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        this._context.Theme.SetTheme(this.SelectedThemeMode);
+        this._context.Localization.SetLanguage(this.SelectedLanguage);
+
+        AppConfig updated = new(
+            Theme: this.SelectedThemeMode,
+            Language: this.SelectedLanguage,
+            PreferredBrowser: this.SelectedBrowserKind,
+            CustomBrowserExecutablePath: string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
+                ? null
+                : this.CustomBrowserExecutablePath.Trim(),
+            RunBrowserHeadless: this.RunBrowserHeadless,
+            MinDelaySeconds: this.MinDelaySeconds <= 0 ? 5 : this.MinDelaySeconds,
+            MaxDelaySeconds: this.MaxDelaySeconds < this.MinDelaySeconds ? this.MinDelaySeconds + 15 : this.MaxDelaySeconds,
+            IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded);
+
+        this._context.Settings.Save(updated);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.System,
+            AuditSeverity.Success,
+            "Cài đặt",
+            $"Đã lưu cấu hình: Giao diện={updated.Theme}, Ngôn ngữ={updated.Language}, Trình duyệt={updated.PreferredBrowser}.").ConfigureAwait(true);
+    }
+}
