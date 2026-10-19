@@ -111,6 +111,12 @@ public sealed partial class MainWindow
             this._vm.CheckAccountHealthCommand,
             VectorIcons.CheckCircle);
 
+        Button warmUpBtn = CloudflareControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnWarmUp"],
+            this._vm.WarmUpAccountCommand,
+            VectorIcons.Sync);
+
         Button saveProxyBtn = CloudflareControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Accounts.BtnSaveProxy"],
@@ -129,6 +135,7 @@ public sealed partial class MainWindow
         leftStack.Children.Add(quickImportBtn);
         leftStack.Children.Add(openBrowserBtn);
         leftStack.Children.Add(checkHealthBtn);
+        leftStack.Children.Add(warmUpBtn);
         leftStack.Children.Add(saveProxyBtn);
         leftStack.Children.Add(deleteBtn);
 
@@ -249,6 +256,7 @@ public sealed partial class MainWindow
             CloudflareControls.SetButtonText(quickImportBtn, this._i18n["Accounts.BtnQuickImport"]);
             CloudflareControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
             CloudflareControls.SetButtonText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            CloudflareControls.SetButtonText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
             CloudflareControls.SetButtonText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
             CloudflareControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };

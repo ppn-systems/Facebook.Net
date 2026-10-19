@@ -542,6 +542,14 @@ public sealed partial class MainWindow
         commentPhotoRow.Children.Add(commentPhotoBox);
         commentPhotoRow.Children.Add(pickCommentPhotoBtn);
 
+        CheckBox autoReactCheck = new()
+        {
+            Content = this._i18n["Leads.AutoReactToggle"],
+            IsChecked = this._vm.AutoReactBeforeComment
+        };
+        autoReactCheck.IsCheckedChanged += (_, _) =>
+            this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
+
         Button sendSelectedBtn = CloudflareControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Leads.BtnSendCommentSelected"],
@@ -562,6 +570,7 @@ public sealed partial class MainWindow
 
         rightStack.Children.Add(commentBox);
         rightStack.Children.Add(commentPhotoRow);
+        rightStack.Children.Add(autoReactCheck);
         rightStack.Children.Add(sendSelectedBtn);
         rightStack.Children.Add(autoCommentAllBtn);
         rightStack.Children.Add(openPostBtn);
@@ -581,6 +590,7 @@ public sealed partial class MainWindow
             UpdateSelectedPostBanner();
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
+            autoReactCheck.Content = this._i18n["Leads.AutoReactToggle"];
             CloudflareControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             CloudflareControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
             CloudflareControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);

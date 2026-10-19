@@ -61,6 +61,10 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string SalesCommentPhotoPath { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets a value indicating whether to automatically react (Like/Love) to a post before dropping a sales comment.</summary>
+    [ObservableProperty]
+    public partial bool AutoReactBeforeComment { get; set; } = true;
+
     private readonly List<string> _recentPublishedPostIds = new();
 
     private string _lastDefaultPostSpintax = string.Empty;
@@ -656,28 +660,22 @@ public sealed partial class ShellViewModel
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)
     {
-        int minSec = Math.Max(0, this.MinDelaySeconds);
-        int maxSec = Math.Max(minSec, this.MaxDelaySeconds);
-        if (maxSec <= 0)
+        TimeSpan delay = HumanJitter.NextGaussianDelay(this.MinDelaySeconds, this.MaxDelaySeconds);
+        if (delay <= TimeSpan.Zero)
         {
             return;
         }
 
-        int waitSec = Random.Shared.Next(minSec, maxSec + 1);
-        if (waitSec <= 0)
-        {
-            return;
-        }
-
+        double totalSec = Math.Round(delay.TotalSeconds, 1);
         _ = await this.LogAuditAsync(
             AuditCategory.System,
             AuditSeverity.Info,
             nextTargetName,
             this.Msg(
-                $"Đang nghỉ giãn cách an toàn {waitSec} giây trước khi xử lý '{nextTargetName}' (chống Checkpoint)...",
-                $"Waiting safe anti-checkpoint delay of {waitSec}s before processing '{nextTargetName}'...")).ConfigureAwait(true);
+                $"Đang nghỉ giãn cách tự nhiên {totalSec} giây (Gaussian Jitter) trước khi xử lý '{nextTargetName}'...",
+                $"Waiting humanized Gaussian delay of {totalSec}s before processing '{nextTargetName}'...")).ConfigureAwait(true);
 
-        await Task.Delay(TimeSpan.FromSeconds(waitSec), ct).ConfigureAwait(true);
+        await Task.Delay(delay, ct).ConfigureAwait(true);
     }
 
     private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
@@ -700,6 +698,14 @@ public sealed partial class ShellViewModel
                     $"Bỏ qua '{targetLabel}' vì tài khoản này đã từng Comment Sale vào bài đó trước đây.",
                     $"Skipped '{targetLabel}' because this account already commented on it earlier.")).ConfigureAwait(true);
             return;
+        }
+
+        if (this.AutoReactBeforeComment)
+        {
+            ReactionKind reaction = Random.Shared.NextDouble() < 0.75 ? ReactionKind.Like : ReactionKind.Love;
+            _ = await this._context.CometClient
+                .ReactToPostAsync(session, post.PostId, reaction, ct)
+                .ConfigureAwait(true);
         }
 
         string? attachmentFbid = null;

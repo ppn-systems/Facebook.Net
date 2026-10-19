@@ -487,4 +487,101 @@ public sealed partial class ShellViewModel
                 $"Đã gỡ tài khoản '{removedName}' khỏi danh sách.",
                 $"Removed account '{removedName}' from the vault.")).ConfigureAwait(true);
     }
+
+    private async Task WarmUpSelectedAccountAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this._context.Localization["Audit.Cat.Account"],
+                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile account = this.SelectedAccount;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Info,
+                account.DisplayName,
+                this.Msg(
+                    $"Đang khởi động tương tác tự nhiên (Nuôi tài khoản) cho '{account.DisplayName}': lướt Bảng tin & thả cảm xúc...",
+                    $"Running organic session warm-up for '{account.DisplayName}': scrolling Newsfeed & reacting...")).ConfigureAwait(true);
+
+            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+
+            PagedResult<PostSummary> feed = await this._context.CometClient
+                .GetNewsFeedAsync(session, count: 5, ct: ct)
+                .ConfigureAwait(true);
+
+            int reactedCount = 0;
+            for (int i = 0; i < feed.Items.Count && reactedCount < 2; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                PostSummary item = feed.Items[i];
+                if (string.IsNullOrWhiteSpace(item.PostId))
+                {
+                    continue;
+                }
+
+                ReactionKind reaction = Random.Shared.NextDouble() < 0.7 ? ReactionKind.Like : ReactionKind.Love;
+                bool ok = await this._context.CometClient
+                    .ReactToPostAsync(session, item.PostId, reaction, ct)
+                    .ConfigureAwait(true);
+                if (ok)
+                {
+                    reactedCount++;
+                }
+            }
+
+            AccountProfile updated = account with
+            {
+                Status = AccountStatus.Active,
+                LastActiveAt = DateTimeOffset.UtcNow
+            };
+            await this._context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Success,
+                updated.DisplayName,
+                this.Msg(
+                    $"Đã hoàn tất tương tác nuôi tài khoản '{updated.DisplayName}' (đã lướt Bảng tin & thả cảm xúc {reactedCount} bài viết)!",
+                    $"Completed organic warm-up for '{updated.DisplayName}' (scrolled Newsfeed & reacted to {reactedCount} posts)!")).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                account.DisplayName,
+                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Error,
+                account.DisplayName,
+                this.Msg(
+                    $"Lỗi khi tương tác nuôi tài khoản: {this.SanitizeErrorMessage(ex)}",
+                    $"Account warm-up failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
 }

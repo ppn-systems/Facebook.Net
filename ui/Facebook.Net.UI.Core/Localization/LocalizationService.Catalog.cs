@@ -233,6 +233,8 @@ public sealed partial class LocalizationService
             ["Empty.TargetGroups"] = "Chưa chọn nhóm đích — hãy chọn một nhóm bên trái và bấm 'Đưa vào Danh sách Nhóm đích'.",
             ["Empty.Templates"] = "Chưa có mẫu nội dung lưu sẵn — soạn bài viết bên trái và bấm 'Lưu vào Thư viện Mẫu'.",
             ["Empty.Leads"] = "Chưa có bài viết khách hàng — hãy chọn Nhóm và bấm 'Quét Bài viết mới trong Nhóm'.",
+            ["Accounts.BtnWarmUp"] = "Tương tác Nuôi Tài khoản (Lướt Feed & Thả tim)",
+            ["Leads.AutoReactToggle"] = "Tự động Thả cảm xúc (Like/Tim) vào bài viết trước khi gửi Comment Sale",
             ["Log.TaskStoppedByUser"] = "Đã dừng tác vụ ngay lập tức theo yêu cầu của người dùng.",
             ["Log.SelectAccountFirst"] = "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.",
             ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại."
@@ -386,6 +388,8 @@ public sealed partial class LocalizationService
             ["Empty.TargetGroups"] = "No target groups selected — pick a group on the left and click 'Add to Target Campaign Groups'.",
             ["Empty.Templates"] = "No saved templates yet — compose a Spintax post on the left and click 'Save to Library'.",
             ["Empty.Leads"] = "No buyer posts discovered yet — select a Group and click 'Scan Recent Posts'.",
+            ["Accounts.BtnWarmUp"] = "Warm Up Account (Scroll Newsfeed & React)",
+            ["Leads.AutoReactToggle"] = "Automatically react (Like/Love) to post before sending Sales Comment",
             ["Log.TaskStoppedByUser"] = "Task stopped immediately as requested by user.",
             ["Log.SelectAccountFirst"] = "Please select or add an account before running this task.",
             ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again."

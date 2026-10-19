@@ -81,6 +81,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.QuickImportSessionCommand = new AsyncRelayCommand(this.QuickImportSessionAsync);
         this.OpenBrowserAndSyncCommand = new AsyncRelayCommand(this.OpenBrowserAndSyncAsync);
         this.CheckAccountHealthCommand = new AsyncRelayCommand(this.CheckAccountHealthAsync);
+        this.WarmUpAccountCommand = new AsyncRelayCommand(this.WarmUpSelectedAccountAsync);
         this.SaveAccountProxyCommand = new AsyncRelayCommand(this.SaveAccountProxyAsync);
         this.DeleteSelectedAccountCommand = new AsyncRelayCommand(this.DeleteSelectedAccountAsync);
 
@@ -176,6 +177,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to verify live session health of the selected account.</summary>
     public IAsyncRelayCommand CheckAccountHealthCommand { get; }
+
+    /// <summary>Gets the command to run an organic Newsfeed scroll and reaction warm-up for the selected account.</summary>
+    public IAsyncRelayCommand WarmUpAccountCommand { get; }
 
     /// <summary>Gets the command to assign or update a dedicated HTTP/SOCKS5 proxy on the selected account.</summary>
     public IAsyncRelayCommand SaveAccountProxyCommand { get; }
