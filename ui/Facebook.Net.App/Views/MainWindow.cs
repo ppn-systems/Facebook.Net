@@ -3,6 +3,7 @@
 
 using System;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -159,6 +160,8 @@ public sealed partial class MainWindow : Window
                 };
             })
         };
+        AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
+        ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
 
         activeAccCombo.SelectionChanged += (_, _) =>
         {
@@ -253,6 +256,8 @@ public sealed partial class MainWindow : Window
             appSub.Text = this._i18n["App.Subtitle"];
             activeAccLabel.Text = this._i18n["TopBar.ActiveAccount"];
             activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
+            AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
+            ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
             CloudflareControls.SetButtonText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
             CloudflareControls.SetButtonText(
                 langBtn,

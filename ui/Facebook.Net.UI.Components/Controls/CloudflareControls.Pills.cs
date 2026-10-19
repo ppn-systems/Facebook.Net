@@ -3,6 +3,7 @@
 
 using System;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
@@ -104,6 +105,8 @@ public static partial class CloudflareControls
             Tag = severity,
             Child = row
         };
+        AutomationProperties.SetName(pill, text);
+        ToolTip.SetTip(pill, text);
 
         void ApplyColors()
         {
@@ -154,6 +157,8 @@ public static partial class CloudflareControls
     public static void SetPillText(Border pill, string text, ThemeService? theme = null, AuditSeverity? newSeverity = null)
     {
         ArgumentNullException.ThrowIfNull(pill);
+        AutomationProperties.SetName(pill, text);
+        ToolTip.SetTip(pill, text);
         if (newSeverity.HasValue)
         {
             pill.Tag = newSeverity.Value;
@@ -278,8 +283,11 @@ public static partial class CloudflareControls
             Padding = new Thickness(10, 7),
             FontSize = 13,
             AcceptsReturn = multiline,
-            TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap
+            TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            Focusable = true
         };
+        AutomationProperties.SetName(box, placeholder);
+        ToolTip.SetTip(box, placeholder);
 
         if (height.HasValue)
         {
@@ -366,6 +374,8 @@ public static partial class CloudflareControls
             Padding = new Thickness(14, 10),
             Child = row
         };
+        AutomationProperties.SetName(card, initialTitle);
+        ToolTip.SetTip(card, initialTitle);
 
         void ApplyColors()
         {

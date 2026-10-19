@@ -4,6 +4,7 @@
 using System;
 using System.Windows.Input;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -120,8 +121,11 @@ public static partial class CloudflareControls
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Foreground = Brushes.White,
-            BorderThickness = new Thickness(0)
+            BorderThickness = new Thickness(0),
+            Focusable = true
         };
+        AutomationProperties.SetName(btn, initialText);
+        ToolTip.SetTip(btn, initialText);
 
         void ApplyColors() => btn.Background = theme.Palette.BrandPrimary;
 
@@ -176,8 +180,11 @@ public static partial class CloudflareControls
             Padding = new Thickness(12, 7),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            BorderThickness = new Thickness(1)
+            BorderThickness = new Thickness(1),
+            Focusable = true
         };
+        AutomationProperties.SetName(btn, initialText);
+        ToolTip.SetTip(btn, initialText);
 
         void ApplyColors()
         {
@@ -239,6 +246,8 @@ public static partial class CloudflareControls
     public static void SetButtonText(Button button, string text)
     {
         ArgumentNullException.ThrowIfNull(button);
+        AutomationProperties.SetName(button, text);
+        ToolTip.SetTip(button, text);
         if (button.Content is TextBlock tb)
         {
             tb.Text = text;
