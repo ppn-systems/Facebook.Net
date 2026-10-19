@@ -454,10 +454,7 @@ public sealed partial class ShellViewModel
                 }
             }
 
-            if (this.ScrapedPosts.Count > 0)
-            {
-                this.SelectedScrapedPost = this.ScrapedPosts[0];
-            }
+            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,

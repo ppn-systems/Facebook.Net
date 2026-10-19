@@ -4,19 +4,25 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Importing;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
+using Facebook.Net.UI.ViewModels.Audit;
+using Facebook.Net.UI.ViewModels.Services;
+using Facebook.Net.UI.ViewModels.Shell;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;
 
 /// <summary>
 /// Unit tests verifying <see cref="UniversalSessionImporter"/>, <see cref="SqliteAuditLogStore"/>,
-/// <see cref="LocalizationService"/>, <see cref="ThemeService"/>, and <see cref="AppSettingsService"/>.
+/// <see cref="LocalizationService"/>, <see cref="ThemeService"/>, <see cref="ShellViewModel"/>,
+/// and <see cref="AuditLogDrawerViewModel"/>.
 /// </summary>
 public sealed class UiCoreAndViewModelsTests : IDisposable
 {
@@ -26,6 +32,16 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
     {
         this._tempDir = Path.Combine(Path.GetTempPath(), $"fb_ui_test_{Guid.NewGuid():N}");
         _ = Directory.CreateDirectory(this._tempDir);
+    }
+
+    private sealed class StubBrowserAdapter : IBrowserAdapter
+    {
+        public string PlatformName => "TestStub";
+
+        public string? LocateExecutablePath() => null;
+
+        public Task<IBrowserProcess> LaunchProcessAsync(BrowserLaunchOptions options, CancellationToken ct = default) =>
+            throw new NotSupportedException("Stub browser adapter does not launch real processes in unit tests.");
     }
 
     [Fact]
@@ -141,7 +157,7 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         bool okHttp = UniversalSessionImporter.TryParseProxySpec(
             "103.45.67.89:8080:myuser:mypass",
             "proxy_1",
-            out Facebook.Net.Contracts.Models.ProxyConfig? httpProxy);
+            out ProxyConfig? httpProxy);
 
         Assert.True(okHttp);
         Assert.NotNull(httpProxy);
@@ -154,7 +170,7 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         bool okSocks = UniversalSessionImporter.TryParseProxySpec(
             "socks5://203.0.113.10:1080:socksuser:sockspass",
             "proxy_2",
-            out Facebook.Net.Contracts.Models.ProxyConfig? socksProxy);
+            out ProxyConfig? socksProxy);
 
         Assert.True(okSocks);
         Assert.NotNull(socksProxy);
@@ -181,6 +197,49 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
 
         string emptyBraces = Facebook.Net.Protocol.PayloadBuilder.SpinText("Hello {}world");
         Assert.Equal("Hello world", emptyBraces);
+    }
+
+    [Fact]
+    public async Task ShellViewModel_And_AuditLogDrawerViewModel_EndToEndWorkflow_WorksWithoutJargon()
+    {
+        string e2eDir = Path.Combine(this._tempDir, "e2e_workspace");
+        using UiServiceContext context = new(new StubBrowserAdapter(), e2eDir);
+        using ShellViewModel shell = new(context);
+
+        await shell.InitializeAsync();
+
+        // Quick import J2Team cookie bundle without manual UID
+        shell.AccountFriendlyNameInput = "Nick Seeding VIP";
+        shell.SessionImportRawInput = "c_user=1000999888777; xs=99%3Atest_session_xs;";
+        await shell.QuickImportSessionCommand.ExecuteAsync(null);
+
+        Assert.NotNull(shell.SelectedAccount);
+        Assert.Equal("Nick Seeding VIP", shell.SelectedAccount.DisplayName);
+        Assert.Equal("1000999888777", shell.SelectedAccount.Uid);
+
+        // Save per-account SOCKS5 proxy
+        shell.AccountProxyInput = "socks5://198.51.100.7:1080:vipuser:vippass";
+        await shell.SaveAccountProxyCommand.ExecuteAsync(null);
+        Assert.NotNull(shell.SelectedAccount.ProxyId);
+        Assert.Equal("socks5://198.51.100.7:1080:vipuser:vippass", shell.AccountProxyInput);
+
+        // Preserve custom user-edited Spintax across language switches
+        string customSpintax = "{Chào cả nhà|Hello anh chị}, bên em chuyên sỉ lẻ gia dụng!";
+        shell.PostSpintaxText = customSpintax;
+        shell.ToggleLanguageQuickCommand.Execute(null);
+        Assert.Equal(customSpintax, shell.PostSpintaxText);
+
+        // Refresh and export Audit Logs to JSON and CSV
+        await shell.AuditDrawer.RefreshLogsAsync();
+        string jsonExportPath = Path.Combine(this._tempDir, "audit_export.json");
+        string csvExportPath = Path.Combine(this._tempDir, "audit_export.csv");
+        await shell.AuditDrawer.ExportFilteredLogsAsync(jsonExportPath);
+        await shell.AuditDrawer.ExportFilteredLogsAsync(csvExportPath);
+
+        Assert.True(File.Exists(jsonExportPath));
+        Assert.True(File.Exists(csvExportPath));
+        Assert.Contains("Nick Seeding VIP", await File.ReadAllTextAsync(jsonExportPath), StringComparison.Ordinal);
+        Assert.Contains("Nick Seeding VIP", await File.ReadAllTextAsync(csvExportPath), StringComparison.Ordinal);
     }
 
     public void Dispose()

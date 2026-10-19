@@ -181,6 +181,9 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
                 case CdpGetCookiesParams cookies:
                     JsonSerializer.Serialize(writer, cookies, BrowserJsonContext.Default.CdpGetCookiesParams);
                     break;
+                case CdpSetCookiesParams setCookies:
+                    JsonSerializer.Serialize(writer, setCookies, BrowserJsonContext.Default.CdpSetCookiesParams);
+                    break;
                 case CdpGetDocumentParams doc:
                     JsonSerializer.Serialize(writer, doc, BrowserJsonContext.Default.CdpGetDocumentParams);
                     break;
