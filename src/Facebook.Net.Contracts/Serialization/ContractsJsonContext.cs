@@ -2,8 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Text.Json.Serialization;
+using Facebook.Net.Contracts.Models;
 
-namespace Facebook.Net.Contracts;
+namespace Facebook.Net.Contracts.Serialization;
 
 /// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for Native AOT and trimming compatibility.

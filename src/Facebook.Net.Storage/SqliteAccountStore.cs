@@ -7,7 +7,9 @@ using System.Data;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Microsoft.Data.Sqlite;
 
 namespace Facebook.Net.Storage;
@@ -16,7 +18,7 @@ namespace Facebook.Net.Storage;
 /// AOT-compatible SQLite implementation of <see cref="IAccountStore"/> using <see cref="Microsoft.Data.Sqlite"/>.
 /// Uses WAL journaling mode and zero-reflection reader mapping.
 /// </summary>
-public sealed class SqliteAccountStore : IAccountStore
+public sealed partial class SqliteAccountStore : IAccountStore
 {
     private readonly string _connectionString;
 
@@ -183,72 +185,6 @@ public sealed class SqliteAccountStore : IAccountStore
         return affected > 0;
     }
 
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<ProxyConfig>> GetAllProxiesAsync(CancellationToken ct = default)
-    {
-        const string sql = "SELECT id, host, port, protocol, username, password FROM proxies ORDER BY id ASC;";
-
-        using SqliteConnection conn = new(this._connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-
-        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        List<ProxyConfig> list = new();
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            list.Add(MapProxy(reader));
-        }
-
-        return list;
-    }
-
-    /// <inheritdoc />
-    public async Task UpsertProxyAsync(ProxyConfig proxy, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(proxy);
-
-        const string sql = """
-            INSERT INTO proxies (id, host, port, protocol, username, password)
-            VALUES ($id, $host, $port, $protocol, $username, $password)
-            ON CONFLICT(id) DO UPDATE SET
-                host = excluded.host,
-                port = excluded.port,
-                protocol = excluded.protocol,
-                username = excluded.username,
-                password = excluded.password;
-            """;
-
-        using SqliteConnection conn = new(this._connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        _ = cmd.Parameters.AddWithValue("$id", proxy.Id);
-        _ = cmd.Parameters.AddWithValue("$host", proxy.Host);
-        _ = cmd.Parameters.AddWithValue("$port", proxy.Port);
-        _ = cmd.Parameters.AddWithValue("$protocol", (int)proxy.Protocol);
-        _ = cmd.Parameters.AddWithValue("$username", (object?)proxy.Username ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("$password", (object?)proxy.Password ?? DBNull.Value);
-
-        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async Task<bool> DeleteProxyAsync(string proxyId, CancellationToken ct = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(proxyId);
-
-        const string sql = "DELETE FROM proxies WHERE id = $id;";
-        using SqliteConnection conn = new(this._connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        _ = cmd.Parameters.AddWithValue("$id", proxyId);
-
-        int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        return affected > 0;
-    }
-
     private static AccountProfile MapAccount(SqliteDataReader reader)
     {
         string uid = reader.GetString(0);
@@ -281,13 +217,4 @@ public sealed class SqliteAccountStore : IAccountStore
             Status: status,
             LastActiveAt: lastActive);
     }
-
-    private static ProxyConfig MapProxy(SqliteDataReader reader) =>
-        new(
-            Id: reader.GetString(0),
-            Host: reader.GetString(1),
-            Port: reader.GetInt32(2),
-            Protocol: (ProxyProtocol)reader.GetInt32(3),
-            Username: reader.IsDBNull(4) ? null : reader.GetString(4),
-            Password: reader.IsDBNull(5) ? null : reader.GetString(5));
 }

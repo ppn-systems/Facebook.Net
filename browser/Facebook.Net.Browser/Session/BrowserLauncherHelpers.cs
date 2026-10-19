@@ -12,10 +12,13 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Browser.Protocol;
+using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Exceptions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.Browser;
+namespace Facebook.Net.Browser.Session;
 
 /// <summary>
 /// Shared helper routines for building stealth Chromium command-line arguments, allocating free ports,
@@ -31,7 +34,6 @@ public static class BrowserLauncherHelpers
     /// <summary>
     /// Allocates an available local ephemeral TCP port on <c>127.0.0.1</c>.
     /// </summary>
-    /// <returns>An available port number.</returns>
     public static int AllocateFreePort()
     {
         using TcpListener listener = new(IPAddress.Loopback, 0);
@@ -44,9 +46,6 @@ public static class BrowserLauncherHelpers
     /// <summary>
     /// Builds the list of stealth command-line arguments for launching Chromium/Edge without automation flags.
     /// </summary>
-    /// <param name="options">Browser launch configuration.</param>
-    /// <param name="debuggingPort">Assigned local CDP debugging port.</param>
-    /// <returns>List of command-line arguments.</returns>
     public static List<string> BuildStealthArguments(BrowserLaunchOptions options, int debuggingPort)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -105,10 +104,6 @@ public static class BrowserLauncherHelpers
     /// <summary>
     /// Polls <c>http://127.0.0.1:{port}/json/list</c> until the initial page target is ready and returns its WebSocket debugger URI.
     /// </summary>
-    /// <param name="debuggingPort">The local CDP debugging port.</param>
-    /// <param name="process">The launched OS process.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The resolved page-level <c>ws://</c> debugger URI.</returns>
     public static async Task<Uri> WaitForPageDebuggerUriAsync(int debuggingPort, Process process, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(process);
@@ -164,8 +159,6 @@ public sealed class ManagedBrowserProcess : IBrowserProcess
     /// <summary>
     /// Initializes a new instance of the <see cref="ManagedBrowserProcess"/> class.
     /// </summary>
-    /// <param name="process">The underlying OS process.</param>
-    /// <param name="debuggerWebSocketUri">The resolved CDP WebSocket URI.</param>
     public ManagedBrowserProcess(Process process, Uri debuggerWebSocketUri)
     {
         ArgumentNullException.ThrowIfNull(process);

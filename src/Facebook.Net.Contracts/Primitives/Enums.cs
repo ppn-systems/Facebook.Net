@@ -1,7 +1,7 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-namespace Facebook.Net.Contracts;
+namespace Facebook.Net.Contracts.Primitives;
 
 /// <summary>
 /// Operational state of a managed account profile.

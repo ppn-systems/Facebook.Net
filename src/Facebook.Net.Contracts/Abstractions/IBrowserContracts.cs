@@ -5,8 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.Contracts;
+namespace Facebook.Net.Contracts.Abstractions;
 
 /// <summary>
 /// OS-specific adapter responsible for locating the Chromium binary and managing its native OS process.

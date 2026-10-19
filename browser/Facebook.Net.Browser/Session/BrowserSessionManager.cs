@@ -5,9 +5,12 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Browser.Protocol;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.Browser;
+namespace Facebook.Net.Browser.Session;
 
 /// <summary>
 /// Orchestrates multiple isolated <see cref="IBrowserSession"/> instances with a staggered launch queue
@@ -25,8 +28,6 @@ public sealed class BrowserSessionManager : IBrowserManager
     /// <summary>
     /// Initializes a new instance of the <see cref="BrowserSessionManager"/> class.
     /// </summary>
-    /// <param name="adapter">The OS-specific browser adapter (Windows or macOS).</param>
-    /// <param name="staggerDelay">Optional delay between consecutive browser launches (defaults to 10 seconds).</param>
     public BrowserSessionManager(IBrowserAdapter adapter, TimeSpan? staggerDelay = null)
     {
         ArgumentNullException.ThrowIfNull(adapter);
@@ -59,7 +60,6 @@ public sealed class BrowserSessionManager : IBrowserManager
                 return existing;
             }
 
-            // Enforce staggered launch queue delay between browser starts
             if (this._lastLaunchTime != DateTimeOffset.MinValue && this._staggerDelay > TimeSpan.Zero)
             {
                 TimeSpan elapsed = DateTimeOffset.UtcNow - this._lastLaunchTime;

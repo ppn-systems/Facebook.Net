@@ -11,7 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Contracts.Exceptions;
 
-namespace Facebook.Net.Browser;
+namespace Facebook.Net.Browser.Protocol;
 
 /// <summary>
 /// Lightweight, zero-dependency Chrome DevTools Protocol (CDP) WebSocket client compatible with Native AOT.
@@ -252,7 +252,6 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
         if (!doc.RootElement.TryGetProperty("id"u8, out JsonElement idElement) ||
             !idElement.TryGetInt32(out int id))
         {
-            // Async CDP event notification; dispose document
             doc.Dispose();
             return;
         }

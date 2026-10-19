@@ -3,9 +3,11 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
-namespace Facebook.Net.Contracts;
+namespace Facebook.Net.Contracts.Primitives;
 
 /// <summary>
 /// Provides zero/low-allocation helper routines for Comet token checksums (<c>jazoest</c>),
@@ -27,7 +29,7 @@ public static class ProtocolCodec
             sum += fbDtsg[i];
         }
 
-        return string.Concat("2", sum.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return string.Concat("2", sum.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -116,8 +118,8 @@ public static class ProtocolCodec
     /// into individual sanitized JSON object strings, stripping any <c>for (;;);</c> prefixes.
     /// </summary>
     /// <param name="rawStream">The raw response stream text.</param>
-    /// <returns>An array of non-empty JSON payload lines.</returns>
-    public static System.Collections.Generic.IReadOnlyList<string> SplitNdjsonPayloads(ReadOnlySpan<char> rawStream)
+    /// <returns>A read-only list of non-empty JSON payload lines.</returns>
+    public static IReadOnlyList<string> SplitNdjsonPayloads(ReadOnlySpan<char> rawStream)
     {
         ReadOnlySpan<char> sanitized = StripAntiJsonpPrefix(rawStream);
         if (sanitized.IsEmpty)
@@ -125,7 +127,7 @@ public static class ProtocolCodec
             return Array.Empty<string>();
         }
 
-        System.Collections.Generic.List<string> lines = new(4);
+        List<string> lines = new(4);
         foreach (Range range in sanitized.Split('\n'))
         {
             ReadOnlySpan<char> line = sanitized[range].Trim();

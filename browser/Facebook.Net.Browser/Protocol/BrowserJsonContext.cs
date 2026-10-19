@@ -4,7 +4,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace Facebook.Net.Browser;
+namespace Facebook.Net.Browser.Protocol;
 
 /// <summary>
 /// Represents an outbound Chrome DevTools Protocol (CDP) JSON-RPC command payload.

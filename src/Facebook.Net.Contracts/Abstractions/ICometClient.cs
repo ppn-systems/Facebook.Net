@@ -4,17 +4,10 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.Contracts;
-
-/// <summary>
-/// Represents a paginated result set with a cursor for fetching subsequent pages.
-/// </summary>
-/// <typeparam name="T">The item type.</typeparam>
-public sealed record PagedResult<T>(
-    IReadOnlyList<T> Items,
-    string? EndCursor = null,
-    bool HasNextPage = false);
+namespace Facebook.Net.Contracts.Abstractions;
 
 /// <summary>
 /// High-level client for executing Comet GraphQL operations, group/feed scraping,
@@ -25,15 +18,7 @@ public interface ICometClient
     /// <summary>
     /// Executes a raw or custom <see cref="GraphQlRequest"/> with contextual pre/post navigation and response sanitization.
     /// </summary>
-    /// <param name="session">Active browser session for the account.</param>
-    /// <param name="request">GraphQL request descriptor.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Sanitized <see cref="GraphQlResult"/>.</returns>
     Task<GraphQlResult> ExecuteGraphQlAsync(IBrowserSession session, GraphQlRequest request, CancellationToken ct = default);
-
-    // -------------------------------------------------------------------------
-    // 1. Posts, Sales Commenting, Reactions & Sharing (Feed & Group Publishing)
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Publishes a new post to the user's personal timeline (<see cref="ComposerTarget.Feed"/>)
@@ -50,7 +35,6 @@ public interface ICometClient
 
     /// <summary>
     /// Shares an existing post onto the user's personal timeline or into a target community group.
-    /// Automatically resolves link attachment preview (<c>share_scrape_data</c>) before publishing.
     /// </summary>
     Task<string?> SharePostAsync(
         IBrowserSession session,
@@ -61,7 +45,6 @@ public interface ICometClient
 
     /// <summary>
     /// Posts a sales or seeding comment on a feed or group post, optionally attaching an uploaded product photo (<c>fbid</c>).
-    /// Supports Spintax syntax and performs pre/post contextual navigation.
     /// </summary>
     Task<string?> CreateCommentAsync(
         IBrowserSession session,
@@ -94,10 +77,6 @@ public interface ICometClient
     /// Scrapes users who commented on a specific post (<c>CommentsListComponentsPaginationQuery</c>).
     /// </summary>
     Task<PagedResult<UserSummary>> GetPostCommentersAsync(IBrowserSession session, string postId, string? cursor = null, CancellationToken ct = default);
-
-    // -------------------------------------------------------------------------
-    // 2. Community Groups (Scraping, Joining, Questionnaire, Publishing)
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Searches community groups by keyword (<c>SearchCometResultsPaginatedResultsQuery</c>).
@@ -143,10 +122,6 @@ public interface ICometClient
     /// Invites friends to a community group (<c>useGroupAddMembersMutation</c>).
     /// </summary>
     Task<bool> InviteFriendsToGroupAsync(IBrowserSession session, string groupId, IReadOnlyList<string> friendUids, CancellationToken ct = default);
-
-    // -------------------------------------------------------------------------
-    // 3. Friending & Social Graph
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Fetches "People You May Know" (PYMK) friend suggestions.
@@ -198,10 +173,6 @@ public interface ICometClient
     /// </summary>
     Task<bool> PokeUserAsync(IBrowserSession session, string targetUid, CancellationToken ct = default);
 
-    // -------------------------------------------------------------------------
-    // 4. Stories, Watch, Notifications, Fanpages & Media Uploads
-    // -------------------------------------------------------------------------
-
     /// <summary>
     /// Fetches the active stories tray items (<c>StoriesTrayRectangularQuery</c>).
     /// </summary>
@@ -251,50 +222,4 @@ public interface ICometClient
     /// Uploads a video (<c>.mp4</c>) using the 4-step RUpload protocol and returns its <c>video_id</c>.
     /// </summary>
     Task<string> UploadVideoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
-}
-
-/// <summary>
-/// Persistence store for managing <see cref="AccountProfile"/> and <see cref="ProxyConfig"/> records in SQLite.
-/// </summary>
-public interface IAccountStore
-{
-    /// <summary>
-    /// Initializes database schema tables if they do not exist.
-    /// </summary>
-    Task InitializeAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Retrieves all stored account profiles.
-    /// </summary>
-    Task<IReadOnlyList<AccountProfile>> GetAllAccountsAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Retrieves a specific account profile by UID.
-    /// </summary>
-    Task<AccountProfile?> GetAccountByUidAsync(string uid, CancellationToken ct = default);
-
-    /// <summary>
-    /// Inserts or updates an account profile.
-    /// </summary>
-    Task UpsertAccountAsync(AccountProfile account, CancellationToken ct = default);
-
-    /// <summary>
-    /// Deletes an account profile by UID.
-    /// </summary>
-    Task<bool> DeleteAccountAsync(string uid, CancellationToken ct = default);
-
-    /// <summary>
-    /// Retrieves all configured proxies.
-    /// </summary>
-    Task<IReadOnlyList<ProxyConfig>> GetAllProxiesAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Inserts or updates a proxy configuration.
-    /// </summary>
-    Task UpsertProxyAsync(ProxyConfig proxy, CancellationToken ct = default);
-
-    /// <summary>
-    /// Deletes a proxy configuration by ID.
-    /// </summary>
-    Task<bool> DeleteProxyAsync(string proxyId, CancellationToken ct = default);
 }

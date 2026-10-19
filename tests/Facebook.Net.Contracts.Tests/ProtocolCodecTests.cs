@@ -4,6 +4,9 @@
 using System;
 using System.Text.Json;
 using Facebook.Net.Contracts.Exceptions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
+using Facebook.Net.Contracts.Serialization;
 using Xunit;
 
 namespace Facebook.Net.Contracts.Tests;

@@ -5,7 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Client;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
+using Facebook.Net.Protocol;
 using Xunit;
 
 namespace Facebook.Net.Tests;

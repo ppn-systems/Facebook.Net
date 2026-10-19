@@ -6,9 +6,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using Facebook.Net.Contracts;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net;
+namespace Facebook.Net.Protocol;
 
 /// <summary>
 /// Provides Spintax content variation (<c>{opt1|opt2|opt3}</c>), Comet context token generation
@@ -23,8 +24,6 @@ public static class PayloadBuilder
     /// Resolves nested or flat Spintax expressions (<c>{option A|option B|option C}</c>)
     /// using thread-safe random selection to prevent duplicate content detection when posting or commenting.
     /// </summary>
-    /// <param name="template">Input text potentially containing Spintax blocks.</param>
-    /// <returns>The resolved text with one option chosen per block.</returns>
     public static string SpinText(string template)
     {
         if (string.IsNullOrEmpty(template) || !template.Contains('{', StringComparison.Ordinal))
@@ -65,15 +64,11 @@ public static class PayloadBuilder
     /// <summary>
     /// Generates a new UUID v4 string for <c>idempotence_token</c> or <c>composer_session_id</c>.
     /// </summary>
-    /// <returns>Lowercase hyphenated UUID v4 string.</returns>
     public static string NewUuidV4() => Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Generates a realistic <c>attribution_id_v2</c> navigation breadcrumb string.
     /// </summary>
-    /// <param name="surfaceComponent">React surface component name (e.g., <c>CometHomeRoot.react</c>).</param>
-    /// <param name="routeName">Comet route name (e.g., <c>comet.fbweb.CometHomeRoute</c>).</param>
-    /// <returns>Formatted <c>attribution_id_v2</c> string.</returns>
     public static string CreateAttributionIdV2(
         string surfaceComponent = "CometHomeRoot.react",
         string routeName = "comet.fbweb.CometHomeRoute")
@@ -88,9 +83,6 @@ public static class PayloadBuilder
     /// <summary>
     /// Builds the standard Comet headers (<c>content-type</c>, <c>x-asbd-id</c>, <c>x-fb-lsd</c>, <c>x-fb-friendly-name</c>).
     /// </summary>
-    /// <param name="material">Authenticated session material.</param>
-    /// <param name="friendlyName">GraphQL operation friendly name.</param>
-    /// <returns>Dictionary of HTTP request headers.</returns>
     public static Dictionary<string, string> BuildGraphQlHeaders(SessionMaterial material, string friendlyName)
     {
         ArgumentNullException.ThrowIfNull(material);
@@ -109,10 +101,6 @@ public static class PayloadBuilder
     /// Builds the complete <c>application/x-www-form-urlencoded</c> body combining all 23 Comet Base Parameters
     /// with the target <see cref="GraphQlRequest"/>.
     /// </summary>
-    /// <param name="material">Authenticated session material.</param>
-    /// <param name="request">GraphQL request descriptor.</param>
-    /// <param name="requestCounter">Sequential tab request counter.</param>
-    /// <returns>URL-encoded form body string.</returns>
     public static string BuildGraphQlFormBody(SessionMaterial material, GraphQlRequest request, int requestCounter)
     {
         ArgumentNullException.ThrowIfNull(material);

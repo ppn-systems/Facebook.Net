@@ -4,8 +4,10 @@
 using System;
 using System.Collections.Generic;
 using Facebook.Net.Browser.MacOS;
+using Facebook.Net.Browser.Session;
 using Facebook.Net.Browser.Windows;
-using Facebook.Net.Contracts;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Xunit;
 
 namespace Facebook.Net.Browser.Tests;

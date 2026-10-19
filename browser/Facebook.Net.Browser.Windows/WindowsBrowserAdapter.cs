@@ -7,8 +7,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Browser.Session;
+using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Exceptions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 
 namespace Facebook.Net.Browser.Windows;
 
@@ -81,7 +84,7 @@ public sealed class WindowsBrowserAdapter : IBrowserAdapter
             ? options with { UserAgent = ProtocolConstants.Protocol.DefaultWindowsUserAgent }
             : options;
 
-        IReadOnlyList<string> args = BrowserLauncherHelpers.BuildStealthArguments(effectiveOptions, port);
+        List<string> args = BrowserLauncherHelpers.BuildStealthArguments(effectiveOptions, port);
 
         ProcessStartInfo startInfo = new()
         {

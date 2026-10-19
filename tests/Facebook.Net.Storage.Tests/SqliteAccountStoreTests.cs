@@ -5,7 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Xunit;
 
 namespace Facebook.Net.Storage.Tests;
