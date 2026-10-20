@@ -46,6 +46,17 @@ public static class LeadPostRowCard
             FontWeight.SemiBold);
         authorRow.Children.Add(authorTb);
 
+        if (!string.IsNullOrWhiteSpace(post.GroupName))
+        {
+            Border groupPill = IconMetricPill.Create(
+                theme,
+                VectorIcons.Groups,
+                post.GroupName,
+                AuditSeverity.Info,
+                out _);
+            authorRow.Children.Add(groupPill);
+        }
+
         Border intentPill = StatusPill.Create(
             theme,
             formatIntentBadge(),

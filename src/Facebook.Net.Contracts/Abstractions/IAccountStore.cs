@@ -99,4 +99,24 @@ public interface IAccountStore
     /// Retrieves the most recent action history entries.
     /// </summary>
     Task<IReadOnlyList<ActionHistoryEntry>> GetRecentActionsAsync(int limit = 100, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a batch of scraped group posts in the local SQLite database.
+    /// </summary>
+    Task UpsertScrapedPostsAsync(IReadOnlyList<PostSummary> posts, CancellationToken ct = default);
+
+    /// <summary>
+    /// Queries scraped group posts from the local SQLite database with optional group and keyword filters.
+    /// Does not perform any network calls to Facebook.
+    /// </summary>
+    Task<IReadOnlyList<PostSummary>> QueryScrapedPostsAsync(
+        string? groupId = null,
+        string? searchKeyword = null,
+        int limit = 200,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes scraped posts from the local SQLite database (all posts or only posts for a specific group).
+    /// </summary>
+    Task<int> ClearScrapedPostsAsync(string? groupId = null, CancellationToken ct = default);
 }

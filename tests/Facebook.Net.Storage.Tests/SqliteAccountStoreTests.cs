@@ -114,6 +114,57 @@ public sealed class SqliteAccountStoreTests : IDisposable
         Assert.Equal("cmt_111", recent[0].ResultId);
     }
 
+    [Fact]
+    public async Task ScrapedPostsRepository_UpsertQueryFilterAndClear_WorksCorrectly()
+    {
+        await this._store.InitializeAsync();
+
+        PostSummary post1 = new(
+            PostId: "post_net_1",
+            AuthorUid: "1001",
+            AuthorName: "Nguyễn Văn A",
+            MessageText: "Tuyển lập trình viên C# .NET lương cao tại HCM",
+            PermalinkUrl: "https://www.facebook.com/groups/dotnet/posts/post_net_1",
+            ReactionCount: 12,
+            CommentCount: 4,
+            CreatedAt: DateTimeOffset.UtcNow.AddMinutes(-10),
+            GroupId: "grp_dotnet",
+            GroupName: "Lập trình viên .Net C#");
+
+        PostSummary post2 = new(
+            PostId: "post_laptop_2",
+            AuthorUid: "1002",
+            AuthorName: "Trần Thị B",
+            MessageText: "Cần mua MacBook Pro M3 cũ giá tốt",
+            PermalinkUrl: "https://www.facebook.com/groups/laptop/posts/post_laptop_2",
+            ReactionCount: 5,
+            CommentCount: 9,
+            CreatedAt: DateTimeOffset.UtcNow.AddMinutes(-5),
+            GroupId: "grp_laptop",
+            GroupName: "Hội Mua Bán Laptop");
+
+        await this._store.UpsertScrapedPostsAsync([post1, post2]);
+
+        IReadOnlyList<PostSummary> all = await this._store.QueryScrapedPostsAsync();
+        Assert.Equal(2, all.Count);
+
+        IReadOnlyList<PostSummary> byGroup = await this._store.QueryScrapedPostsAsync(groupId: "grp_dotnet");
+        _ = Assert.Single(byGroup);
+        Assert.Equal("post_net_1", byGroup[0].PostId);
+        Assert.Equal("Lập trình viên .Net C#", byGroup[0].GroupName);
+
+        IReadOnlyList<PostSummary> byKeyword = await this._store.QueryScrapedPostsAsync(searchKeyword: "MacBook");
+        _ = Assert.Single(byKeyword);
+        Assert.Equal("post_laptop_2", byKeyword[0].PostId);
+
+        int deletedDotnet = await this._store.ClearScrapedPostsAsync(groupId: "grp_dotnet");
+        Assert.Equal(1, deletedDotnet);
+
+        int deletedRemaining = await this._store.ClearScrapedPostsAsync();
+        Assert.Equal(1, deletedRemaining);
+        Assert.Empty(await this._store.QueryScrapedPostsAsync());
+    }
+
     public void Dispose()
     {
         try

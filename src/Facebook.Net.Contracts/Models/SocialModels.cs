@@ -16,7 +16,7 @@ public sealed record UserSummary(
     FriendshipState Friendship = FriendshipState.Unknown);
 
 /// <summary>
-/// Summary of a feed or group post story, including engagement metrics and creation timestamp.
+/// Summary of a feed or group post story, including engagement metrics, creation timestamp, and source group metadata.
 /// </summary>
 public sealed record PostSummary(
     string PostId,
@@ -26,7 +26,9 @@ public sealed record PostSummary(
     string? PermalinkUrl = null,
     int ReactionCount = 0,
     int CommentCount = 0,
-    DateTimeOffset? CreatedAt = null);
+    DateTimeOffset? CreatedAt = null,
+    string? GroupId = null,
+    string? GroupName = null);
 
 /// <summary>
 /// Summary of a community group.

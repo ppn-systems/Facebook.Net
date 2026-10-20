@@ -226,6 +226,140 @@ public sealed partial class SqliteAccountStore
         return list;
     }
 
+    /// <inheritdoc />
+    public async Task UpsertScrapedPostsAsync(IReadOnlyList<PostSummary> posts, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(posts);
+        if (posts.Count == 0)
+        {
+            return;
+        }
+
+        const string sql = """
+            INSERT INTO scraped_posts (
+                post_id, group_id, group_name, author_uid, author_name,
+                message_text, permalink_url, reaction_count, comment_count,
+                created_at, scraped_at
+            )
+            VALUES (
+                $post_id, $group_id, $group_name, $author_uid, $author_name,
+                $message_text, $permalink_url, $reaction_count, $comment_count,
+                $created_at, $scraped_at
+            )
+            ON CONFLICT(post_id) DO UPDATE SET
+                group_id = CASE WHEN excluded.group_id <> '' THEN excluded.group_id ELSE scraped_posts.group_id END,
+                group_name = CASE WHEN excluded.group_name <> '' THEN excluded.group_name ELSE scraped_posts.group_name END,
+                author_uid = CASE WHEN excluded.author_uid <> '' THEN excluded.author_uid ELSE scraped_posts.author_uid END,
+                author_name = COALESCE(excluded.author_name, scraped_posts.author_name),
+                message_text = COALESCE(excluded.message_text, scraped_posts.message_text),
+                permalink_url = COALESCE(excluded.permalink_url, scraped_posts.permalink_url),
+                reaction_count = MAX(scraped_posts.reaction_count, excluded.reaction_count),
+                comment_count = MAX(scraped_posts.comment_count, excluded.comment_count),
+                created_at = COALESCE(excluded.created_at, scraped_posts.created_at),
+                scraped_at = excluded.scraped_at;
+            """;
+
+        string nowIso = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+
+        using SqliteConnection conn = new(this._connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        for (int i = 0; i < posts.Count; i++)
+        {
+            PostSummary p = posts[i];
+            if (string.IsNullOrWhiteSpace(p.PostId))
+            {
+                continue;
+            }
+
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.Transaction = (SqliteTransaction)tx;
+            cmd.CommandText = sql;
+            _ = cmd.Parameters.AddWithValue("$post_id", p.PostId);
+            _ = cmd.Parameters.AddWithValue("$group_id", p.GroupId ?? string.Empty);
+            _ = cmd.Parameters.AddWithValue("$group_name", p.GroupName ?? string.Empty);
+            _ = cmd.Parameters.AddWithValue("$author_uid", p.AuthorUid ?? string.Empty);
+            _ = cmd.Parameters.AddWithValue("$author_name", (object?)p.AuthorName ?? DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$message_text", (object?)p.MessageText ?? DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$permalink_url", (object?)p.PermalinkUrl ?? DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$reaction_count", p.ReactionCount);
+            _ = cmd.Parameters.AddWithValue("$comment_count", p.CommentCount);
+            _ = cmd.Parameters.AddWithValue(
+                "$created_at",
+                p.CreatedAt.HasValue
+                    ? p.CreatedAt.Value.ToString("O", CultureInfo.InvariantCulture)
+                    : DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$scraped_at", nowIso);
+
+            _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PostSummary>> QueryScrapedPostsAsync(
+        string? groupId = null,
+        string? searchKeyword = null,
+        int limit = 200,
+        CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT post_id, group_id, group_name, author_uid, author_name,
+                   message_text, permalink_url, reaction_count, comment_count, created_at
+            FROM scraped_posts
+            WHERE ($group_id IS NULL OR group_id = $group_id)
+              AND ($keyword IS NULL
+                   OR message_text LIKE $keyword
+                   OR author_name LIKE $keyword
+                   OR group_name LIKE $keyword)
+            ORDER BY COALESCE(created_at, scraped_at) DESC
+            LIMIT $limit;
+            """;
+
+        string? normalizedGroup = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
+        string? normalizedKeyword = string.IsNullOrWhiteSpace(searchKeyword)
+            ? null
+            : $"%{searchKeyword.Trim()}%";
+
+        using SqliteConnection conn = new(this._connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$group_id", (object?)normalizedGroup ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$keyword", (object?)normalizedKeyword ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$limit", limit <= 0 ? 200 : limit);
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        List<PostSummary> list = new();
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            list.Add(MapScrapedPost(reader));
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ClearScrapedPostsAsync(string? groupId = null, CancellationToken ct = default)
+    {
+        const string sql = """
+            DELETE FROM scraped_posts
+            WHERE ($group_id IS NULL OR group_id = $group_id);
+            """;
+
+        string? normalizedGroup = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
+
+        using SqliteConnection conn = new(this._connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$group_id", (object?)normalizedGroup ?? DBNull.Value);
+
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     private static SavedTargetGroup MapTargetGroup(SqliteDataReader reader) =>
         new(
             GroupId: reader.GetString(0),
@@ -254,5 +388,33 @@ public sealed partial class SqliteAccountStore
             TargetId: reader.GetString(2),
             ResultId: reader.IsDBNull(3) ? null : reader.GetString(3),
             ExecutedAt: executedAt);
+    }
+
+    private static PostSummary MapScrapedPost(SqliteDataReader reader)
+    {
+        DateTimeOffset? createdAt = null;
+        if (!reader.IsDBNull(9))
+        {
+            string rawCreated = reader.GetString(9);
+            if (DateTimeOffset.TryParse(rawCreated, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed))
+            {
+                createdAt = parsed;
+            }
+        }
+
+        string groupId = reader.GetString(1);
+        string groupName = reader.GetString(2);
+
+        return new PostSummary(
+            PostId: reader.GetString(0),
+            AuthorUid: reader.GetString(3),
+            AuthorName: reader.IsDBNull(4) ? null : reader.GetString(4),
+            MessageText: reader.IsDBNull(5) ? null : reader.GetString(5),
+            PermalinkUrl: reader.IsDBNull(6) ? null : reader.GetString(6),
+            ReactionCount: reader.GetInt32(7),
+            CommentCount: reader.GetInt32(8),
+            CreatedAt: createdAt,
+            GroupId: string.IsNullOrWhiteSpace(groupId) ? null : groupId,
+            GroupName: string.IsNullOrWhiteSpace(groupName) ? null : groupName);
     }
 }

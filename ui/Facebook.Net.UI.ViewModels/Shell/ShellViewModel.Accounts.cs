@@ -191,6 +191,8 @@ public sealed partial class ShellViewModel
         }
 
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+        await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
+        this.SyncBackgroundScraperLoop();
     }
 
     private async Task ReloadTemplatesOnlyAsync()

@@ -92,6 +92,23 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 executed_at TEXT NOT NULL,
                 PRIMARY KEY (account_uid, action_kind, target_id)
             );
+
+            CREATE TABLE IF NOT EXISTS scraped_posts (
+                post_id TEXT PRIMARY KEY NOT NULL,
+                group_id TEXT NOT NULL,
+                group_name TEXT NOT NULL,
+                author_uid TEXT NOT NULL,
+                author_name TEXT NULL,
+                message_text TEXT NULL,
+                permalink_url TEXT NULL,
+                reaction_count INTEGER NOT NULL DEFAULT 0,
+                comment_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NULL,
+                scraped_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scraped_posts_group_id ON scraped_posts(group_id);
+            CREATE INDEX IF NOT EXISTS idx_scraped_posts_scraped_at ON scraped_posts(scraped_at DESC);
             """;
 
         using SqliteConnection conn = new(this._connectionString);

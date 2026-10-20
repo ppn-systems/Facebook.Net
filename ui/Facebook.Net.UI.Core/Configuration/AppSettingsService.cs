@@ -44,7 +44,12 @@ public sealed record AppConfig(
     int MaxDelaySeconds = 45,
     bool IsAuditDrawerExpanded = false,
     bool IsSidebarCollapsed = false,
-    string? LastSelectedAccountUid = null)
+    string? LastSelectedAccountUid = null,
+    string ScrapeFilterKeywords = "",
+    int ScrapePostsPerGroup = 15,
+    bool AutoBackgroundScrapeEnabled = false,
+    int AutoScrapeIntervalMinutes = 10,
+    bool ScrapeAllEnabledTargetGroups = true)
 {
     /// <summary>
     /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
@@ -53,6 +58,8 @@ public sealed record AppConfig(
     {
         int clampedMin = Math.Clamp(this.MinDelaySeconds, 1, 3600);
         int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
+        int clampedPerGroup = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
+        int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 10 : this.AutoScrapeIntervalMinutes, 1, 120);
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
@@ -65,7 +72,10 @@ public sealed record AppConfig(
             MinDelaySeconds = clampedMin,
             MaxDelaySeconds = clampedMax,
             CustomBrowserExecutablePath = cleanedPath,
-            LastSelectedAccountUid = cleanedUid
+            LastSelectedAccountUid = cleanedUid,
+            ScrapeFilterKeywords = this.ScrapeFilterKeywords?.Trim() ?? string.Empty,
+            ScrapePostsPerGroup = clampedPerGroup,
+            AutoScrapeIntervalMinutes = clampedInterval
         };
     }
 }

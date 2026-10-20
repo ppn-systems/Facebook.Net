@@ -124,6 +124,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.PublishCampaignCommand = new AsyncRelayCommand(this.PublishCampaignAsync);
         this.BumpRecentPostsCommand = new AsyncRelayCommand(this.BumpRecentPostsAsync);
         this.ScanGroupLeadsCommand = new AsyncRelayCommand(this.ScanGroupLeadsAsync);
+        this.QueryLocalScrapedPostsCommand = new AsyncRelayCommand(() => this.QueryLocalScrapedPostsAsync());
+        this.ClearScrapedPostsDbCommand = new AsyncRelayCommand(this.ClearScrapedPostsDbAsync);
         this.SendSalesCommentOnSelectedPostCommand = new AsyncRelayCommand(this.SendSalesCommentOnSelectedPostAsync);
         this.AutoCommentAllMatchedPostsCommand = new AsyncRelayCommand(this.AutoCommentAllMatchedPostsAsync);
         this.OpenSelectedPostInBrowserCommand = new AsyncRelayCommand(this.OpenSelectedPostInBrowserAsync);
@@ -271,8 +273,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the command to bump (Up-Top) recently published group posts with a comment.</summary>
     public IAsyncRelayCommand BumpRecentPostsCommand { get; }
 
-    /// <summary>Gets the command to scan recent posts inside the selected group and filter by buyer keywords.</summary>
+    /// <summary>Gets the command to selectively scrape recent group posts and store them into the local SQLite database.</summary>
     public IAsyncRelayCommand ScanGroupLeadsCommand { get; }
+
+    /// <summary>Gets the command to search and filter scraped posts directly from the local SQLite database without calling Facebook.</summary>
+    public IAsyncRelayCommand QueryLocalScrapedPostsCommand { get; }
+
+    /// <summary>Gets the command to clear stored scraped posts from the local SQLite database.</summary>
+    public IAsyncRelayCommand ClearScrapedPostsDbCommand { get; }
 
     /// <summary>Gets the command to post a sales comment on the visually selected post card.</summary>
     public IAsyncRelayCommand SendSalesCommentOnSelectedPostCommand { get; }
@@ -296,7 +304,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         this.LoadSettingsIntoProperties();
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+        await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
         await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
+        this.SyncBackgroundScraperLoop();
 
         _ = await this.LogAuditAsync(
             AuditCategory.System,
@@ -321,6 +331,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        this.StopBackgroundScraperLoop();
         this.FlushSettingsToDisk();
         this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
         this._activeTaskCts?.Cancel();

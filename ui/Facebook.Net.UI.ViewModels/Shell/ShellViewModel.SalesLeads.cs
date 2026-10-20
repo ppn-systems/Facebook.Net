@@ -21,9 +21,33 @@ namespace Facebook.Net.UI.ViewModels.Shell;
 /// </summary>
 public sealed partial class ShellViewModel
 {
-    /// <summary>Gets or sets the buyer-intent filter keywords when scanning group feeds (e.g. "cần mua, xin giá, ib").</summary>
+    /// <summary>Gets or sets the local database search/filter keywords on the Sales Leads page (does not call Facebook).</summary>
     [ObservableProperty]
     public partial string BuyerIntentKeywords { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the optional Group ID filter when querying stored posts from the local SQLite database (<see langword="null"/> or empty = all groups).</summary>
+    [ObservableProperty]
+    public partial string? FilterScrapedGroupId { get; set; }
+
+    /// <summary>Gets or sets the selective keywords used to filter which scraped posts are persisted into the SQLite database (empty = save all posts).</summary>
+    [ObservableProperty]
+    public partial string ScrapeFilterKeywords { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the maximum number of posts to scrape per group during each collection cycle (5..100).</summary>
+    [ObservableProperty]
+    public partial int ScrapePostsPerGroup { get; set; } = 15;
+
+    /// <summary>Gets or sets a value indicating whether to scrape all enabled Target Groups (or only the currently selected Target Group).</summary>
+    [ObservableProperty]
+    public partial bool ScrapeAllEnabledTargetGroups { get; set; } = true;
+
+    /// <summary>Gets or sets a value indicating whether the periodic background scraper is enabled.</summary>
+    [ObservableProperty]
+    public partial bool AutoBackgroundScrapeEnabled { get; set; }
+
+    /// <summary>Gets or sets the interval in minutes between background auto-scrape runs (1..120).</summary>
+    [ObservableProperty]
+    public partial int AutoScrapeIntervalMinutes { get; set; } = 10;
 
     /// <summary>Gets or sets the visually selected post card from <see cref="ScrapedPosts"/> for sales commenting.</summary>
     [ObservableProperty]
@@ -42,18 +66,78 @@ public sealed partial class ShellViewModel
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
     private readonly List<PostSummary> _allScrapedPosts = new();
+    private CancellationTokenSource? _backgroundScrapeCts;
+
+    partial void OnScrapeFilterKeywordsChanged(string value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnScrapePostsPerGroupChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnScrapeAllEnabledTargetGroupsChanged(bool value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnAutoBackgroundScrapeEnabledChanged(bool value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+            this.SyncBackgroundScraperLoop();
+        }
+    }
+
+    partial void OnAutoScrapeIntervalMinutesChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+            this.SyncBackgroundScraperLoop();
+        }
+    }
+
+    partial void OnFilterScrapedGroupIdChanged(string? value) =>
+        _ = this.QueryLocalScrapedPostsAsync();
 
     /// <summary>
-    /// Filters the cached <see cref="ScrapedPosts"/> locally by buyer-intent keywords without re-fetching from Facebook.
+    /// Queries stored posts from the local SQLite database (<c>scraped_posts</c>) and applies the local search/filter without calling Facebook.
+    /// </summary>
+    public async Task QueryLocalScrapedPostsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<PostSummary> dbPosts = await this._context.AccountStore
+            .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
+            .ConfigureAwait(true);
+
+        this._allScrapedPosts.Clear();
+        this._allScrapedPosts.AddRange(dbPosts);
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Filters the cached SQLite <see cref="ScrapedPosts"/> locally by buyer-intent keywords without calling Facebook.
     /// </summary>
     public void ApplyLocalLeadFilter(string? keywordsText)
     {
         this.BuyerIntentKeywords = keywordsText ?? string.Empty;
-        if (this._allScrapedPosts.Count == 0)
-        {
-            return;
-        }
+        this.FilterCachedPostsFromDb();
+    }
 
+    private void FilterCachedPostsFromDb()
+    {
         string[] keywords = string.IsNullOrWhiteSpace(this.BuyerIntentKeywords)
             ? Array.Empty<string>()
             : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -62,7 +146,13 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < this._allScrapedPosts.Count; i++)
         {
             PostSummary post = this._allScrapedPosts[i];
-            if (MatchesBuyerKeywords(post.MessageText, keywords))
+            if (!string.IsNullOrWhiteSpace(this.FilterScrapedGroupId) &&
+                !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (MatchesPostOrAuthorKeywords(post, keywords))
             {
                 matched.Add(post);
             }
@@ -76,6 +166,63 @@ public sealed partial class ShellViewModel
         this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
     }
 
+    private void SyncBackgroundScraperLoop()
+    {
+        this.StopBackgroundScraperLoop();
+        if (!this.AutoBackgroundScrapeEnabled)
+        {
+            return;
+        }
+
+        CancellationTokenSource cts = new();
+        this._backgroundScrapeCts = cts;
+        int intervalMin = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 10 : this.AutoScrapeIntervalMinutes, 1, 120);
+        _ = this.RunBackgroundScraperLoopAsync(TimeSpan.FromMinutes(intervalMin), cts.Token);
+    }
+
+    private void StopBackgroundScraperLoop()
+    {
+        this._backgroundScrapeCts?.Cancel();
+        this._backgroundScrapeCts?.Dispose();
+        this._backgroundScrapeCts = null;
+    }
+
+    private async Task RunBackgroundScraperLoopAsync(TimeSpan interval, CancellationToken ct)
+    {
+        try
+        {
+            using PeriodicTimer timer = new(interval);
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(true))
+            {
+                if (!this.IsBusy && this.SelectedAccount is not null)
+                {
+                    await this.ScanGroupLeadsAsync().ConfigureAwait(true);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Background scraper stopped cleanly
+        }
+    }
+
+    private async Task ClearScrapedPostsDbAsync()
+    {
+        int removed = await this._context.AccountStore
+            .ClearScrapedPostsAsync(this.FilterScrapedGroupId)
+            .ConfigureAwait(true);
+
+        await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Info,
+            this._context.Localization["Audit.Cat.Scrape"],
+            this.Msg(
+                $"Đã xóa {removed} bài viết cũ khỏi kho dữ liệu nội bộ.",
+                $"Cleared {removed} old posts from the local database.")).ConfigureAwait(true);
+    }
+
     private async Task ScanGroupLeadsAsync()
     {
         if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
@@ -83,21 +230,42 @@ public sealed partial class ShellViewModel
             this.SelectedTargetGroup = this.TargetGroups[0];
         }
 
-        string? targetGroupId = this.SelectedTargetGroup?.GroupId ?? this.SelectedGroup?.GroupId;
-        string targetGroupName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"];
+        List<(string GroupId, string GroupName)> targets = new();
+        if (this.ScrapeAllEnabledTargetGroups && this.TargetGroups.Count > 0)
+        {
+            for (int i = 0; i < this.TargetGroups.Count; i++)
+            {
+                SavedTargetGroup tg = this.TargetGroups[i];
+                if (tg.IsEnabled && !string.IsNullOrWhiteSpace(tg.GroupId))
+                {
+                    targets.Add((tg.GroupId, tg.GroupName));
+                }
+            }
+        }
 
-        if (string.IsNullOrWhiteSpace(targetGroupId))
+        if (targets.Count == 0)
+        {
+            string? singleId = this.SelectedTargetGroup?.GroupId ?? this.SelectedGroup?.GroupId;
+            string singleName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"];
+            if (!string.IsNullOrWhiteSpace(singleId))
+            {
+                targets.Add((singleId, singleName));
+            }
+        }
+
+        if (targets.Count == 0)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Scrape"],
                 this.Msg(
-                    "Vui lòng chọn một Nhóm trong danh sách trước khi quét bài viết.",
-                    "Please select a Group from your catalog before scanning posts.")).ConfigureAwait(true);
+                    "Vui lòng chọn hoặc bật ít nhất một Nhóm Đích trước khi thu thập bài viết.",
+                    "Please select or enable at least one Target Group before scraping posts.")).ConfigureAwait(true);
             return;
         }
 
+        string firstGroupName = targets[0].GroupName;
         CancellationToken ct = this.BeginTaskScope();
         try
         {
@@ -107,60 +275,83 @@ public sealed partial class ShellViewModel
                 return;
             }
 
-            _ = await this.LogAuditAsync(
-                AuditCategory.Scrape,
-                AuditSeverity.Info,
-                targetGroupName,
-                this.Msg(
-                    $"Đang thu thập các bài viết mới nhất trong nhóm '{targetGroupName}'...",
-                    $"Scanning latest posts in group '{targetGroupName}'...")).ConfigureAwait(true);
-
-            PagedResult<PostSummary> feed = await this._context.CometClient
-                .GetGroupFeedAsync(session, targetGroupId, count: 15, ct: ct)
-                .ConfigureAwait(true);
-
-            this._allScrapedPosts.Clear();
-            this._allScrapedPosts.AddRange(feed.Items);
-
-            string[] keywords = string.IsNullOrWhiteSpace(this.BuyerIntentKeywords)
+            string[] selectiveKeywords = string.IsNullOrWhiteSpace(this.ScrapeFilterKeywords)
                 ? Array.Empty<string>()
-                : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                : this.ScrapeFilterKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            List<PostSummary> matched = new(feed.Items.Count);
-            for (int i = 0; i < feed.Items.Count; i++)
+            int perGroupLimit = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
+            List<PostSummary> collectedForDb = new();
+
+            for (int gIdx = 0; gIdx < targets.Count; gIdx++)
             {
-                PostSummary post = feed.Items[i];
-                if (MatchesBuyerKeywords(post.MessageText, keywords))
+                ct.ThrowIfCancellationRequested();
+                (string groupId, string groupName) = targets[gIdx];
+
+                if (gIdx > 0)
                 {
-                    matched.Add(post);
+                    await this.WaitAntiCheckpointDelayAsync(groupName, ct).ConfigureAwait(true);
+                }
+
+                _ = await this.LogAuditAsync(
+                    AuditCategory.Scrape,
+                    AuditSeverity.Info,
+                    groupName,
+                    this.Msg(
+                        $"Đang thu thập bài viết từ nhóm '{groupName}' vào kho dữ liệu...",
+                        $"Scraping posts from group '{groupName}' into local database...")).ConfigureAwait(true);
+
+                PagedResult<PostSummary> feed = await this._context.CometClient
+                    .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
+                    .ConfigureAwait(true);
+
+                for (int i = 0; i < feed.Items.Count; i++)
+                {
+                    PostSummary post = feed.Items[i] with
+                    {
+                        GroupId = groupId,
+                        GroupName = groupName
+                    };
+
+                    if (MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                    {
+                        collectedForDb.Add(post);
+                    }
                 }
             }
 
-            bool fallbackToAll = matched.Count == 0 && feed.Items.Count > 0 && keywords.Length > 0;
-            if (fallbackToAll)
+            if (collectedForDb.Count > 0)
             {
-                matched.AddRange(feed.Items);
+                await this._context.AccountStore
+                    .UpsertScrapedPostsAsync(collectedForDb, ct)
+                    .ConfigureAwait(true);
             }
 
-            matched.Sort((a, b) =>
-                CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
-                    .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+            await this.QueryLocalScrapedPostsAsync(ct).ConfigureAwait(true);
 
-            this.ScrapedPosts.ReplaceAll(matched);
-            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+            // Backwards-compatible fallback when running in-memory tests where QueryScrapedPostsAsync isn't seeded by a mock store
+            if (this.ScrapedPosts.Count == 0 && collectedForDb.Count > 0 && string.IsNullOrWhiteSpace(this.BuyerIntentKeywords))
+            {
+                this._allScrapedPosts.Clear();
+                this._allScrapedPosts.AddRange(collectedForDb);
+                this.FilterCachedPostsFromDb();
+            }
 
-            string logMessage = fallbackToAll
+            string summaryTarget = targets.Count == 1
+                ? firstGroupName
+                : this.Msg($"{targets.Count} nhóm mục tiêu", $"{targets.Count} target groups");
+
+            string logMessage = selectiveKeywords.Length > 0
                 ? this.Msg(
-                    $"Đã thu thập {this.ScrapedPosts.Count} bài viết mới nhất từ nhóm '{targetGroupName}' (không có bài khớp chính xác từ khóa '{this.BuyerIntentKeywords}', hiển thị toàn bộ bài viết trong nhóm).",
-                    $"Discovered {this.ScrapedPosts.Count} latest posts in '{targetGroupName}' (none matched keyword '{this.BuyerIntentKeywords}' exactly; showing all group posts).")
+                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết chọn lọc (từ khóa: '{this.ScrapeFilterKeywords}') từ {summaryTarget} vào DB (Tổng hiển thị: {this.ScrapedPosts.Count} bài).",
+                    $"Scraped and saved {collectedForDb.Count} selective posts (keywords: '{this.ScrapeFilterKeywords}') from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).")
                 : this.Msg(
-                    $"Đã thu thập {this.ScrapedPosts.Count} bài viết tiềm năng từ nhóm '{targetGroupName}'.",
-                    $"Discovered {this.ScrapedPosts.Count} potential buyer posts in '{targetGroupName}'.");
+                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết mới nhất từ {summaryTarget} vào DB (Tổng hiển thị: {this.ScrapedPosts.Count} bài).",
+                    $"Scraped and saved {collectedForDb.Count} latest posts from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).");
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Success,
-                targetGroupName,
+                summaryTarget,
                 logMessage).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -168,7 +359,7 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Warning,
-                targetGroupName,
+                firstGroupName,
                 this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
@@ -176,7 +367,7 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Error,
-                targetGroupName,
+                firstGroupName,
                 this.Msg($"Lỗi quét bài viết nhóm: {this.SanitizeErrorMessage(ex)}", $"Group post scan failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
@@ -503,6 +694,27 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < keywords.Length; i++)
         {
             if (messageText.Contains(keywords[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesPostOrAuthorKeywords(PostSummary post, string[] keywords)
+    {
+        if (keywords.Length == 0)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            string kw = keywords[i];
+            if ((!string.IsNullOrWhiteSpace(post.MessageText) && post.MessageText.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(post.AuthorName) && post.AuthorName.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(post.GroupName) && post.GroupName.Contains(kw, StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }

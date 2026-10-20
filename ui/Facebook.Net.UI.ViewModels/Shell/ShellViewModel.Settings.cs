@@ -142,7 +142,12 @@ public sealed partial class ShellViewModel
             MaxDelaySeconds: this.MaxDelaySeconds,
             IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded,
             IsSidebarCollapsed: this.IsSidebarCollapsed,
-            LastSelectedAccountUid: selectedUid).Normalize();
+            LastSelectedAccountUid: selectedUid,
+            ScrapeFilterKeywords: this.ScrapeFilterKeywords,
+            ScrapePostsPerGroup: this.ScrapePostsPerGroup,
+            AutoBackgroundScrapeEnabled: this.AutoBackgroundScrapeEnabled,
+            AutoScrapeIntervalMinutes: this.AutoScrapeIntervalMinutes,
+            ScrapeAllEnabledTargetGroups: this.ScrapeAllEnabledTargetGroups).Normalize();
 
         this._context.Settings.Save(updated);
     }
@@ -161,6 +166,11 @@ public sealed partial class ShellViewModel
             this.RunBrowserHeadless = cfg.RunBrowserHeadless;
             this.MinDelaySeconds = cfg.MinDelaySeconds;
             this.MaxDelaySeconds = cfg.MaxDelaySeconds;
+            this.ScrapeFilterKeywords = cfg.ScrapeFilterKeywords ?? string.Empty;
+            this.ScrapePostsPerGroup = cfg.ScrapePostsPerGroup;
+            this.AutoBackgroundScrapeEnabled = cfg.AutoBackgroundScrapeEnabled;
+            this.AutoScrapeIntervalMinutes = cfg.AutoScrapeIntervalMinutes;
+            this.ScrapeAllEnabledTargetGroups = cfg.ScrapeAllEnabledTargetGroups;
         }
         finally
         {
