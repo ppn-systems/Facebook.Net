@@ -225,14 +225,28 @@ public sealed partial class AuditLogsPage : UserControl
         Button clearBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Audit.BtnClear"],
-            drawerVm.ClearLogsCommand,
+            null,
             VectorIcons.Trash);
         clearBtn.Click += (_, _) =>
         {
-            drawerVm.SelectedCategory = null;
-            drawerVm.SelectedTimeRange = AuditTimeRange.AllTime;
-            drawerVm.SelectedAccountUid = null;
-            searchFilterBar.ClearAllFilters(invokeCallbacks: false);
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.ClearAuditLogsTitle"],
+                this._i18n["Confirm.ClearAuditLogsMessage"],
+                this._i18n["Confirm.BtnConfirmDelete"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    drawerVm.SelectedCategory = null;
+                    drawerVm.SelectedTimeRange = AuditTimeRange.AllTime;
+                    drawerVm.SelectedAccountUid = null;
+                    searchFilterBar.ClearAllFilters(invokeCallbacks: false);
+                    if (drawerVm.ClearLogsCommand.CanExecute(null))
+                    {
+                        await drawerVm.ClearLogsCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
         };
 
         Grid.SetColumn(searchFilterBar, 0);

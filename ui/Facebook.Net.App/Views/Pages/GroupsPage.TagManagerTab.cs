@@ -350,15 +350,23 @@ public sealed partial class GroupsPage
             await this._vm.BatchSetTagOnGroupsAsync(selectedAssignTag.Id, snapshot, assignTag: true).ConfigureAwait(true);
         };
 
-        batchRemoveBtn.Click += async (_, _) =>
+        batchRemoveBtn.Click += (_, _) =>
         {
             if (selectedAssignTag is null || filteredAssignGroups.Count == 0)
             {
                 return;
             }
 
+            GroupTag capturedTag = selectedAssignTag;
             List<SavedTargetGroup> snapshot = [.. filteredAssignGroups];
-            await this._vm.BatchSetTagOnGroupsAsync(selectedAssignTag.Id, snapshot, assignTag: false).ConfigureAwait(true);
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.BatchUntagTitle"],
+                this._i18n.Format("Confirm.BatchUntagMessage", capturedTag.Name, snapshot.Count),
+                this._i18n["Groups.BtnBatchRemoveAllFiltered"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                () => this._vm.BatchSetTagOnGroupsAsync(capturedTag.Id, snapshot, assignTag: false));
         };
 
         Grid.SetColumn(batchAssignBtn, 0);
@@ -545,14 +553,24 @@ public sealed partial class GroupsPage
                     VerticalAlignment = VerticalAlignment.Center,
                     Cursor = new Cursor(StandardCursorType.Hand)
                 };
-                deleteBtn.Click += async (_, _) =>
+                deleteBtn.Click += (_, _) =>
                 {
-                    if (editingTag is not null && string.Equals(editingTag.Id, tag.Id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        CloseTagModal();
-                    }
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeleteTagTitle"],
+                        this._i18n.Format("Confirm.DeleteTagMessage", tag.Name),
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        async () =>
+                        {
+                            if (editingTag is not null && string.Equals(editingTag.Id, tag.Id, StringComparison.OrdinalIgnoreCase))
+                            {
+                                CloseTagModal();
+                            }
 
-                    await this._vm.DeleteGroupTagAsync(tag).ConfigureAwait(true);
+                            await this._vm.DeleteGroupTagAsync(tag).ConfigureAwait(true);
+                        });
                 };
 
                 Grid.SetColumn(pill, 0);

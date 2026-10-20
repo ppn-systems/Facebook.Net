@@ -20,11 +20,12 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Independent System Settings, Activity Logs &amp; Storage Usage Monitor Page (<c>SettingsPage.axaml</c>).
+/// Independent System Settings, Browser Profiles Manager, Activity Logs &amp; Storage Usage Monitor Page (<c>SettingsPage.axaml</c>).
 /// Uses a top <see cref="SubTabBar"/> to separate:
-/// 1) System, Installed Browser Scanner, Browser Profile Manager &amp; Anti-Checkpoint Delay Settings,
-/// 2) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>),
-/// 3) Application Disk &amp; Storage Usage Monitor with multi-colored <see cref="SvgDonutChart"/> widgets.
+/// 1) System, Installed Browser Scanner &amp; Anti-Checkpoint Delay Settings,
+/// 2) Dedicated Browser Profile Manager (<c>SettingsPage.ProfilesTab.cs</c>),
+/// 3) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>),
+/// 4) Application Disk &amp; Storage Usage Monitor with multi-colored <see cref="SvgDonutChart"/> widgets.
 /// </summary>
 public sealed partial class SettingsPage : UserControl
 {
@@ -64,15 +65,17 @@ public sealed partial class SettingsPage : UserControl
     private Control BuildLayout()
     {
         Control tab1View = this.BuildGeneralSettingsTab(out Action refreshTab1);
-        AuditLogsPage tab2View = new(this._vm);
-        Control tab3View = this.BuildStorageMonitorTab(out Action refreshTab3);
+        Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
+        AuditLogsPage tab3View = new(this._vm);
+        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
-                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab2View),
-                new SubTabItem(this._i18n["Settings.TabStorage"], VectorIcons.Folder, tab3View)
+                new SubTabItem(this._i18n["Settings.TabProfiles"], VectorIcons.Browser, tab2View),
+                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
+                new SubTabItem(this._i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -80,11 +83,13 @@ public sealed partial class SettingsPage : UserControl
             subTabBar.UpdateTabTitles(
             [
                 this._i18n["Settings.TabGeneral"],
+                this._i18n["Settings.TabProfiles"],
                 this._i18n["Settings.TabAuditLogs"],
                 this._i18n["Settings.TabStorage"]
             ]);
             refreshTab1();
-            refreshTab3();
+            refreshTab2();
+            refreshTab4();
         };
 
         return subTabBar;
@@ -98,7 +103,7 @@ public sealed partial class SettingsPage : UserControl
             ColumnSpacing = 14
         };
 
-        // Left Card: Appearance, Installed Browser Scanner & Browser Profile Manager
+        // Left Card: Appearance & Installed Browser Scanner
         StackPanel leftStack = new()
         {
             Spacing = 14,
@@ -170,7 +175,7 @@ public sealed partial class SettingsPage : UserControl
         leftStack.Children.Add(appearanceRow);
 
         // 2. Installed Browser Auto-Scanner + Selector
-        IReadOnlyList<PreferredBrowserKind> installedBrowsers = this._vm.Context.Settings.GetInstalledBrowsers();
+        List<PreferredBrowserKind> installedBrowsers = this._vm.Context.Settings.GetInstalledBrowsers();
         ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
             this._theme,
             installedBrowsers,
@@ -217,7 +222,7 @@ public sealed partial class SettingsPage : UserControl
 
         void RefreshInstalledBrowsersList()
         {
-            IReadOnlyList<PreferredBrowserKind> currentInstalled = this._vm.Context.Settings.GetInstalledBrowsers();
+            List<PreferredBrowserKind> currentInstalled = this._vm.Context.Settings.GetInstalledBrowsers();
             browserCombo.ItemsSource = currentInstalled;
             browserCombo.SelectedItem = this._vm.SelectedBrowserKind;
             UpdateDetectedBrowserStatus();
@@ -289,138 +294,6 @@ public sealed partial class SettingsPage : UserControl
         leftStack.Children.Add(browserField);
         leftStack.Children.Add(customExeRow);
         leftStack.Children.Add(headlessCheck);
-
-        // 3. Browser Profile Manager (Select Existing Profile or Create New Profile)
-        StackPanel profileSectionStack = new() { Spacing = 8 };
-
-        IReadOnlyList<BrowserProfileOption> initialProfiles = this._vm.GetAvailableBrowserProfiles();
-        BrowserProfileOption? currentSelectedProfile = FindMatchingProfileOption(
-            initialProfiles,
-            this._vm.SelectedAccount?.ProfileDirectory);
-
-        bool isUpdatingProfileCombo = false;
-        ComboBox profileCombo = FormField.CreateComboBox<BrowserProfileOption>(
-            this._theme,
-            initialProfiles,
-            opt => SectionHeader.CreateLabel(this._theme, opt.DisplayName, 12),
-            selectedItem: currentSelectedProfile);
-
-        Button browseProfileFolderBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Settings.BtnBrowseProfileFolder"],
-            null,
-            VectorIcons.Folder);
-
-        Grid profilePickerRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-        Grid.SetColumn(profileCombo, 0);
-        Grid.SetColumn(browseProfileFolderBtn, 1);
-        profilePickerRow.Children.Add(profileCombo);
-        profilePickerRow.Children.Add(browseProfileFolderBtn);
-
-        TextBlock activeProfilePathTb = SectionHeader.CreateLabel(
-            this._theme,
-            string.Empty,
-            11.5,
-            FontWeight.Normal,
-            isSecondary: true);
-        activeProfilePathTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        activeProfilePathTb.MaxLines = 1;
-
-        TextBox newProfileNameBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Settings.NewProfileNamePlaceholder"]);
-
-        Button createProfileBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Settings.BtnCreateProfile"],
-            null,
-            VectorIcons.Plus);
-
-        Grid createProfileRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-        Grid.SetColumn(newProfileNameBox, 0);
-        Grid.SetColumn(createProfileBtn, 1);
-        createProfileRow.Children.Add(newProfileNameBox);
-        createProfileRow.Children.Add(createProfileBtn);
-
-        void RefreshProfileOptions()
-        {
-            isUpdatingProfileCombo = true;
-            try
-            {
-                IReadOnlyList<BrowserProfileOption> options = this._vm.GetAvailableBrowserProfiles();
-                profileCombo.ItemsSource = options;
-                string? activeDir = this._vm.SelectedAccount?.ProfileDirectory;
-                profileCombo.SelectedItem = FindMatchingProfileOption(options, activeDir);
-                activeProfilePathTb.Text = !string.IsNullOrWhiteSpace(activeDir)
-                    ? $"{this._i18n["Settings.ActiveProfilePathPrefix"]}: {activeDir}"
-                    : this._i18n["Settings.ActiveProfileNoneHint"];
-            }
-            finally
-            {
-                isUpdatingProfileCombo = false;
-            }
-        }
-
-        profileCombo.SelectionChanged += async (_, _) =>
-        {
-            if (isUpdatingProfileCombo || profileCombo.SelectedItem is not BrowserProfileOption selectedOpt)
-            {
-                return;
-            }
-
-            if (!string.Equals(this._vm.SelectedAccount?.ProfileDirectory, selectedOpt.DirectoryPath, StringComparison.OrdinalIgnoreCase))
-            {
-                await this._vm.AssignBrowserProfileToSelectedAccountAsync(selectedOpt.DirectoryPath, selectedOpt.DisplayName).ConfigureAwait(true);
-                RefreshProfileOptions();
-            }
-        };
-
-        browseProfileFolderBtn.Click += async (_, _) =>
-        {
-            string? folderPath = await this.PickSingleFolderAsync(this._i18n["Settings.BtnBrowseProfileFolder"]).ConfigureAwait(true);
-            if (!string.IsNullOrWhiteSpace(folderPath))
-            {
-                await this._vm.AssignBrowserProfileToSelectedAccountAsync(folderPath).ConfigureAwait(true);
-                RefreshProfileOptions();
-            }
-        };
-
-        createProfileBtn.Click += async (_, _) =>
-        {
-            string rawName = newProfileNameBox.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(rawName))
-            {
-                rawName = $"Profile_{DateTimeOffset.Now:HHmmss}";
-            }
-
-            string? createdDir = await this._vm.CreateAndAssignBrowserProfileAsync(rawName).ConfigureAwait(true);
-            if (!string.IsNullOrWhiteSpace(createdDir))
-            {
-                newProfileNameBox.Text = string.Empty;
-                RefreshProfileOptions();
-            }
-        };
-
-        RefreshProfileOptions();
-
-        profileSectionStack.Children.Add(profilePickerRow);
-        profileSectionStack.Children.Add(activeProfilePathTb);
-        profileSectionStack.Children.Add(createProfileRow);
-
-        StackPanel profileField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Settings.ProfileManagerLabel"],
-            profileSectionStack,
-            out TextBlock profileManagerLabel);
-        leftStack.Children.Add(profileField);
 
         Border leftCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = leftStack }, new Thickness(18));
 
@@ -553,10 +426,6 @@ public sealed partial class SettingsPage : UserControl
             {
                 headlessCheck.IsChecked = this._vm.RunBrowserHeadless;
             }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
-            {
-                RefreshProfileOptions();
-            }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MinDelaySeconds), StringComparison.Ordinal))
             {
                 minDelayBox.Value = this._vm.MinDelaySeconds;
@@ -575,8 +444,6 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshProfileOptions();
-
         refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Settings.Header"];
@@ -590,10 +457,6 @@ public sealed partial class SettingsPage : UserControl
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
             AppButton.SetText(browseExeBtn, this._i18n["Common.BrowseFile"]);
             headlessLabelTb.Text = this._i18n["Settings.HeadlessLabel"];
-            profileManagerLabel.Text = this._i18n["Settings.ProfileManagerLabel"];
-            AppButton.SetText(browseProfileFolderBtn, this._i18n["Settings.BtnBrowseProfileFolder"]);
-            newProfileNameBox.PlaceholderText = this._i18n["Settings.NewProfileNamePlaceholder"];
-            AppButton.SetText(createProfileBtn, this._i18n["Settings.BtnCreateProfile"]);
             delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
@@ -602,30 +465,9 @@ public sealed partial class SettingsPage : UserControl
             scrapeMaxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
             UpdateDetectedBrowserStatus();
-            RefreshProfileOptions();
         };
 
         return splitGrid;
-    }
-
-    private static BrowserProfileOption? FindMatchingProfileOption(
-        IReadOnlyList<BrowserProfileOption> options,
-        string? directoryPath)
-    {
-        if (string.IsNullOrWhiteSpace(directoryPath))
-        {
-            return options.Count > 0 ? options[0] : null;
-        }
-
-        for (int i = 0; i < options.Count; i++)
-        {
-            if (string.Equals(options[i].DirectoryPath, directoryPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return options[i];
-            }
-        }
-
-        return options.Count > 0 ? options[0] : null;
     }
 
     private async Task<string?> PickSingleFileAsync(string title)

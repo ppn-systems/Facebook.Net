@@ -279,7 +279,17 @@ public sealed partial class GroupsPage : UserControl
                     RefreshFilteredTargets();
                 },
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
-                onRemove: () => _ = this._vm.RemoveTargetGroupAsync(tg),
+                onRemove: () =>
+                {
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.RemoveTargetGroupTitle"],
+                        this._i18n.Format("Confirm.RemoveTargetGroupMessage", tg.GroupName),
+                        this._i18n["Groups.BtnRemoveTargetShort"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        () => this._vm.RemoveTargetGroupAsync(tg));
+                },
                 removeLabel: this._i18n["Groups.BtnRemoveTargetShort"]),
             selectedItem: this._vm.SelectedTargetGroup,
             isVisible: filteredTargets.Count > 0);

@@ -63,8 +63,30 @@ public sealed partial class PublisherPage
         Button deletePostBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Publisher.BtnDeletePublishedPost"],
-            this._vm.DeletePublishedPostCommand,
+            null,
             VectorIcons.Trash);
+        deletePostBtn.Click += (_, _) =>
+        {
+            if (this._vm.SelectedPublishedPost is null)
+            {
+                return;
+            }
+
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.DeletePublishedPostTitle"],
+                this._i18n["Confirm.DeletePublishedPostMessage"],
+                this._i18n["Confirm.BtnConfirmDelete"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    if (this._vm.DeletePublishedPostCommand.CanExecute(null))
+                    {
+                        await this._vm.DeletePublishedPostCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
+        };
 
         Grid.SetColumn(header, 0);
         Grid.SetColumn(syncTimelineBtn, 1);
@@ -594,11 +616,21 @@ public sealed partial class PublisherPage
 
                 deleteRowBtn.Click += (_, _) =>
                 {
-                    this._vm.SelectedTemplate = tpl;
-                    if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
-                    {
-                        _ = this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null);
-                    }
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeleteTemplateTitle"],
+                        this._i18n.Format("Confirm.DeleteTemplateMessage", tpl.Title),
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        async () =>
+                        {
+                            this._vm.SelectedTemplate = tpl;
+                            if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
+                            {
+                                await this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null).ConfigureAwait(true);
+                            }
+                        });
                 };
 
                 Grid.SetColumn(tplTitleTb, 0);

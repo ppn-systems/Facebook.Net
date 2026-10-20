@@ -222,7 +222,17 @@ public sealed partial class AccountsPage : UserControl
                 warmUpOrLoginLabel: item.Status == AccountStatus.Active ? this._i18n["Accounts.BtnRowWarmUp"] : this._i18n["Accounts.BtnRowRelogin"],
                 onCheckHealth: () => _ = this._vm.CheckAccountItemHealthAsync(item),
                 checkHealthLabel: this._i18n["Accounts.BtnRowCheck"],
-                onDelete: () => _ = this._vm.DeleteAccountItemAsync(item),
+                onDelete: () =>
+                {
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeleteAccountTitle"],
+                        this._i18n.Format("Confirm.DeleteAccountMessage", item.DisplayName),
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        () => this._vm.DeleteAccountItemAsync(item));
+                },
                 deleteLabel: this._i18n["Accounts.BtnRowDelete"]),
             selectedItem: this._vm.SelectedAccount,
             isVisible: this._vm.Accounts.Count > 0);

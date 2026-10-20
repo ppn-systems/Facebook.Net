@@ -200,10 +200,20 @@ public sealed partial class SettingsPage
         }
 
         rescanBtn.Click += (_, _) => RefreshStorageStats();
-        cleanCacheBtn.Click += async (_, _) =>
+        cleanCacheBtn.Click += (_, _) =>
         {
-            _ = await this._vm.CleanBrowserProfilesCacheAsync().ConfigureAwait(true);
-            RefreshStorageStats();
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.CleanCacheTitle"],
+                this._i18n["Confirm.CleanCacheMessage"],
+                this._i18n["Storage.BtnCleanCache"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    _ = await this._vm.CleanBrowserProfilesCacheAsync().ConfigureAwait(true);
+                    RefreshStorageStats();
+                });
         };
 
         RefreshStorageStats();

@@ -26,7 +26,20 @@ public sealed partial class UiComponentArchitectureGuardTests
         "PublisherPage.axaml.cs",
         "PublisherPage.TemplatesAndBumpTabs.cs",
         "SalesLeadsPage.axaml.cs",
-        "SalesLeadsPage.ScraperConfigTab.cs"
+        "SalesLeadsPage.ScraperConfigTab.cs",
+        "SettingsPage.ProfilesTab.cs"
+    ];
+
+    private static readonly string[] s_requiredConfirmationModalPages =
+    [
+        "AccountsPage.axaml.cs",
+        "AuditLogsPage.axaml.cs",
+        "GroupsPage.axaml.cs",
+        "GroupsPage.TagManagerTab.cs",
+        "PublisherPage.TemplatesAndBumpTabs.cs",
+        "SalesLeadsPage.ScraperConfigTab.cs",
+        "SettingsPage.AnalyticsTab.cs",
+        "SettingsPage.ProfilesTab.cs"
     ];
 
     private static readonly string[] s_forbiddenSegmentedFilterPillPages =
@@ -243,6 +256,34 @@ public sealed partial class UiComponentArchitectureGuardTests
         Assert.True(scannedFiles > 0, "Expected to scan at least one .cs file across UI projects.");
         Assert.True(matchedReferences > 0, "Expected to find localization key references across UI projects.");
         Assert.True(missingKeyErrors.Count == 0, string.Join(Environment.NewLine, missingKeyErrors));
+    }
+
+    [Fact]
+    public void Rule4_AllDestructiveDeleteRemoveClearPages_MustUseConfirmDialogModal()
+    {
+        string repoRoot = FindRepositoryRoot();
+        string pagesDir = Path.Combine(repoRoot, "ui", "Facebook.Net.App", "Views", "Pages");
+        Assert.True(Directory.Exists(pagesDir), $"Pages directory not found at '{pagesDir}'.");
+
+        List<string> violations = [];
+
+        foreach (string fileName in s_requiredConfirmationModalPages)
+        {
+            string filePath = Path.Combine(pagesDir, fileName);
+            if (!File.Exists(filePath))
+            {
+                violations.Add($"{fileName}: expected page source file does not exist at '{filePath}'.");
+                continue;
+            }
+
+            string source = File.ReadAllText(filePath);
+            if (!source.Contains("ConfirmDialogModal.Show", StringComparison.Ordinal))
+            {
+                violations.Add($"{fileName}: must guard destructive delete/remove/clear actions with 'ConfirmDialogModal.Show' or 'ConfirmDialogModal.ShowAsync'.");
+            }
+        }
+
+        Assert.True(violations.Count == 0, string.Join(Environment.NewLine, violations));
     }
 
     private static string FindRepositoryRoot()

@@ -397,8 +397,25 @@ public sealed partial class SalesLeadsPage
         Button clearDbBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Leads.BtnClearScrapedDb"],
-            this._vm.ClearScrapedPostsDbCommand,
+            null,
             VectorIcons.Trash);
+        clearDbBtn.Click += (_, _) =>
+        {
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.ClearScrapedDbTitle"],
+                this._i18n["Confirm.ClearScrapedDbMessage"],
+                this._i18n["Confirm.BtnConfirmDelete"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    if (this._vm.ClearScrapedPostsDbCommand.CanExecute(null))
+                    {
+                        await this._vm.ClearScrapedPostsDbCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
+        };
 
         Grid.SetColumn(runScrapeBtn, 0);
         Grid.SetColumn(clearDbBtn, 1);
