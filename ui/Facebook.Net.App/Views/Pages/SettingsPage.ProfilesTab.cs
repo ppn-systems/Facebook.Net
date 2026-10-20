@@ -428,7 +428,11 @@ public sealed partial class SettingsPage
         createModalBackdrop.PointerPressed += (_, _) => CloseCreateModal();
         createModalBackdrop.Child = modalCard;
 
-        rescanProfilesBtn.Click += (_, _) => RefreshFilteredProfiles();
+        rescanProfilesBtn.Click += (_, _) =>
+        {
+            StorageUsageAnalyzer.InvalidateCache();
+            RefreshFilteredProfiles();
+        };
         browseFolderBtn.Click += async (_, _) =>
         {
             string? folderPath = await this.PickSingleFolderAsync(this._i18n["Settings.BtnBrowseProfileFolder"]).ConfigureAwait(true);

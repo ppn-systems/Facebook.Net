@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App.Views.Pages;
@@ -199,7 +200,11 @@ public sealed partial class SettingsPage
                 valueFormatter: FormatKbSlice);
         }
 
-        rescanBtn.Click += (_, _) => RefreshStorageStats();
+        rescanBtn.Click += (_, _) =>
+        {
+            StorageUsageAnalyzer.InvalidateCache();
+            RefreshStorageStats();
+        };
         cleanCacheBtn.Click += (_, _) =>
         {
             ConfirmDialogModal.ShowAsync(

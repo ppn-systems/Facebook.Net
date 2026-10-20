@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -17,22 +16,10 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.ViewModels.Shell;
 
 /// <summary>
-/// Snapshot of disk storage and memory usage for the application data directory and isolated Chromium profiles.
-/// </summary>
-public sealed record StorageUsageSnapshot(
-    long TotalUsedBytes,
-    long MainDatabaseBytes,
-    long AuditDatabaseBytes,
-    long BrowserProfilesBytes,
-    long ConfigAndOtherBytes,
-    long ProcessRamBytes,
-    long DriveFreeBytes,
-    IReadOnlyList<(string ProfileName, long SizeBytes)> ProfileBreakdown);
-
-/// <summary>
-/// Partial implementation of <see cref="ShellViewModel"/> managing Dark/Light theme switching,
+/// Partial implementation of <see cref="ShellViewModel"/> managing System/Dark/Light theme switching,
 /// bilingual (`vi-VN` / `en-US`) language selection, sidebar collapse state, browser engine preferences,
-/// and anti-checkpoint delays with automatic synchronous persistence to <c>appsettings.json</c>.
+/// isolated browser profile orchestration, and anti-checkpoint delays.
+/// Storage and directory metrics are delegated to <see cref="StorageUsageAnalyzer"/>.
 /// </summary>
 public sealed partial class ShellViewModel
 {
@@ -84,6 +71,11 @@ public sealed partial class ShellViewModel
         if (!this._isLoadingSettings)
         {
             this.FlushSettingsToDisk();
+            _ = this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                this._context.Localization["Nav.Settings"],
+                this._context.Localization.Format("Log.Personal.ThemeChanged", this._context.Localization.FormatThemeMode(value)));
         }
     }
 
@@ -93,6 +85,11 @@ public sealed partial class ShellViewModel
         if (!this._isLoadingSettings)
         {
             this.FlushSettingsToDisk();
+            _ = this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                this._context.Localization["Nav.Settings"],
+                this._context.Localization.Format("Log.Personal.LanguageChanged", LocalizationService.FormatLanguage(value)));
         }
     }
 
@@ -101,6 +98,11 @@ public sealed partial class ShellViewModel
         if (!this._isLoadingSettings)
         {
             this.FlushSettingsToDisk();
+            _ = this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                this._context.Localization["Nav.Settings"],
+                this._context.Localization.Format("Log.Personal.BrowserChanged", this._context.Localization.FormatBrowserKind(value)));
         }
     }
 
@@ -253,7 +255,7 @@ public sealed partial class ShellViewModel
         string friendlyBrowser = this._context.Localization.FormatBrowserKind(updated.PreferredBrowser);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.System,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             this._context.Localization["Nav.Settings"],
             this._context.Localization.Format("Log.SettingsSaved", friendlyTheme, friendlyLang, friendlyBrowser, updated.MinDelaySeconds, updated.MaxDelaySeconds)).ConfigureAwait(true);
@@ -262,179 +264,30 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Formats a byte count into a concise human-readable string (<c>KB</c>, <c>MB</c>, or <c>GB</c>).
     /// </summary>
-    public static string FormatByteSize(long bytes)
-    {
-        if (bytes <= 0)
-        {
-            return "0 KB";
-        }
-
-        double kb = bytes / 1024.0;
-        if (kb < 1024.0)
-        {
-            return string.Create(CultureInfo.InvariantCulture, $"{Math.Max(1.0, Math.Round(kb)):N0} KB");
-        }
-
-        double mb = kb / 1024.0;
-        if (mb < 1024.0)
-        {
-            return string.Create(CultureInfo.InvariantCulture, $"{mb:F1} MB");
-        }
-
-        double gb = mb / 1024.0;
-        return string.Create(CultureInfo.InvariantCulture, $"{gb:F2} GB");
-    }
+    public static string FormatByteSize(long bytes) =>
+        StorageUsageAnalyzer.FormatByteSize(bytes);
 
     /// <summary>
     /// Scans the application's local data directory and isolated Chromium profile folders to compute real-time storage usage.
     /// </summary>
-    public StorageUsageSnapshot CalculateStorageUsageSnapshot()
-    {
-        string dataDir = this._context.DataDirectory;
-        string profilesRoot = this._context.ProfilesRootDirectory;
-
-        long mainDbBytes = GetFileFamilyBytes(dataDir, "facebook_net.db");
-        long auditDbBytes = GetFileFamilyBytes(dataDir, "facebook_audit.db");
-        long configBytes = 0;
-
-        if (Directory.Exists(dataDir))
-        {
-            try
-            {
-                string[] topFiles = Directory.GetFiles(dataDir, "*", SearchOption.TopDirectoryOnly);
-                for (int i = 0; i < topFiles.Length; i++)
-                {
-                    string fileName = Path.GetFileName(topFiles[i]);
-                    if (fileName.StartsWith("facebook_net.db", StringComparison.OrdinalIgnoreCase) ||
-                        fileName.StartsWith("facebook_audit.db", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    configBytes += SafeGetFileSize(topFiles[i]);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Ignore inaccessible files
-            }
-        }
-
-        long totalProfilesBytes = 0;
-        List<(string ProfileName, long SizeBytes)> profileBreakdown = new();
-
-        if (Directory.Exists(profilesRoot))
-        {
-            try
-            {
-                string[] profileDirs = Directory.GetDirectories(profilesRoot);
-                for (int i = 0; i < profileDirs.Length; i++)
-                {
-                    string dir = profileDirs[i];
-                    string folderName = Path.GetFileName(dir);
-                    long dirSize = CalculateDirectoryBytes(dir);
-                    totalProfilesBytes += dirSize;
-                    string friendlyName = this.ResolveFriendlyProfileLabel(folderName, dir);
-                    profileBreakdown.Add((friendlyName, dirSize));
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Ignore inaccessible profile directories
-            }
-        }
-
-        profileBreakdown.Sort(static (a, b) => b.SizeBytes.CompareTo(a.SizeBytes));
-
-        long totalUsed = mainDbBytes + auditDbBytes + totalProfilesBytes + configBytes;
-        long processRam = Environment.WorkingSet;
-        long driveFree = 0;
-
-        try
-        {
-            string? rootPath = Path.GetPathRoot(dataDir);
-            if (!string.IsNullOrWhiteSpace(rootPath))
-            {
-                DriveInfo drive = new(rootPath);
-                if (drive.IsReady)
-                {
-                    driveFree = drive.AvailableFreeSpace;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            // Ignore drive query failure
-        }
-
-        return new StorageUsageSnapshot(
-            TotalUsedBytes: totalUsed,
-            MainDatabaseBytes: mainDbBytes,
-            AuditDatabaseBytes: auditDbBytes,
-            BrowserProfilesBytes: totalProfilesBytes,
-            ConfigAndOtherBytes: configBytes,
-            ProcessRamBytes: processRam,
-            DriveFreeBytes: driveFree,
-            ProfileBreakdown: profileBreakdown);
-    }
+    public StorageUsageSnapshot CalculateStorageUsageSnapshot() =>
+        StorageUsageAnalyzer.CalculateSnapshot(
+            this._context.DataDirectory,
+            this._context.ProfilesRootDirectory,
+            this.ResolveFriendlyProfileLabel);
 
     /// <summary>
-    /// Cleans transient Chromium disk caches (<c>Cache</c>, <c>Code Cache</c>, <c>GPUCache</c>, <c>DawnCache</c>, <c>ShaderCache</c>)
-    /// across all managed browser profiles while preserving login cookies and session state.
+    /// Cleans transient Chromium disk caches across all managed browser profiles while preserving login cookies and session state.
     /// </summary>
     public async Task<long> CleanBrowserProfilesCacheAsync()
     {
         StorageUsageSnapshot before = this.CalculateStorageUsageSnapshot();
-        string profilesRoot = this._context.ProfilesRootDirectory;
-
-        string[] cacheRelativePaths =
-        [
-            Path.Combine("Default", "Cache"),
-            Path.Combine("Default", "Code Cache"),
-            Path.Combine("Default", "GPUCache"),
-            Path.Combine("Default", "DawnCache"),
-            Path.Combine("Default", "Service Worker", "CacheStorage"),
-            "ShaderCache",
-            "GrShaderCache",
-            "GraphiteDawnCache"
-        ];
-
-        if (Directory.Exists(profilesRoot))
-        {
-            try
-            {
-                string[] profileDirs = Directory.GetDirectories(profilesRoot);
-                for (int i = 0; i < profileDirs.Length; i++)
-                {
-                    string pDir = profileDirs[i];
-                    for (int c = 0; c < cacheRelativePaths.Length; c++)
-                    {
-                        string targetCacheDir = Path.Combine(pDir, cacheRelativePaths[c]);
-                        if (Directory.Exists(targetCacheDir))
-                        {
-                            try
-                            {
-                                Directory.Delete(targetCacheDir, recursive: true);
-                            }
-                            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                            {
-                                // Ignore files currently locked by an active browser process
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Ignore inaccessible root
-            }
-        }
-
+        StorageUsageAnalyzer.CleanProfileCaches(this._context.ProfilesRootDirectory);
         StorageUsageSnapshot after = this.CalculateStorageUsageSnapshot();
         long freedBytes = Math.Max(0, before.TotalUsedBytes - after.TotalUsedBytes);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.System,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             this._context.Localization["Nav.Settings"],
             this._context.Localization.Format("Storage.LogCacheCleaned", FormatByteSize(freedBytes), FormatByteSize(after.TotalUsedBytes))).ConfigureAwait(true);
@@ -487,33 +340,14 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Checks whether the specified <paramref name="directoryPath"/> is strictly inside the application's managed <c>Profiles</c> root directory.
     /// </summary>
-    public bool IsProfileInsideManagedRoot(string? directoryPath)
-    {
-        if (string.IsNullOrWhiteSpace(directoryPath) || string.IsNullOrWhiteSpace(this._context.ProfilesRootDirectory))
-        {
-            return false;
-        }
-
-        try
-        {
-            string fullRoot = Path.GetFullPath(this._context.ProfilesRootDirectory)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            string fullTarget = Path.GetFullPath(directoryPath)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return fullTarget.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) &&
-                   !string.Equals(fullTarget + Path.DirectorySeparatorChar, fullRoot, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
-        {
-            return false;
-        }
-    }
+    public bool IsProfileInsideManagedRoot(string? directoryPath) =>
+        StorageUsageAnalyzer.IsProfileInsideManagedRoot(directoryPath, this._context.ProfilesRootDirectory);
 
     /// <summary>
-    /// Computes the total disk size in bytes of a specific profile folder.
+    /// Computes the total disk size in bytes of a specific profile folder using the fast TTL cache.
     /// </summary>
     public static long GetProfileDirectorySizeBytes(string? directoryPath) =>
-        string.IsNullOrWhiteSpace(directoryPath) ? 0 : CalculateDirectoryBytes(directoryPath);
+        StorageUsageAnalyzer.GetProfileDirectorySizeBytes(directoryPath);
 
     /// <summary>
     /// Deletes an application-created browser profile directory from disk.
@@ -548,10 +382,12 @@ public sealed partial class ShellViewModel
             }
         }
 
+        StorageUsageAnalyzer.InvalidateCache();
+
         _ = await this.LogAuditAsync(
-            AuditCategory.System,
+            AuditCategory.Personal,
             AuditSeverity.Info,
-            this._context.Localization["Nav.Settings"],
+            profile.DisplayName,
             this._context.Localization.Format("Settings.LogProfileDeleted", profile.DisplayName)).ConfigureAwait(true);
 
         return true;
@@ -588,6 +424,13 @@ public sealed partial class ShellViewModel
 
         string newProfileDir = Path.Combine(this._context.ProfilesRootDirectory, safeFolderName);
         _ = Directory.CreateDirectory(newProfileDir);
+        StorageUsageAnalyzer.InvalidateCache();
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            trimmed,
+            this._context.Localization.Format("Log.Personal.ProfileCreated", trimmed)).ConfigureAwait(true);
 
         await this.AssignBrowserProfileToSelectedAccountAsync(newProfileDir, trimmed).ConfigureAwait(true);
         return newProfileDir;
@@ -622,7 +465,7 @@ public sealed partial class ShellViewModel
                 : Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             _ = await this.LogAuditAsync(
-                AuditCategory.Account,
+                AuditCategory.Personal,
                 AuditSeverity.Success,
                 current.DisplayName,
                 this._context.Localization.Format("Settings.LogProfileAssigned", folderName, current.DisplayName)).ConfigureAwait(true);
@@ -653,7 +496,7 @@ public sealed partial class ShellViewModel
             await this.ReloadAllStoredDataAsync(created.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
-                AuditCategory.Account,
+                AuditCategory.Personal,
                 AuditSeverity.Success,
                 created.DisplayName,
                 this._context.Localization.Format("Settings.LogProfileAssigned", folderName, created.DisplayName)).ConfigureAwait(true);
@@ -673,58 +516,5 @@ public sealed partial class ShellViewModel
         }
 
         return folderName;
-    }
-
-    private static long GetFileFamilyBytes(string dir, string baseFileName)
-    {
-        if (!Directory.Exists(dir))
-        {
-            return 0;
-        }
-
-        long sum = SafeGetFileSize(Path.Combine(dir, baseFileName));
-        sum += SafeGetFileSize(Path.Combine(dir, $"{baseFileName}-wal"));
-        sum += SafeGetFileSize(Path.Combine(dir, $"{baseFileName}-shm"));
-        return sum;
-    }
-
-    private static long SafeGetFileSize(string filePath)
-    {
-        try
-        {
-            if (File.Exists(filePath))
-            {
-                return new FileInfo(filePath).Length;
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Ignore locked or inaccessible file
-        }
-
-        return 0;
-    }
-
-    private static long CalculateDirectoryBytes(string directoryPath)
-    {
-        if (!Directory.Exists(directoryPath))
-        {
-            return 0;
-        }
-
-        long total = 0;
-        try
-        {
-            foreach (string file in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
-            {
-                total += SafeGetFileSize(file);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Ignore inaccessible subdirectories
-        }
-
-        return total;
     }
 }

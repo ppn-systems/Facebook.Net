@@ -515,5 +515,23 @@
   "Storage.SliceAuditDb": "CSDL Nhật ký hoạt động",
   "Storage.SliceConfig": "Cấu hình & tệp hệ thống",
   "Storage.SliceNoProfiles": "Chưa có dữ liệu hồ sơ trình duyệt",
-  "Storage.LogCacheCleaned": "Đã dọn bộ nhớ đệm trình duyệt, giải phóng {0}. Tổng dung lượng hiện tại: {1}."
+  "Storage.LogCacheCleaned": "Đã dọn bộ nhớ đệm trình duyệt, giải phóng {0}. Tổng dung lượng hiện tại: {1}.",
+
+  "Audit.Cat.Personal": "Cá nhân",
+  "Analytics.LegendPersonal": "Thao tác cá nhân",
+  "Log.Personal.TagCreated": "Đã tạo mới nhãn màu '{0}' thành công.",
+  "Log.Personal.TagUpdated": "Đã chỉnh sửa nhãn màu thành '{0}'.",
+  "Log.Personal.TagDeleted": "Đã xóa nhãn màu '{0}' khỏi danh sách.",
+  "Log.Personal.TagAssignedToGroup": "Đã gắn nhãn '{0}' vào nhóm '{1}'.",
+  "Log.Personal.TagRemovedFromGroup": "Đã gỡ nhãn '{0}' khỏi nhóm '{1}'.",
+  "Log.Personal.BatchTagAssigned": "Đã gắn nhãn '{0}' hàng loạt cho {1} nhóm.",
+  "Log.Personal.BatchTagRemoved": "Đã gỡ nhãn '{0}' hàng loạt khỏi {1} nhóm.",
+  "Log.Personal.TargetGroupToggled": "Đã {0} nhóm đích '{1}'.",
+  "Log.Personal.StateEnabled": "bật",
+  "Log.Personal.StateDisabled": "tắt",
+  "Log.Personal.PublishedPostDeleted": "Đã xóa bản ghi bài đăng '{0}' khỏi lịch sử.",
+  "Log.Personal.ThemeChanged": "Đã đổi giao diện sang chế độ: {0}.",
+  "Log.Personal.LanguageChanged": "Đã chuyển ngôn ngữ hiển thị sang: {0}.",
+  "Log.Personal.BrowserChanged": "Đã đổi trình duyệt ưu tiên sang: {0}.",
+  "Log.Personal.ProfileCreated": "Đã tạo mới hồ sơ trình duyệt cô lập '{0}'."
 }

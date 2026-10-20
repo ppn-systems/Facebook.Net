@@ -801,24 +801,7 @@ public sealed partial class PublisherPage
         Button saveBumpTplBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Publisher.BtnSaveBumpTemplate"],
-            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
-            {
-                string raw = this._vm.BumpCommentSpintaxText.Trim();
-                if (string.IsNullOrWhiteSpace(raw))
-                {
-                    return;
-                }
-
-                string title = raw.Length > 36 ? string.Concat(raw[..36], "...") : raw;
-                CampaignTemplate tpl = new(
-                    Id: $"tpl_bump_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-                    Title: title,
-                    SpintaxContent: raw,
-                    MediaFilePath: null,
-                    IsCommentTemplate: true);
-                await this._vm.Context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
-                this._vm.SavedTemplates.Add(tpl);
-            }),
+            this._vm.SaveBumpTemplateCommand,
             VectorIcons.Bookmark);
 
         Button bumpBtn = AppButton.CreatePrimary(

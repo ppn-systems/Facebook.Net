@@ -26,7 +26,10 @@ public enum AuditCategory
     SalesComment = 4,
 
     /// <summary>Group feed or buyer-intent lead scraping event.</summary>
-    Scrape = 5
+    Scrape = 5,
+
+    /// <summary>User-initiated personal action (create, edit, delete, toggle, assign, or preference change).</summary>
+    Personal = 6
 }
 
 /// <summary>

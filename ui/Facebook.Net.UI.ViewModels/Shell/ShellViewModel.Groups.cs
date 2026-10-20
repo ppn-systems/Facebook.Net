@@ -46,6 +46,8 @@ public sealed partial class ShellViewModel
     public partial string? ActiveTagFilterId { get; set; }
 
     private readonly System.Collections.Generic.List<GroupSummary> _allCatalogGroups = new();
+    private readonly System.Collections.Generic.Dictionary<string, SavedTargetGroup> _targetGroupIndex = new(StringComparer.Ordinal);
+    private readonly System.Collections.Generic.Dictionary<string, GroupTag> _groupTagIndex = new(StringComparer.OrdinalIgnoreCase);
     private GroupMembershipState? _activeStateFilter;
 
     /// <summary>
@@ -125,7 +127,7 @@ public sealed partial class ShellViewModel
     }
 
     /// <summary>
-    /// Finds a saved target group by <paramref name="groupId"/> if present.
+    /// Finds a saved target group by <paramref name="groupId"/> in O(1) time using an indexed lookup.
     /// </summary>
     public SavedTargetGroup? FindTargetGroupById(string? groupId)
     {
@@ -134,19 +136,64 @@ public sealed partial class ShellViewModel
             return null;
         }
 
-        for (int i = 0; i < this.TargetGroups.Count; i++)
+        if (this._targetGroupIndex.Count == this.TargetGroups.Count &&
+            this._targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? fastHit))
         {
-            if (string.Equals(this.TargetGroups[i].GroupId, groupId, StringComparison.Ordinal))
-            {
-                return this.TargetGroups[i];
-            }
+            return fastHit;
         }
 
-        return null;
+        this.RebuildTargetGroupIndex();
+        return this._targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? val) ? val : null;
     }
 
     /// <summary>
-    /// Returns the list of resolved <see cref="GroupTag"/> badges assigned to a group.
+    /// Finds a group tag by <paramref name="tagId"/> in O(1) time using an indexed lookup.
+    /// </summary>
+    public GroupTag? FindGroupTagById(string? tagId)
+    {
+        if (string.IsNullOrWhiteSpace(tagId))
+        {
+            return null;
+        }
+
+        if (this._groupTagIndex.Count == this.GroupTags.Count &&
+            this._groupTagIndex.TryGetValue(tagId, out GroupTag? fastHit))
+        {
+            return fastHit;
+        }
+
+        this.RebuildGroupTagIndex();
+        return this._groupTagIndex.TryGetValue(tagId, out GroupTag? val) ? val : null;
+    }
+
+    private void RebuildTargetGroupIndex()
+    {
+        this._targetGroupIndex.Clear();
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (!string.IsNullOrWhiteSpace(tg.GroupId))
+            {
+                this._targetGroupIndex[tg.GroupId] = tg;
+            }
+        }
+    }
+
+    private void RebuildGroupTagIndex()
+    {
+        this._groupTagIndex.Clear();
+        for (int i = 0; i < this.GroupTags.Count; i++)
+        {
+            GroupTag tag = this.GroupTags[i];
+            if (!string.IsNullOrWhiteSpace(tag.Id))
+            {
+                this._groupTagIndex[tag.Id] = tag;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the list of resolved <see cref="GroupTag"/> badges assigned to a group in O(K) time.
     /// </summary>
     public System.Collections.Generic.IReadOnlyList<GroupTag> GetGroupTagsForGroup(string? groupId)
     {
@@ -165,14 +212,10 @@ public sealed partial class ShellViewModel
         System.Collections.Generic.List<GroupTag> resolved = new(tagIds.Count);
         for (int i = 0; i < tagIds.Count; i++)
         {
-            string id = tagIds[i];
-            for (int j = 0; j < this.GroupTags.Count; j++)
+            GroupTag? matched = this.FindGroupTagById(tagIds[i]);
+            if (matched is not null)
             {
-                if (string.Equals(this.GroupTags[j].Id, id, StringComparison.OrdinalIgnoreCase))
-                {
-                    resolved.Add(this.GroupTags[j]);
-                    break;
-                }
+                resolved.Add(matched);
             }
         }
 
@@ -201,10 +244,10 @@ public sealed partial class ShellViewModel
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Group,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             tag.Name,
-            this._context.Localization.Format("Log.GroupTagCreated", tag.Name)).ConfigureAwait(true);
+            this._context.Localization.Format("Log.Personal.TagCreated", tag.Name)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -222,6 +265,12 @@ public sealed partial class ShellViewModel
         GroupTag updated = new(tagId, trimmedName, color);
         await this._context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            trimmedName,
+            this._context.Localization.Format("Log.Personal.TagUpdated", trimmedName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -234,6 +283,7 @@ public sealed partial class ShellViewModel
             return;
         }
 
+        int modifiedCount = 0;
         foreach (SavedTargetGroup grp in groups)
         {
             if (grp is null)
@@ -280,10 +330,21 @@ public sealed partial class ShellViewModel
                     TagsCsv = ids.Count > 0 ? string.Join(',', ids) : null
                 };
                 await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                modifiedCount++;
             }
         }
 
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+
+        string tagName = this.FindGroupTagById(tagId)?.Name ?? tagId;
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            tagName,
+            this._context.Localization.Format(
+                assignTag ? "Log.Personal.BatchTagAssigned" : "Log.Personal.BatchTagRemoved",
+                tagName,
+                modifiedCount)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -324,7 +385,14 @@ public sealed partial class ShellViewModel
             this.ActiveTagFilterId = null;
         }
 
+        this.RebuildTargetGroupIndex();
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            tag.Name,
+            this._context.Localization.Format("Log.Personal.TagDeleted", tag.Name)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -380,6 +448,17 @@ public sealed partial class ShellViewModel
         {
             this.TargetGroups.Add(updated);
         }
+
+        this._targetGroupIndex[groupId] = updated;
+        string tagName = this.FindGroupTagById(tagId)?.Name ?? tagId;
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            updated.GroupName,
+            this._context.Localization.Format(
+                removed ? "Log.Personal.TagRemovedFromGroup" : "Log.Personal.TagAssignedToGroup",
+                tagName,
+                updated.GroupName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -406,7 +485,7 @@ public sealed partial class ShellViewModel
 
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
         _ = await this.LogAuditAsync(
-            AuditCategory.Group,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             this._context.Localization["Audit.Cat.Group"],
             this._context.Localization.Format("Log.BatchTaggedGroups", taggedCount)).ConfigureAwait(true);
@@ -460,6 +539,7 @@ public sealed partial class ShellViewModel
         }
 
         this.TargetGroups.ReplaceAll(nextList);
+        this.RebuildTargetGroupIndex();
     }
 
     /// <summary>
@@ -509,6 +589,7 @@ public sealed partial class ShellViewModel
         }
 
         this.TargetGroups.ReplaceAll(nextList);
+        this.RebuildTargetGroupIndex();
     }
 
     private async Task ReloadGroupTagsOnlyAsync()
@@ -516,6 +597,7 @@ public sealed partial class ShellViewModel
         System.Collections.Generic.IReadOnlyList<GroupTag> tags =
             await this._context.AccountStore.GetAllGroupTagsAsync().ConfigureAwait(true);
         this.GroupTags.ReplaceAll(tags);
+        this.RebuildGroupTagIndex();
     }
 
     /// <summary>
@@ -535,6 +617,17 @@ public sealed partial class ShellViewModel
                 break;
             }
         }
+
+        this._targetGroupIndex[group.GroupId] = updated;
+        string stateWord = isEnabled
+            ? this._context.Localization["Log.Personal.StateEnabled"]
+            : this._context.Localization["Log.Personal.StateDisabled"];
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            updated.GroupName,
+            this._context.Localization.Format("Log.Personal.TargetGroupToggled", stateWord, updated.GroupName)).ConfigureAwait(true);
     }
 
     private async Task SetAllTargetGroupsEnabledAsync(bool isEnabled)
@@ -546,8 +639,10 @@ public sealed partial class ShellViewModel
             this.TargetGroups[i] = updated;
         }
 
+        this.RebuildTargetGroupIndex();
+
         _ = await this.LogAuditAsync(
-            AuditCategory.Group,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             this._context.Localization["Audit.Cat.Group"],
             isEnabled
@@ -792,7 +887,7 @@ public sealed partial class ShellViewModel
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Group,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             target.GroupName,
             this._context.Localization.Format("Log.TargetGroupAdded", target.GroupName)).ConfigureAwait(true);
@@ -810,7 +905,7 @@ public sealed partial class ShellViewModel
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Group,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             name,
             this._context.Localization.Format("Log.TargetGroupRemoved", name)).ConfigureAwait(true);
@@ -994,11 +1089,8 @@ public sealed partial class ShellViewModel
         System.Collections.Generic.IReadOnlyList<SavedTargetGroup> stored =
             await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
 
-        this.TargetGroups.Clear();
-        for (int i = 0; i < stored.Count; i++)
-        {
-            this.TargetGroups.Add(stored[i]);
-        }
+        this.TargetGroups.ReplaceAll(stored);
+        this.RebuildTargetGroupIndex();
 
         if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
         {

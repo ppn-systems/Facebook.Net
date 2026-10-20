@@ -87,6 +87,8 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 67108864;
+            PRAGMA cache_size = -8000;
 
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +105,8 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_category ON audit_logs(category);
             CREATE INDEX IF NOT EXISTS idx_audit_account ON audit_logs(account_uid);
+            CREATE INDEX IF NOT EXISTS idx_audit_cat_id ON audit_logs(category, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_acc_id ON audit_logs(account_uid, id DESC);
             """;
 
         using SqliteConnection conn = new(this._connectionString);

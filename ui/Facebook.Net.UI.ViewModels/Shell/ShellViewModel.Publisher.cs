@@ -167,7 +167,36 @@ public sealed partial class ShellViewModel
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Post,
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            this._context.Localization["Publisher.TemplatesTitle"],
+            this._context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+    }
+
+    private async Task SaveBumpTemplateAsync()
+    {
+        string raw = this.BumpCommentSpintaxText.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        string title = raw.Length > 36
+            ? string.Concat(raw[..36], "...")
+            : raw;
+
+        CampaignTemplate tpl = new(
+            Id: $"tpl_bump_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+            Title: title,
+            SpintaxContent: raw,
+            MediaFilePath: null,
+            IsCommentTemplate: true);
+
+        await this._context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
             AuditSeverity.Success,
             this._context.Localization["Publisher.TemplatesTitle"],
             this._context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
@@ -186,7 +215,7 @@ public sealed partial class ShellViewModel
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Post,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             this._context.Localization["Publisher.TemplatesTitle"],
             this._context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
@@ -734,9 +763,21 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        _ = await this._context.AccountStore.DeletePublishedPostAsync(this.SelectedPublishedPost.PostId).ConfigureAwait(true);
+        PublishedPostRecord removed = this.SelectedPublishedPost;
+        string preview = removed.MessageText.Length > 36
+            ? string.Concat(removed.MessageText[..36], "...")
+            : removed.MessageText;
+        string targetLabel = removed.TargetGroupName ?? this._context.Localization["Publisher.TargetModePersonal"];
+
+        _ = await this._context.AccountStore.DeletePublishedPostAsync(removed.PostId).ConfigureAwait(true);
         this.SelectedPublishedPost = null;
         await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            targetLabel,
+            this._context.Localization.Format("Log.Personal.PublishedPostDeleted", preview)).ConfigureAwait(true);
     }
 
     private async Task OpenSelectedPublishedPostInBrowserAsync()

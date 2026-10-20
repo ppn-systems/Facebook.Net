@@ -515,5 +515,23 @@
   "Storage.SliceAuditDb": "Activity Audit DB",
   "Storage.SliceConfig": "Config & System Files",
   "Storage.SliceNoProfiles": "No browser profile data yet",
-  "Storage.LogCacheCleaned": "Cleaned browser profile caches, freed {0}. Current total storage: {1}."
+  "Storage.LogCacheCleaned": "Cleaned browser profile caches, freed {0}. Current total storage: {1}.",
+
+  "Audit.Cat.Personal": "Personal",
+  "Analytics.LegendPersonal": "Personal Actions",
+  "Log.Personal.TagCreated": "Created new color tag '{0}' successfully.",
+  "Log.Personal.TagUpdated": "Updated color tag to '{0}'.",
+  "Log.Personal.TagDeleted": "Deleted color tag '{0}' from tag list.",
+  "Log.Personal.TagAssignedToGroup": "Assigned tag '{0}' to group '{1}'.",
+  "Log.Personal.TagRemovedFromGroup": "Removed tag '{0}' from group '{1}'.",
+  "Log.Personal.BatchTagAssigned": "Batch-assigned tag '{0}' to {1} groups.",
+  "Log.Personal.BatchTagRemoved": "Batch-removed tag '{0}' from {1} groups.",
+  "Log.Personal.TargetGroupToggled": "Marked target group '{1}' as {0}.",
+  "Log.Personal.StateEnabled": "enabled",
+  "Log.Personal.StateDisabled": "disabled",
+  "Log.Personal.PublishedPostDeleted": "Deleted published post record '{0}' from local history.",
+  "Log.Personal.ThemeChanged": "Changed theme mode to: {0}.",
+  "Log.Personal.LanguageChanged": "Switched display language to: {0}.",
+  "Log.Personal.BrowserChanged": "Changed preferred browser to: {0}.",
+  "Log.Personal.ProfileCreated": "Created new isolated browser profile '{0}'."
 }

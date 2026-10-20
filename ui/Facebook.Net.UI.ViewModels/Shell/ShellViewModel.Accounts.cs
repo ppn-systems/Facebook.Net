@@ -245,6 +245,7 @@ public sealed partial class ShellViewModel
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
         this.TargetGroups.ReplaceAll(storedGroups);
+        this.RebuildTargetGroupIndex();
         if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
         {
             this.SelectedTargetGroup = this.TargetGroups[0];
@@ -277,11 +278,7 @@ public sealed partial class ShellViewModel
     private async Task ReloadTemplatesOnlyAsync()
     {
         IReadOnlyList<CampaignTemplate> storedTemplates = await this._context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
-        this.SavedTemplates.Clear();
-        for (int i = 0; i < storedTemplates.Count; i++)
-        {
-            this.SavedTemplates.Add(storedTemplates[i]);
-        }
+        this.SavedTemplates.ReplaceAll(storedTemplates);
     }
 
     private static bool HasProfileAuthenticatedCookieStore(string? profileDirectory)
@@ -382,7 +379,7 @@ public sealed partial class ShellViewModel
         this.SessionImportRawInput = string.Empty;
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             profile.DisplayName,
             this._context.Localization.Format("Log.SessionSaved", profile.DisplayName)).ConfigureAwait(true);
@@ -419,7 +416,7 @@ public sealed partial class ShellViewModel
             await this.ReloadAllStoredDataAsync(cleared.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
-                AuditCategory.Account,
+                AuditCategory.Personal,
                 AuditSeverity.Info,
                 cleared.DisplayName,
                 this._context.Localization.Format("Log.ProxyCleared", cleared.DisplayName)).ConfigureAwait(true);
@@ -444,7 +441,7 @@ public sealed partial class ShellViewModel
         await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             updated.DisplayName,
             this._context.Localization.Format("Log.ProxySaved", parsed.Host, parsed.Port, updated.DisplayName)).ConfigureAwait(true);
@@ -723,7 +720,7 @@ public sealed partial class ShellViewModel
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             removedName,
             this._context.Localization.Format("Log.AccountRemoved", removedName)).ConfigureAwait(true);

@@ -286,6 +286,32 @@ public sealed partial class UiComponentArchitectureGuardTests
         Assert.True(violations.Count == 0, string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void Rule5_ViewsMustNeverAccessAccountStoreOrAuditStoreDirectly_EnforcingDddLayeredBoundaries()
+    {
+        string repoRoot = FindRepositoryRoot();
+        string pagesDir = Path.Combine(repoRoot, "ui", "Facebook.Net.App", "Views", "Pages");
+        Assert.True(Directory.Exists(pagesDir), $"Pages directory not found at '{pagesDir}'.");
+
+        List<string> violations = [];
+        foreach (string filePath in Directory.EnumerateFiles(pagesDir, "*.cs", SearchOption.TopDirectoryOnly))
+        {
+            string fileName = Path.GetFileName(filePath);
+            string source = File.ReadAllText(filePath);
+            if (source.Contains(".AccountStore.", StringComparison.Ordinal))
+            {
+                violations.Add($"{fileName}: Views must NOT call '.AccountStore.' directly; delegate through ShellViewModel commands/methods.");
+            }
+
+            if (source.Contains(".AuditStore.", StringComparison.Ordinal))
+            {
+                violations.Add($"{fileName}: Views must NOT call '.AuditStore.' directly; delegate through ViewModels.");
+            }
+        }
+
+        Assert.True(violations.Count == 0, string.Join(Environment.NewLine, violations));
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? dir = new(AppContext.BaseDirectory);

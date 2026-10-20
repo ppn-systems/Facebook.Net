@@ -295,7 +295,7 @@ public sealed partial class ShellViewModel
         await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Scrape,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             this._context.Localization["Audit.Cat.Scrape"],
             this._context.Localization.Format("Log.ScrapedPostsCleared", removed)).ConfigureAwait(true);

@@ -143,6 +143,7 @@ public sealed partial class AuditLogsPage : UserControl
             VectorIcons.Filter,
             () =>
             [
+                new FilterOptionItem(nameof(AuditCategory.Personal), this._i18n.FormatAuditCategory(AuditCategory.Personal)),
                 new FilterOptionItem(nameof(AuditCategory.System), this._i18n.FormatAuditCategory(AuditCategory.System)),
                 new FilterOptionItem(nameof(AuditCategory.Account), this._i18n.FormatAuditCategory(AuditCategory.Account)),
                 new FilterOptionItem(nameof(AuditCategory.Group), this._i18n.FormatAuditCategory(AuditCategory.Group)),

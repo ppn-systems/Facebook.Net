@@ -47,6 +47,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 67108864;
+            PRAGMA cache_size = -8000;
 
             CREATE TABLE IF NOT EXISTS proxies (
                 id TEXT PRIMARY KEY NOT NULL,

@@ -171,6 +171,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
             AuditCategory.Post => this["Audit.Cat.Post"],
             AuditCategory.SalesComment => this["Audit.Cat.SalesComment"],
             AuditCategory.Scrape => this["Audit.Cat.Scrape"],
+            AuditCategory.Personal => this["Audit.Cat.Personal"],
             _ => this["Audit.Cat.System"]
         };
 

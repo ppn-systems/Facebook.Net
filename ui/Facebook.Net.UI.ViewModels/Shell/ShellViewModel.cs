@@ -124,6 +124,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // Publisher & Sales Leads commands
         this.PreviewSpintaxCommand = new RelayCommand(this.GenerateSpintaxPreview);
         this.SaveTemplateCommand = new AsyncRelayCommand(this.SaveTemplateAsync);
+        this.SaveBumpTemplateCommand = new AsyncRelayCommand(this.SaveBumpTemplateAsync);
         this.DeleteSelectedTemplateCommand = new AsyncRelayCommand(this.DeleteSelectedTemplateAsync);
         this.PublishCampaignCommand = new AsyncRelayCommand(this.PublishCampaignAsync);
         this.SyncPersonalTimelinePostsCommand = new AsyncRelayCommand(this.SyncPersonalTimelinePostsAsync);
@@ -283,6 +284,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to save the current Spintax content as a reusable template.</summary>
     public IAsyncRelayCommand SaveTemplateCommand { get; }
+
+    /// <summary>Gets the command to save the current Bump comment Spintax content as a reusable comment template.</summary>
+    public IAsyncRelayCommand SaveBumpTemplateCommand { get; }
 
     /// <summary>Gets the command to delete the currently selected template from the library.</summary>
     public IAsyncRelayCommand DeleteSelectedTemplateCommand { get; }

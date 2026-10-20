@@ -149,6 +149,7 @@ public sealed partial class OverviewPage
             int publishOps = 0;
             int commentOps = 0;
             int scrapeOps = 0;
+            int personalOps = 0;
             int syncOps = 0;
             int alertOps = 0;
 
@@ -171,6 +172,9 @@ public sealed partial class OverviewPage
                     case AuditCategory.Scrape:
                         scrapeOps++;
                         break;
+                    case AuditCategory.Personal:
+                        personalOps++;
+                        break;
                     case AuditCategory.Account:
                     case AuditCategory.Group:
                     case AuditCategory.System:
@@ -182,6 +186,7 @@ public sealed partial class OverviewPage
 
             activityChart.SetSlices(
             [
+                new SvgDonutSlice(this._i18n["Analytics.LegendPersonal"], personalOps, "#8B5CF6"),
                 new SvgDonutSlice(this._i18n["Analytics.LegendPublish"], publishOps, "#3B82F6"),
                 new SvgDonutSlice(this._i18n["Analytics.LegendSalesComment"], commentOps, "#10B981"),
                 new SvgDonutSlice(this._i18n["Analytics.LegendScrape"], scrapeOps, "#F6821F"),
