@@ -12,8 +12,10 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Facebook.Net.App.Views.Pages;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Localization;
@@ -161,8 +163,8 @@ public sealed partial class MainWindow : Window
 
         TextBlock brandTitle = new()
         {
-            Text = "Facebook One Client",
-            FontSize = 13,
+            Text = "One Client",
+            FontSize = 14,
             FontWeight = FontWeight.Bold,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(9, 0, 6, 0),
@@ -332,35 +334,90 @@ public sealed partial class MainWindow : Window
         stopTaskBtn.IsVisible = this._vm.IsBusy;
         stopTaskBtn.Padding = new Thickness(10, 5);
 
+        List<Border> disconnectedStatusDots = new();
+        bool pulseDim = false;
+        DispatcherTimer pulseTimer = new()
+        {
+            Interval = TimeSpan.FromMilliseconds(650)
+        };
+        pulseTimer.Tick += (_, _) =>
+        {
+            pulseDim = !pulseDim;
+            double nextOpacity = pulseDim ? 0.32 : 1.0;
+            for (int i = disconnectedStatusDots.Count - 1; i >= 0; i--)
+            {
+                disconnectedStatusDots[i].Opacity = nextOpacity;
+            }
+        };
+        pulseTimer.Start();
+
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
             acc =>
             {
+                bool isConnected = acc.Status == AccountStatus.Active;
                 Grid itemRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 Border av = AvatarBadge.Create(this._theme, acc.DisplayName, 20, acc.AvatarUrl);
                 TextBlock tb = SectionHeader.CreateLabel(
                     this._theme,
-                    $"{acc.DisplayName} — {this._i18n.FormatAccountStatus(acc.Status)}",
-                    12,
+                    acc.DisplayName,
+                    12.5,
                     FontWeight.SemiBold);
                 tb.MaxLines = 1;
                 tb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                Color dotColor = isConnected
+                    ? Color.Parse("#10B981")
+                    : Color.Parse("#EF4444");
+                Color haloColor = isConnected
+                    ? Color.FromArgb(55, 16, 185, 129)
+                    : Color.FromArgb(65, 239, 68, 68);
+
+                Border innerDot = new()
+                {
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(999),
+                    Background = new SolidColorBrush(dotColor),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                Border statusDotHalo = new()
+                {
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius = new CornerRadius(999),
+                    Background = new SolidColorBrush(haloColor),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 0, 2, 0),
+                    Child = innerDot
+                };
+                ToolTip.SetTip(statusDotHalo, this._i18n.FormatAccountStatus(acc.Status));
+
+                if (!isConnected)
+                {
+                    disconnectedStatusDots.Add(statusDotHalo);
+                }
+
                 Grid.SetColumn(av, 0);
                 Grid.SetColumn(tb, 1);
+                Grid.SetColumn(statusDotHalo, 2);
                 itemRow.Children.Add(av);
                 itemRow.Children.Add(tb);
+                itemRow.Children.Add(statusDotHalo);
                 return itemRow;
             },
             selectedItem: this._vm.SelectedAccount,
             placeholderText: this._i18n["TopBar.NoAccount"]);
-        activeAccCombo.MinWidth = 215;
-        activeAccCombo.MaxWidth = 265;
+        activeAccCombo.MinWidth = 195;
+        activeAccCombo.MaxWidth = 245;
         activeAccCombo.Height = 32;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);

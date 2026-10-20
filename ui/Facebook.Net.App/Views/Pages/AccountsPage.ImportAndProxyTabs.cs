@@ -160,11 +160,14 @@ public sealed partial class AccountsPage
         accInfoStack.Children.Add(selectedAccLabelTb);
         accInfoStack.Children.Add(selectedAccNameTb);
 
-        Border accIconWell = AvatarBadge.Create(this._theme, "FB", 36);
-        Grid.SetColumn(accIconWell, 0);
+        ContentControl accAvatarHost = new()
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(accAvatarHost, 0);
         Grid.SetColumn(accInfoStack, 1);
         Grid.SetColumn(proxyStatusBadge, 2);
-        selectedAccRow.Children.Add(accIconWell);
+        selectedAccRow.Children.Add(accAvatarHost);
         selectedAccRow.Children.Add(accInfoStack);
         selectedAccRow.Children.Add(proxyStatusBadge);
 
@@ -191,6 +194,7 @@ public sealed partial class AccountsPage
             AccountProfile? acc = this._vm.SelectedAccount;
             if (acc is not null)
             {
+                accAvatarHost.Content = AvatarBadge.Create(this._theme, acc.DisplayName, 38, acc.AvatarUrl);
                 selectedAccNameTb.Text = acc.DisplayName;
                 bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
                 StatusPill.SetText(
@@ -200,6 +204,7 @@ public sealed partial class AccountsPage
             }
             else
             {
+                accAvatarHost.Content = AvatarBadge.Create(this._theme, "FB", 38);
                 selectedAccNameTb.Text = this._i18n["Overview.StatusDisconnected"];
                 StatusPill.SetText(proxyStatusBadge, this._i18n["Accounts.NoProxyBadge"]);
                 StatusPill.SetSeverity(proxyStatusBadge, this._theme, AuditSeverity.Warning);
@@ -207,6 +212,8 @@ public sealed partial class AccountsPage
         }
 
         RefreshSelectedProxyBanner();
+
+        this._vm.Accounts.CollectionChanged += (_, _) => RefreshSelectedProxyBanner();
 
         this._vm.PropertyChanged += (_, e) =>
         {

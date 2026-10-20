@@ -25,7 +25,8 @@ public static class SectionHeader
         string initialTitle,
         string initialSubtitle,
         out TextBlock titleBlock,
-        out TextBlock subtitleBlock)
+        out TextBlock subtitleBlock,
+        bool showInfoButton = false)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
@@ -47,12 +48,13 @@ public static class SectionHeader
         };
 
         Button infoBtn = AppButton.CreateInfoFlyout(theme, initialSubtitle, out TextBlock subtitle);
+        infoBtn.IsVisible = showInfoButton;
 
         headerRow.SizeChanged += (_, e) =>
         {
             if (e.NewSize.Width > 40)
             {
-                title.MaxWidth = Math.Max(60, e.NewSize.Width - 34);
+                title.MaxWidth = Math.Max(60, e.NewSize.Width - (showInfoButton ? 34 : 8));
             }
         };
 

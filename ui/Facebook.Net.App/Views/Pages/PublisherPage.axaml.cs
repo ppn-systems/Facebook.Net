@@ -307,37 +307,15 @@ public sealed partial class PublisherPage : UserControl
         composerGrid.Children.Add(localContentBox);
         contentBox = localContentBox;
 
-        // Row 3: Live Spintax Preview Bar
-        Grid previewRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
+        // Row 3: Navigate to Full-Page Simulated Facebook Post Preview
         Button previewSpintaxBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Publisher.BtnPreviewSpintax"],
-            this._vm.PreviewSpintaxCommand,
-            VectorIcons.Sync);
-
-        TextBlock previewSpintaxTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._vm.SpintaxPreviewText,
-            11.5,
-            FontWeight.Normal,
-            isSecondary: true);
-        previewSpintaxTb.MaxLines = 2;
-        previewSpintaxTb.TextWrapping = TextWrapping.Wrap;
-        previewSpintaxTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        previewSpintaxTb.VerticalAlignment = VerticalAlignment.Center;
-
-        Grid.SetColumn(previewSpintaxBtn, 0);
-        Grid.SetColumn(previewSpintaxTb, 1);
-        previewRow.Children.Add(previewSpintaxBtn);
-        previewRow.Children.Add(previewSpintaxTb);
-        Grid.SetRow(previewRow, 3);
-        composerGrid.Children.Add(previewRow);
+            null,
+            VectorIcons.Browser);
+        previewSpintaxBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        Grid.SetRow(previewSpintaxBtn, 3);
+        composerGrid.Children.Add(previewSpintaxBtn);
 
         // Row 4: Photo Picker + Live Attached Image Thumbnail Preview
         StackPanel mediaStack = new() { Spacing = 8 };
@@ -546,14 +524,255 @@ public sealed partial class PublisherPage : UserControl
 
         UpdatePublishButtonAndIdentity();
 
+        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(rightTargetCard, 1);
+        splitGrid.Children.Add(leftCard);
+        splitGrid.Children.Add(rightTargetCard);
+
+        // =====================================================================
+        // FULL-PAGE SIMULATED FACEBOOK POST PREVIEW VIEW (With Back Navigation)
+        // =====================================================================
+        TransitioningContentControl composeHost = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Content = splitGrid
+        };
+
+        Grid previewPageGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 14
+        };
+
+        Grid previewTopBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 12,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Button backToComposerBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnBackToComposer"]);
+
+        TextBlock previewPageTitleTb = SectionHeader.CreateLabel(
+            this._theme,
+            this._i18n["Publisher.PreviewPageTitle"],
+            16,
+            FontWeight.Bold);
+        previewPageTitleTb.HorizontalAlignment = HorizontalAlignment.Center;
+
+        Button spinAnotherBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Publisher.BtnSpinAnotherVariant"],
+            null,
+            VectorIcons.Sync);
+
+        Grid.SetColumn(backToComposerBtn, 0);
+        Grid.SetColumn(previewPageTitleTb, 1);
+        Grid.SetColumn(spinAnotherBtn, 2);
+        previewTopBar.Children.Add(backToComposerBtn);
+        previewTopBar.Children.Add(previewPageTitleTb);
+        previewTopBar.Children.Add(spinAnotherBtn);
+        Grid.SetRow(previewTopBar, 0);
+        previewPageGrid.Children.Add(previewTopBar);
+
+        // Simulated Facebook Feed Post Card
+        StackPanel fbPostCardStack = new()
+        {
+            Spacing = 14
+        };
+
+        Grid fbPostHeader = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 12,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        ContentControl fbPreviewAvatarHost = new()
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel fbHeaderMeta = new()
+        {
+            Spacing = 3,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock fbAuthorAndGroupTb = SectionHeader.CreateLabel(
+            this._theme,
+            string.Empty,
+            14.5,
+            FontWeight.Bold);
+
+        TextBlock fbTimestampTb = SectionHeader.CreateLabel(
+            this._theme,
+            this._i18n["Publisher.PreviewJustNowPublic"],
+            12,
+            FontWeight.Normal,
+            isSecondary: true);
+
+        fbHeaderMeta.Children.Add(fbAuthorAndGroupTb);
+        fbHeaderMeta.Children.Add(fbTimestampTb);
+        Grid.SetColumn(fbPreviewAvatarHost, 0);
+        Grid.SetColumn(fbHeaderMeta, 1);
+        fbPostHeader.Children.Add(fbPreviewAvatarHost);
+        fbPostHeader.Children.Add(fbHeaderMeta);
+        fbPostCardStack.Children.Add(fbPostHeader);
+
+        TextBlock fbBodyContentTb = SectionHeader.CreateLabel(
+            this._theme,
+            string.Empty,
+            14.5,
+            FontWeight.Normal);
+        fbBodyContentTb.LineHeight = 22;
+        fbBodyContentTb.TextWrapping = TextWrapping.Wrap;
+        fbPostCardStack.Children.Add(fbBodyContentTb);
+
+        Image fbFullPreviewImage = new()
+        {
+            MaxHeight = 360,
+            Stretch = Stretch.UniformToFill,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        Border fbMediaFrame = new()
+        {
+            IsVisible = false,
+            CornerRadius = new CornerRadius(10),
+            ClipToBounds = true,
+            BorderThickness = new Thickness(1),
+            BorderBrush = this._theme.Palette.SubtleBorder,
+            Child = fbFullPreviewImage
+        };
+        fbPostCardStack.Children.Add(fbMediaFrame);
+
+        TextBlock fbReactionSummaryTb = SectionHeader.CreateLabel(
+            this._theme,
+            $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}",
+            12,
+            FontWeight.Medium,
+            isSecondary: true);
+        fbPostCardStack.Children.Add(fbReactionSummaryTb);
+
+        Border fbDivider = new()
+        {
+            Height = 1,
+            Background = this._theme.Palette.SubtleBorder
+        };
+        fbPostCardStack.Children.Add(fbDivider);
+
+        Grid fbActionRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+            ColumnSpacing = 8
+        };
+
+        TextBlock fbLikeLbl = SectionHeader.CreateLabel(this._theme, $"👍  {this._i18n["Publisher.PreviewActionLike"]}", 13, FontWeight.SemiBold, isSecondary: true);
+        fbLikeLbl.HorizontalAlignment = HorizontalAlignment.Center;
+        TextBlock fbCommentLbl = SectionHeader.CreateLabel(this._theme, $"💬  {this._i18n["Publisher.PreviewActionComment"]}", 13, FontWeight.SemiBold, isSecondary: true);
+        fbCommentLbl.HorizontalAlignment = HorizontalAlignment.Center;
+        TextBlock fbShareLbl = SectionHeader.CreateLabel(this._theme, $"↗  {this._i18n["Publisher.PreviewActionShare"]}", 13, FontWeight.SemiBold, isSecondary: true);
+        fbShareLbl.HorizontalAlignment = HorizontalAlignment.Center;
+
+        Grid.SetColumn(fbLikeLbl, 0);
+        Grid.SetColumn(fbCommentLbl, 1);
+        Grid.SetColumn(fbShareLbl, 2);
+        fbActionRow.Children.Add(fbLikeLbl);
+        fbActionRow.Children.Add(fbCommentLbl);
+        fbActionRow.Children.Add(fbShareLbl);
+        fbPostCardStack.Children.Add(fbActionRow);
+
+        Border fbPostOuterCard = SurfaceCard.Create(this._theme, fbPostCardStack, new Thickness(22, 18));
+        fbPostOuterCard.MaxWidth = 680;
+        fbPostOuterCard.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        ScrollViewer fbPreviewScroll = new()
+        {
+            Content = fbPostOuterCard
+        };
+        Grid.SetRow(fbPreviewScroll, 1);
+        previewPageGrid.Children.Add(fbPreviewScroll);
+
+        Border previewPageCard = SurfaceCard.Create(this._theme, previewPageGrid, new Thickness(18));
+
+        void PopulateSimulatedPreview()
+        {
+            if (this._vm.PreviewSpintaxCommand.CanExecute(null))
+            {
+                this._vm.PreviewSpintaxCommand.Execute(null);
+            }
+
+            string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
+            fbPreviewAvatarHost.Content = AvatarBadge.Create(this._theme, accName, 44, this._vm.SelectedAccount?.AvatarUrl);
+
+            string sampleGroupName = "Cộng đồng Facebook";
+            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+            {
+                if (this._vm.TargetGroups[i].IsEnabled)
+                {
+                    sampleGroupName = this._vm.TargetGroups[i].GroupName;
+                    break;
+                }
+            }
+
+            fbAuthorAndGroupTb.Text = this._vm.PublishTargetMode == 0
+                ? accName
+                : $"{accName}  ▸  {sampleGroupName}";
+
+            string rawPreview = this._vm.SpintaxPreviewText ?? string.Empty;
+            int colonIdx = rawPreview.IndexOf(": ", StringComparison.Ordinal);
+            if (colonIdx > 0 && colonIdx < 28)
+            {
+                rawPreview = rawPreview[(colonIdx + 2)..];
+            }
+
+            DateTime now = DateTime.Now;
+            string resolvedBody = rawPreview
+                .Replace("{group_name}", sampleGroupName, StringComparison.OrdinalIgnoreCase)
+                .Replace("{date}", now.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                .Replace("{time}", now.ToString("HH:mm", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+
+            fbBodyContentTb.Text = resolvedBody;
+            fbReactionSummaryTb.IsVisible = this._vm.AutoReactPublishedPost;
+
+            string mediaPath = (localPhotoBox.Text ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(mediaPath) && File.Exists(mediaPath))
+            {
+                try
+                {
+                    fbFullPreviewImage.Source = new Bitmap(mediaPath);
+                    fbMediaFrame.IsVisible = true;
+                }
+                catch
+                {
+                    fbMediaFrame.IsVisible = false;
+                }
+            }
+            else
+            {
+                fbMediaFrame.IsVisible = false;
+            }
+        }
+
+        previewSpintaxBtn.Click += (_, _) =>
+        {
+            PopulateSimulatedPreview();
+            composeHost.Content = previewPageCard;
+        };
+
+        spinAnotherBtn.Click += (_, _) => PopulateSimulatedPreview();
+
+        backToComposerBtn.Click += (_, _) => composeHost.Content = splitGrid;
+
         this._vm.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SpintaxPreviewText), StringComparison.Ordinal))
-            {
-                previewSpintaxTb.Text = this._vm.SpintaxPreviewText;
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.PostSpintaxText), StringComparison.Ordinal) &&
-                     !string.Equals(localContentBox.Text, this._vm.PostSpintaxText, StringComparison.Ordinal))
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.PostSpintaxText), StringComparison.Ordinal) &&
+                !string.Equals(localContentBox.Text, this._vm.PostSpintaxText, StringComparison.Ordinal))
             {
                 localContentBox.Text = this._vm.PostSpintaxText;
             }
@@ -569,11 +788,6 @@ public sealed partial class PublisherPage : UserControl
                 UpdatePublishButtonAndIdentity();
             }
         };
-
-        Grid.SetColumn(leftCard, 0);
-        Grid.SetColumn(rightTargetCard, 1);
-        splitGrid.Children.Add(leftCard);
-        splitGrid.Children.Add(rightTargetCard);
 
         refreshI18n = () =>
         {
@@ -591,11 +805,21 @@ public sealed partial class PublisherPage : UserControl
             localPhotoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
             AppButton.SetText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             AppButton.SetText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
+
+            AppButton.SetText(backToComposerBtn, this._i18n["Publisher.BtnBackToComposer"]);
+            previewPageTitleTb.Text = this._i18n["Publisher.PreviewPageTitle"];
+            AppButton.SetText(spinAnotherBtn, this._i18n["Publisher.BtnSpinAnotherVariant"]);
+            fbTimestampTb.Text = this._i18n["Publisher.PreviewJustNowPublic"];
+            fbReactionSummaryTb.Text = $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}";
+            fbLikeLbl.Text = $"👍  {this._i18n["Publisher.PreviewActionLike"]}";
+            fbCommentLbl.Text = $"💬  {this._i18n["Publisher.PreviewActionComment"]}";
+            fbShareLbl.Text = $"↗  {this._i18n["Publisher.PreviewActionShare"]}";
+
             UpdatePublishButtonAndIdentity();
             refreshTargetCard();
         };
 
-        return splitGrid;
+        return composeHost;
     }
 
     internal Control BuildTargetGroupAndTagPickerCard(
