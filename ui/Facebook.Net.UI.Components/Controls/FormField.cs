@@ -157,6 +157,15 @@ public static class FormField
                 item is null ? new Border() : itemBuilder(item))
         };
 
+        listBox.ContainerPrepared += (_, e) =>
+        {
+            if (e.Container is ListBoxItem item)
+            {
+                item.Padding = new Thickness(4, 3);
+                item.CornerRadius = new CornerRadius(6);
+            }
+        };
+
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;

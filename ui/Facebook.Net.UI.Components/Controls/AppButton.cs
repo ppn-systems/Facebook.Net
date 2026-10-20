@@ -48,7 +48,7 @@ public static class AppButton
         StackPanel row = new()
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 7,
+            Spacing = 6,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -65,7 +65,7 @@ public static class AppButton
             Content = row,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(14, 8),
+            Padding = new Thickness(10, 8),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -113,7 +113,7 @@ public static class AppButton
         StackPanel row = new()
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 7,
+            Spacing = 6,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -130,7 +130,7 @@ public static class AppButton
             Content = row,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 7),
+            Padding = new Thickness(10, 7),
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,

@@ -35,15 +35,19 @@ public static class IconMetricPill
             Text = initialText,
             FontSize = 11,
             FontWeight = FontWeight.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap
         };
 
-        StackPanel row = new()
+        Grid row = new()
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 5,
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 5,
             VerticalAlignment = VerticalAlignment.Center
         };
+        Grid.SetColumn(icon, 0);
+        Grid.SetColumn(label, 1);
         row.Children.Add(icon);
         row.Children.Add(label);
 
@@ -51,16 +55,19 @@ public static class IconMetricPill
         {
             CornerRadius = new CornerRadius(999),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(8, 2),
+            Padding = new Thickness(8, 3),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
+            ClipToBounds = true,
             Child = row
         };
+
+        AuditSeverity currentSeverity = severity;
 
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            (IBrush fill, IBrush border, IBrush fg) = severity switch
+            (IBrush fill, IBrush border, IBrush fg) = currentSeverity switch
             {
                 AuditSeverity.Success => (p.SuccessFill, p.SuccessBorder, p.SuccessText),
                 AuditSeverity.Warning => (p.WarningFill, p.WarningBorder, p.WarningText),
@@ -75,10 +82,28 @@ public static class IconMetricPill
             label.Foreground = fg;
         }
 
+        pill.Tag = (Action<AuditSeverity>)(nextSeverity =>
+        {
+            currentSeverity = nextSeverity;
+            ApplyColors();
+        });
+
         ApplyColors();
         ThemeLifecycle.Bind(pill, theme, ApplyColors);
 
         valueTextBlock = label;
         return pill;
+    }
+
+    /// <summary>
+    /// Dynamically updates the semantic severity color of a pill created by <see cref="Create"/>.
+    /// </summary>
+    public static void SetSeverity(Border pill, AuditSeverity severity)
+    {
+        ArgumentNullException.ThrowIfNull(pill);
+        if (pill.Tag is Action<AuditSeverity> setter)
+        {
+            setter(severity);
+        }
     }
 }

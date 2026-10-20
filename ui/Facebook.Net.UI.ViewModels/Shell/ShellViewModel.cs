@@ -303,8 +303,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             AuditSeverity.Info,
             targetName: this._context.Localization["Audit.Cat.System"],
             message: this.Msg(
-                $"Khởi động hoàn tất ({this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu).",
-                $"System initialized ({this.Accounts.Count} accounts, {this.TargetGroups.Count} target groups).")).ConfigureAwait(true);
+                $"Khởi động hoàn tất — {this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu.",
+                $"System initialized — {this.Accounts.Count} accounts, {this.TargetGroups.Count} target groups.")).ConfigureAwait(true);
     }
 
     /// <summary>

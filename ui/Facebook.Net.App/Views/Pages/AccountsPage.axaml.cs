@@ -58,8 +58,8 @@ public sealed partial class AccountsPage : UserControl
     {
         Grid pageGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
-            RowSpacing = 10
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto,Auto"),
+            RowSpacing = 8
         };
 
         Grid header = SectionHeader.Create(
@@ -103,7 +103,7 @@ public sealed partial class AccountsPage : UserControl
             Content = SurfaceCard.Create(this._theme, importFlyoutStack, new Thickness(14))
         };
 
-        // Top 1-Click Action Bar
+        // Row 1: Top 1-Click Action Bar
         Grid topActionBar = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -152,7 +152,20 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetRow(topActionBar, 1);
         pageGrid.Children.Add(topActionBar);
 
-        // Visual Account List using shared AccountRowCard
+        // Row 2: Unified SearchFilterBar for Accounts
+        SearchFilterBar accountSearchBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Accounts.SearchPlaceholder"],
+            this._vm.AccountFilterText);
+        accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text);
+        accountSearchBar.SearchButton.Click += (_, _) =>
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text);
+        Grid.SetRow(accountSearchBar, 2);
+        pageGrid.Children.Add(accountSearchBar);
+
+        // Row 3: Visual Account List using shared AccountRowCard
         ListBox accountList = FormField.CreateListBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
@@ -182,10 +195,10 @@ public sealed partial class AccountsPage : UserControl
         };
 
         Grid accountListHost = EmptyStateBanner.CreateHost(accountList, emptyAccountsBanner);
-        Grid.SetRow(accountListHost, 2);
+        Grid.SetRow(accountListHost, 3);
         pageGrid.Children.Add(accountListHost);
 
-        // Row 3: Dedicated Proxy Configuration Row
+        // Row 4: Dedicated Proxy Configuration Row
         Grid proxyRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
@@ -207,10 +220,10 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetColumn(saveProxyBtn, 1);
         proxyRow.Children.Add(proxyBox);
         proxyRow.Children.Add(saveProxyBtn);
-        Grid.SetRow(proxyRow, 3);
+        Grid.SetRow(proxyRow, 4);
         pageGrid.Children.Add(proxyRow);
 
-        // Row 4: Selected Account Action Buttons
+        // Row 5: Selected Account Action Buttons
         Grid selectedAccBar = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
@@ -241,7 +254,7 @@ public sealed partial class AccountsPage : UserControl
         selectedAccBar.Children.Add(checkHealthBtn);
         selectedAccBar.Children.Add(warmUpBtn);
         selectedAccBar.Children.Add(deleteBtn);
-        Grid.SetRow(selectedAccBar, 4);
+        Grid.SetRow(selectedAccBar, 5);
         pageGrid.Children.Add(selectedAccBar);
 
         this._vm.PropertyChanged += (_, e) =>
@@ -273,6 +286,7 @@ public sealed partial class AccountsPage : UserControl
             titleTb.Text = this._i18n["Accounts.Header"];
             descTb.Text = this._i18n["Accounts.Desc"];
             emptyAccTb.Text = this._i18n["Empty.Accounts"];
+            accountSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Accounts.SearchPlaceholder"]);
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
             proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];

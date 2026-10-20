@@ -87,6 +87,7 @@ public sealed partial class ShellViewModel
         }
 
         this._lastDefaultSalesCommentSpintax = nextSales;
+        this.GenerateSpintaxPreview();
     }
 
     /// <summary>

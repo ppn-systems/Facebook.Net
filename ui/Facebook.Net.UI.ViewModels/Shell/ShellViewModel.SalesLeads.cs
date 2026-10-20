@@ -430,7 +430,7 @@ public sealed partial class ShellViewModel
         string prefix = score >= 75
             ? this._context.Localization["Leads.IntentHigh"]
             : this._context.Localization["Leads.IntentWarm"];
-        return $"{prefix} ({score}%)";
+        return $"{prefix} • {score}%";
     }
 
     private static bool MatchesBuyerKeywords(string? messageText, string[] keywords)

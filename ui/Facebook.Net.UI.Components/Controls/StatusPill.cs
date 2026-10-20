@@ -41,10 +41,17 @@ public static class StatusPill
             Child = label
         };
 
+        AuditSeverity currentSeverity = severity;
+
         void ApplyColors()
         {
+            if (pill.Tag is AuditSeverity taggedSeverity)
+            {
+                currentSeverity = taggedSeverity;
+            }
+
             ThemePalette p = theme.Palette;
-            (IBrush fill, IBrush border, IBrush fg) = severity switch
+            (IBrush fill, IBrush border, IBrush fg) = currentSeverity switch
             {
                 AuditSeverity.Success => (p.SuccessFill, p.SuccessBorder, p.SuccessText),
                 AuditSeverity.Warning => (p.WarningFill, p.WarningBorder, p.WarningText),
@@ -58,9 +65,37 @@ public static class StatusPill
             label.Foreground = fg;
         }
 
+        pill.Tag = currentSeverity;
         ApplyColors();
         ThemeLifecycle.Bind(pill, theme, ApplyColors);
         return pill;
+    }
+
+    /// <summary>
+    /// Updates the severity and refreshes colors on a pill created by <see cref="Create"/>.
+    /// </summary>
+    public static void SetSeverity(Border pill, ThemeService theme, AuditSeverity severity)
+    {
+        ArgumentNullException.ThrowIfNull(pill);
+        ArgumentNullException.ThrowIfNull(theme);
+        pill.Tag = severity;
+
+        ThemePalette p = theme.Palette;
+        (IBrush fill, IBrush border, IBrush fg) = severity switch
+        {
+            AuditSeverity.Success => (p.SuccessFill, p.SuccessBorder, p.SuccessText),
+            AuditSeverity.Warning => (p.WarningFill, p.WarningBorder, p.WarningText),
+            AuditSeverity.Error => (p.DangerFill, p.DangerBorder, p.DangerText),
+            AuditSeverity.Info => (p.InfoFill, p.InfoBorder, p.InfoText),
+            _ => (p.InfoFill, p.InfoBorder, p.InfoText)
+        };
+
+        pill.Background = fill;
+        pill.BorderBrush = border;
+        if (pill.Child is TextBlock tb)
+        {
+            tb.Foreground = fg;
+        }
     }
 
     /// <summary>

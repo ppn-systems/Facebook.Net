@@ -40,6 +40,14 @@ public sealed partial class ShellViewModel
     /// </summary>
     public void ApplyLocalGroupFilter(string? filterText)
     {
+        if (this._allCatalogGroups.Count == 0 && this.JoinedGroups.Count > 0)
+        {
+            for (int i = 0; i < this.JoinedGroups.Count; i++)
+            {
+                this._allCatalogGroups.Add(this.JoinedGroups[i]);
+            }
+        }
+
         this.GroupFilterText = filterText ?? string.Empty;
         string kw = this.GroupFilterText.Trim();
 

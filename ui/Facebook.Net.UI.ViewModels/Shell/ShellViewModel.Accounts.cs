@@ -36,6 +36,55 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string AccountProxyInput { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the local search/filter text for the accounts list.</summary>
+    [ObservableProperty]
+    public partial string AccountFilterText { get; set; } = string.Empty;
+
+    private readonly List<AccountProfile> _allAccounts = new();
+
+    /// <summary>
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword and optional status.
+    /// </summary>
+    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null)
+    {
+        if (this._allAccounts.Count == 0 && this.Accounts.Count > 0)
+        {
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                this._allAccounts.Add(this.Accounts[i]);
+            }
+        }
+
+        this.AccountFilterText = filterText ?? string.Empty;
+        string kw = this.AccountFilterText.Trim();
+
+        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null)
+        {
+            this.Accounts.ReplaceAll(this._allAccounts);
+            return;
+        }
+
+        List<AccountProfile> filtered = new(this._allAccounts.Count);
+        for (int i = 0; i < this._allAccounts.Count; i++)
+        {
+            AccountProfile acc = this._allAccounts[i];
+            if (statusFilter is not null && acc.Status != statusFilter.Value)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !acc.DisplayName.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            filtered.Add(acc);
+        }
+
+        this.Accounts.ReplaceAll(filtered);
+    }
+
     partial void OnSelectedAccountChanged(AccountProfile? value)
     {
         if (value is not null && !this._isLoadingSettings)
@@ -88,6 +137,8 @@ public sealed partial class ShellViewModel
             normalizedAccounts.Add(acc);
         }
 
+        this._allAccounts.Clear();
+        this._allAccounts.AddRange(normalizedAccounts);
         this.Accounts.ReplaceAll(normalizedAccounts);
 
         AccountProfile? matched = null;
@@ -369,7 +420,7 @@ public sealed partial class ShellViewModel
                 current.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
 
             string displayName = isDefaultPlaceholder && isHealthy
-                ? $"Facebook ({suffix})"
+                ? $"Facebook {suffix}"
                 : current.DisplayName;
 
             AccountProfile checkedProfile = current with
@@ -521,7 +572,7 @@ public sealed partial class ShellViewModel
                 account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
 
             string displayName = isDefaultPlaceholder
-                ? $"Facebook ({suffix})"
+                ? $"Facebook {suffix}"
                 : account.DisplayName;
 
             AccountProfile updated = account with

@@ -35,7 +35,9 @@ public static class DelayRangeSelector
             Maximum = 600,
             Increment = 5,
             Value = initialMinSeconds,
-            FormatString = "0"
+            FormatString = "0",
+            Width = 130,
+            CornerRadius = new Avalonia.CornerRadius(8)
         };
 
         TextBlock maxPrefix = SectionHeader.CreateLabel(theme, initialMaxLabel, 12);
@@ -45,13 +47,15 @@ public static class DelayRangeSelector
             Maximum = 1200,
             Increment = 5,
             Value = initialMaxSeconds,
-            FormatString = "0"
+            FormatString = "0",
+            Width = 130,
+            CornerRadius = new Avalonia.CornerRadius(8)
         };
 
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*"),
-            ColumnSpacing = 8
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*"),
+            ColumnSpacing = 12
         };
         Grid.SetColumn(minPrefix, 0);
         Grid.SetColumn(minBox, 1);

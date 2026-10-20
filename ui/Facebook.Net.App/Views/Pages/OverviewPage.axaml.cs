@@ -167,7 +167,9 @@ public sealed partial class OverviewPage : UserControl
         };
 
         StackPanel statusTextStack = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-        TextBlock statusHeading = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.StatusDisconnected"], 15, FontWeight.Bold);
+        TextBlock statusHeading = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.StatusDisconnected"], 14, FontWeight.Bold);
+        statusHeading.MaxLines = 1;
+        statusHeading.TextTrimming = TextTrimming.CharacterEllipsis;
         TextBlock statusSub = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.SubtextDisconnected"], 11, FontWeight.Normal, isSecondary: true);
         statusSub.MaxLines = 2;
         statusTextStack.Children.Add(statusHeading);
@@ -199,8 +201,15 @@ public sealed partial class OverviewPage : UserControl
             this._i18n["Overview.CheckGroupsMissing"],
             AuditSeverity.Info,
             out TextBlock grpReadyTb);
+        Border delayReadyPill = IconMetricPill.Create(
+            this._theme,
+            VectorIcons.Shield,
+            $"{this._i18n["Overview.CheckDelayReady"]}: {this._vm.MinDelaySeconds}s – {this._vm.MaxDelaySeconds}s",
+            AuditSeverity.Success,
+            out TextBlock delayReadyTb);
         checklistStack.Children.Add(accReadyPill);
         checklistStack.Children.Add(grpReadyPill);
+        checklistStack.Children.Add(delayReadyPill);
         leftStack.Children.Add(checklistStack);
 
         // Quick Actions 2x2 Grid
@@ -221,7 +230,7 @@ public sealed partial class OverviewPage : UserControl
 
         Button openBrowserBtn = AppButton.CreatePrimary(
             this._theme,
-            this._i18n["Accounts.BtnOpenBrowserLogin"],
+            this._i18n["Overview.QuickOpenBrowser"],
             this._vm.OpenBrowserAndSyncCommand,
             VectorIcons.Browser);
 
@@ -313,6 +322,7 @@ public sealed partial class OverviewPage : UserControl
                 VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._vm.AuditDrawer.LatestTickerText;
                 StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusRunning"]);
+                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Info);
             }
             else if (isConnected && acc is not null)
             {
@@ -323,6 +333,7 @@ public sealed partial class OverviewPage : UserControl
                 VectorIcons.SetForeground(heroIcon, p.SuccessText);
                 statusSub.Text = this._i18n["Overview.SubtextConnected"];
                 StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusConnected"]);
+                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Success);
             }
             else
             {
@@ -337,6 +348,7 @@ public sealed partial class OverviewPage : UserControl
                 StatusPill.SetText(
                     liveStatusPill,
                     acc is not null ? this._i18n.FormatAccountStatus(acc.Status) : this._i18n["Overview.StatusDisconnected"]);
+                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Warning);
             }
 
             int enabledTargets = 0;
@@ -351,10 +363,15 @@ public sealed partial class OverviewPage : UserControl
             accReadyTb.Text = acc is not null
                 ? $"{this._i18n["Overview.CheckAccountReady"]}: {acc.DisplayName}"
                 : this._i18n["Overview.CheckAccountMissing"];
+            IconMetricPill.SetSeverity(accReadyPill, isConnected ? AuditSeverity.Success : AuditSeverity.Warning);
 
             grpReadyTb.Text = enabledTargets > 0
                 ? $"{this._i18n["Overview.CheckGroupsReady"]}: {enabledTargets}/{this._vm.TargetGroups.Count}"
                 : this._i18n["Overview.CheckGroupsMissing"];
+            IconMetricPill.SetSeverity(grpReadyPill, enabledTargets > 0 ? AuditSeverity.Success : AuditSeverity.Info);
+
+            delayReadyTb.Text = $"{this._i18n["Overview.CheckDelayReady"]}: {this._vm.MinDelaySeconds}s – {this._vm.MaxDelaySeconds}s";
+            IconMetricPill.SetSeverity(delayReadyPill, AuditSeverity.Success);
 
             accValTb.Text = this._vm.Accounts.Count.ToString(CultureInfo.InvariantCulture);
             grpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
@@ -388,7 +405,7 @@ public sealed partial class OverviewPage : UserControl
                     this._i18n["Table.ColMessage"]
                 ],
                 this._i18n["Empty.AuditLogs"]);
-            AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            AppButton.SetText(openBrowserBtn, this._i18n["Overview.QuickOpenBrowser"]);
             AppButton.SetText(liveCheckBtn, this._i18n["Accounts.BtnCheckHealth"]);
             AppButton.SetText(syncGroupsBtn, this._i18n["Groups.BtnSyncJoined"]);
             AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);

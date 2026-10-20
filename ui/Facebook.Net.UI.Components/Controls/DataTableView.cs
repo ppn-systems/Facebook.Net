@@ -60,7 +60,7 @@ public sealed class DataTableView<T> : Border where T : class
         {
             ColumnDefinitions = new ColumnDefinitions(colWidths),
             ColumnSpacing = 8,
-            Margin = new Thickness(12, 8)
+            Margin = new Thickness(14, 8)
         };
 
         for (int i = 0; i < columns.Count; i++)
@@ -94,10 +94,19 @@ public sealed class DataTableView<T> : Border where T : class
             IsVisible = hasItems,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            Padding = new Thickness(6, 4),
+            Padding = new Thickness(4),
             ItemsSource = itemsSource,
             ItemTemplate = new FuncDataTemplate<T>((item, _) =>
                 item is null ? new Border() : rowBuilder(item))
+        };
+
+        this.RowsListBox.ContainerPrepared += (_, e) =>
+        {
+            if (e.Container is ListBoxItem item)
+            {
+                item.Padding = new Thickness(6, 4);
+                item.CornerRadius = new CornerRadius(6);
+            }
         };
 
         Border emptyBanner = EmptyStateBanner.Create(

@@ -106,7 +106,6 @@ public sealed class SearchFilterBar : Border
         this.SearchTextBox = new TextBox
         {
             PlaceholderText = placeholderText,
-            Text = initialSearchText,
             BorderThickness = new Thickness(0),
             CornerRadius = new CornerRadius(0),
             Padding = new Thickness(10, 6),
@@ -114,6 +113,11 @@ public sealed class SearchFilterBar : Border
             VerticalAlignment = VerticalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
+        if (!string.IsNullOrEmpty(initialSearchText))
+        {
+            this.SearchTextBox.Text = initialSearchText;
+        }
+
         AutomationProperties.SetName(this.SearchTextBox, placeholderText);
 
         // 4. Right 1px Divider
