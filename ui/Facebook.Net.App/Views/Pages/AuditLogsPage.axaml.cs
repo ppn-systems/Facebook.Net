@@ -71,7 +71,7 @@ public sealed partial class AuditLogsPage : UserControl
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -116,18 +116,10 @@ public sealed partial class AuditLogsPage : UserControl
         countersRow.Children.Add(warnPill);
         countersRow.Children.Add(errPill);
 
-        Button backToSettingsBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Audit.BtnBackToSettings"],
-            this._vm.NavigateSettingsCommand,
-            VectorIcons.Settings);
-
         Grid.SetColumn(header, 0);
         Grid.SetColumn(countersRow, 1);
-        Grid.SetColumn(backToSettingsBtn, 2);
         topHeaderRow.Children.Add(header);
         topHeaderRow.Children.Add(countersRow);
-        topHeaderRow.Children.Add(backToSettingsBtn);
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
@@ -313,7 +305,6 @@ public sealed partial class AuditLogsPage : UserControl
                     this._i18n["Table.ColMessage"]
                 ],
                 this._i18n["Empty.AuditLogs"]);
-            AppButton.SetText(backToSettingsBtn, this._i18n["Audit.BtnBackToSettings"]);
             AppButton.SetText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
             AppButton.SetText(clearBtn, this._i18n["Audit.BtnClear"]);
         };

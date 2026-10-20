@@ -63,6 +63,7 @@ public sealed partial class MainWindow : Window
 
         Grid rootGrid = this.FindControl<Grid>("ShellRootGrid")!;
         Border sidebarContainer = this.FindControl<Border>("SidebarContainer")!;
+        Border topBusyContainer = this.FindControl<Border>("TopBusyContainer")!;
         Border topContextContainer = this.FindControl<Border>("TopContextContainer")!;
         this._pageNavigationHost = this.FindControl<TransitioningContentControl>("PageNavigationHost")!;
         Border footerContainer = this.FindControl<Border>("FooterContainer")!;
@@ -72,6 +73,7 @@ public sealed partial class MainWindow : Window
         this._theme.ThemeChanged += (_, _) => ApplyRootTheme();
 
         sidebarContainer.Child = this.BuildSidebar();
+        topBusyContainer.Child = this.BuildTopBusyStrip();
         topContextContainer.Child = this.BuildTopContextStrip();
         footerContainer.Child = this.BuildFooterRow();
 
@@ -253,27 +255,43 @@ public sealed partial class MainWindow : Window
         return sidebar;
     }
 
+    private ProgressBar BuildTopBusyStrip()
+    {
+        ProgressBar busyStrip = new()
+        {
+            IsIndeterminate = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Height = 3,
+            MinHeight = 3,
+            CornerRadius = new CornerRadius(1.5),
+            BorderThickness = new Thickness(0),
+            IsVisible = this._vm.IsBusy
+        };
+
+        void ApplyColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
+        ApplyColors();
+        this._theme.ThemeChanged += (_, _) => ApplyColors();
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
+            {
+                busyStrip.IsVisible = this._vm.IsBusy;
+            }
+        };
+
+        return busyStrip;
+    }
+
     private StackPanel BuildTopContextStrip()
     {
         StackPanel topContextStrip = new()
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 10,
+            Spacing = 8,
             VerticalAlignment = VerticalAlignment.Top,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 1, 0, 0)
-        };
-
-        ProgressBar busyStrip = new()
-        {
-            IsIndeterminate = true,
-            Width = 80,
-            Height = 4,
-            MinHeight = 4,
-            CornerRadius = new CornerRadius(2),
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            IsVisible = this._vm.IsBusy
+            Margin = new Thickness(0, 0, 0, 0)
         };
 
         Button stopTaskBtn = AppButton.CreateDanger(
@@ -283,20 +301,6 @@ public sealed partial class MainWindow : Window
             VectorIcons.StopCircle);
         stopTaskBtn.IsVisible = this._vm.IsBusy;
         stopTaskBtn.Padding = new Thickness(10, 5);
-
-        StackPanel modeRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock modeLbl = SectionHeader.CreateLabel(
-            this._theme,
-            this._i18n["Overview.ModeLabel"],
-            12,
-            FontWeight.Medium,
-            isSecondary: true);
 
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             this._theme,
@@ -308,9 +312,11 @@ public sealed partial class MainWindow : Window
                 FontWeight.Medium),
             selectedItem: this._vm.SelectedAccount,
             placeholderText: this._i18n["TopBar.NoAccount"]);
-        activeAccCombo.MinWidth = 190;
+        activeAccCombo.MinWidth = 195;
+        activeAccCombo.MaxWidth = 230;
         activeAccCombo.Height = 32;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
+        ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         activeAccCombo.SelectionChanged += (_, _) =>
         {
             if (activeAccCombo.SelectedItem is AccountProfile selected &&
@@ -320,21 +326,13 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        modeRow.Children.Add(modeLbl);
-        modeRow.Children.Add(activeAccCombo);
-
-        topContextStrip.Children.Add(busyStrip);
         topContextStrip.Children.Add(stopTaskBtn);
-        topContextStrip.Children.Add(modeRow);
-
-        void ApplyColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
-        ApplyColors();
-        this._theme.ThemeChanged += (_, _) => ApplyColors();
+        topContextStrip.Children.Add(activeAccCombo);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
-            modeLbl.Text = this._i18n["Overview.ModeLabel"];
             activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
+            ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
             AppButton.SetText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
         };
 
@@ -349,7 +347,6 @@ public sealed partial class MainWindow : Window
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
             {
-                busyStrip.IsVisible = this._vm.IsBusy;
                 stopTaskBtn.IsVisible = this._vm.IsBusy;
             }
         };

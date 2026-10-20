@@ -312,9 +312,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             AuditCategory.System,
             AuditSeverity.Info,
             targetName: this._context.Localization["Audit.Cat.System"],
-            message: this.Msg(
-                $"Khởi động hoàn tất — {this.Accounts.Count} tài khoản, {this.TargetGroups.Count} nhóm mục tiêu.",
-                $"System initialized — {this.Accounts.Count} accounts, {this.TargetGroups.Count} target groups.")).ConfigureAwait(true);
+            message: this._context.Localization.Format("Log.SystemInitialized", this.Accounts.Count, this.TargetGroups.Count)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -350,9 +348,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     }
 
     private void EndTaskScope() => this.IsBusy = false;
-
-    private string Msg(string vi, string en) =>
-        this._context.Localization.CurrentLanguage == AppLanguage.EnUs ? en : vi;
 
     private Task<AuditLogRecord> LogAuditAsync(
         AuditCategory category,

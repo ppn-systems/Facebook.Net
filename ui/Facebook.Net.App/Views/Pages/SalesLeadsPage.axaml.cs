@@ -66,11 +66,12 @@ public sealed partial class SalesLeadsPage : UserControl
 
     private Control BuildLayout()
     {
-        Control tab1View = this.BuildRepositoryAndFilterTab(out Action refreshTab1I18n);
+        SubTabBar? subTabBar = null;
+        Control tab1View = this.BuildRepositoryAndFilterTab(() => subTabBar?.SelectTab(2), out Action refreshTab1I18n);
         Control tab2View = this.BuildMultiGroupAndScraperConfigTab(out Action refreshTab2I18n);
         Control tab3View = this.BuildSalesAutoCommentTab(out Action refreshTab3I18n);
 
-        SubTabBar subTabBar = new(
+        subTabBar = new SubTabBar(
             this._theme,
             [
                 new SubTabItem(this._i18n["Leads.TabRepository"], VectorIcons.Search, tab1View),
@@ -94,7 +95,7 @@ public sealed partial class SalesLeadsPage : UserControl
         return subTabBar;
     }
 
-    private Control BuildRepositoryAndFilterTab(out Action refreshI18n)
+    private Control BuildRepositoryAndFilterTab(Action onQuickReplyClicked, out Action refreshI18n)
     {
         Grid tabGrid = new()
         {
@@ -290,7 +291,13 @@ public sealed partial class SalesLeadsPage : UserControl
         Grid.SetRow(filterCard, 1);
         tabGrid.Children.Add(filterCard);
 
-        // 3. Spacious DataTableView<PostSummary> ("Số bài viết đã thu thập (N)")
+        // 3. Master-Detail Split: Left = Spacious DataTableView<PostSummary>, Right = Selected Post Detail Inspector Card
+        Grid masterDetailSplit = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,350"),
+            ColumnSpacing = 12
+        };
+
         DataTableView<PostSummary> postsTable = new(
             this._theme,
             [
@@ -313,25 +320,275 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Search,
             this._i18n["Leads.TableTitlePrefix"]);
 
+        // Right Inspector Card: Chi tiết Bài viết Đang chọn
+        Grid detailCardGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+            RowSpacing = 10
+        };
+
+        StackPanel detailHeaderRow = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Leads.DetailCardTitle"],
+            VectorIcons.Publish,
+            out TextBlock detailCardTitleTb);
+        Grid.SetRow(detailHeaderRow, 0);
+        detailCardGrid.Children.Add(detailHeaderRow);
+
+        ContentControl detailBodyHost = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        Grid.SetRow(detailBodyHost, 1);
+        detailCardGrid.Children.Add(detailBodyHost);
+
+        Grid detailBtnRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 8
+        };
+
+        Button quickReplyBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Leads.BtnQuickReplyTab"],
+            new CommunityToolkit.Mvvm.Input.RelayCommand(onQuickReplyClicked),
+            VectorIcons.SalesComment);
+
+        Button inspectOpenBrowserBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnOpenPostInBrowser"],
+            this._vm.OpenSelectedPostInBrowserCommand,
+            VectorIcons.Browser);
+
+        Grid.SetColumn(quickReplyBtn, 0);
+        Grid.SetColumn(inspectOpenBrowserBtn, 1);
+        detailBtnRow.Children.Add(quickReplyBtn);
+        detailBtnRow.Children.Add(inspectOpenBrowserBtn);
+        Grid.SetRow(detailBtnRow, 2);
+        detailCardGrid.Children.Add(detailBtnRow);
+
+        Border detailCard = SurfaceCard.Create(this._theme, detailCardGrid, new Thickness(14));
+
+        void RefreshSelectedPostDetail()
+        {
+            PostSummary? post = this._vm.SelectedScrapedPost;
+            if (post is null && this._vm.ScrapedPosts.Count > 0)
+            {
+                post = this._vm.ScrapedPosts[0];
+            }
+
+            if (post is null)
+            {
+                detailBtnRow.IsVisible = false;
+                StackPanel emptyStack = new()
+                {
+                    Spacing = 8,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(12)
+                };
+                Control emptyIcon = VectorIcons.Create(VectorIcons.Search, 28, this._theme.Palette.TextMuted);
+                emptyIcon.HorizontalAlignment = HorizontalAlignment.Center;
+                TextBlock emptyTb = SectionHeader.CreateLabel(
+                    this._theme,
+                    this._i18n["Leads.DetailNoSelection"],
+                    12,
+                    FontWeight.Normal,
+                    isSecondary: true);
+                emptyTb.TextAlignment = TextAlignment.Center;
+                emptyTb.TextWrapping = TextWrapping.Wrap;
+                emptyStack.Children.Add(emptyIcon);
+                emptyStack.Children.Add(emptyTb);
+                detailBodyHost.Content = SurfaceCard.CreateInset(this._theme, emptyStack, new Thickness(14));
+                return;
+            }
+
+            detailBtnRow.IsVisible = true;
+            StackPanel contentStack = new() { Spacing = 10 };
+
+            // Author + Status Row
+            string authorName = string.IsNullOrWhiteSpace(post.AuthorName)
+                ? this._i18n["Leads.DefaultAuthor"]
+                : post.AuthorName;
+            string groupName = string.IsNullOrWhiteSpace(post.GroupName)
+                ? this._i18n["Audit.Cat.Group"]
+                : post.GroupName;
+
+            Grid authorHeader = new()
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                ColumnSpacing = 10,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            Border authorAvatar = AvatarBadge.Create(this._theme, authorName, 36, post.AuthorAvatarUrl);
+            StackPanel authorMeta = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            TextBlock authorNameTb = SectionHeader.CreateLabel(this._theme, authorName, 13, FontWeight.Bold);
+            authorNameTb.MaxLines = 1;
+            authorNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+            StackPanel groupBadgeRow = new()
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            groupBadgeRow.Children.Add(AvatarBadge.Create(this._theme, groupName, 16, post.GroupAvatarUrl));
+            TextBlock grpTb = SectionHeader.CreateLabel(this._theme, groupName, 11, FontWeight.Medium, isSecondary: true);
+            grpTb.MaxLines = 1;
+            grpTb.TextTrimming = TextTrimming.CharacterEllipsis;
+            groupBadgeRow.Children.Add(grpTb);
+
+            authorMeta.Children.Add(authorNameTb);
+            authorMeta.Children.Add(groupBadgeRow);
+
+            bool commented = this._vm.IsPostCommented(post.PostId);
+            Border statusPill = StatusPill.Create(
+                this._theme,
+                commented ? this._i18n["Leads.StatusCommented"] : this._i18n["Leads.StatusPending"],
+                commented ? AuditSeverity.Success : AuditSeverity.Warning);
+
+            Grid.SetColumn(authorAvatar, 0);
+            Grid.SetColumn(authorMeta, 1);
+            Grid.SetColumn(statusPill, 2);
+            authorHeader.Children.Add(authorAvatar);
+            authorHeader.Children.Add(authorMeta);
+            authorHeader.Children.Add(statusPill);
+            contentStack.Children.Add(SurfaceCard.CreateInset(this._theme, authorHeader, new Thickness(10, 8)));
+
+            // Intent & Engagement Pill Row
+            int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
+            AuditSeverity intentSeverity = score >= 80
+                ? AuditSeverity.Success
+                : (score >= 45 ? AuditSeverity.Info : AuditSeverity.Warning);
+
+            WrapPanel metaPillsWrap = new()
+            {
+                Orientation = Orientation.Horizontal,
+                ItemSpacing = 6,
+                LineSpacing = 6
+            };
+            metaPillsWrap.Children.Add(StatusPill.Create(this._theme, this._vm.FormatBuyerIntentBadge(post), intentSeverity));
+            metaPillsWrap.Children.Add(StatusPill.Create(
+                this._theme,
+                $"👍 {this._i18n["Leads.DetailReactionsPrefix"]} {post.ReactionCount}  •  💬 {this._i18n["Leads.DetailCommentsPrefix"]} {post.CommentCount}",
+                AuditSeverity.Info));
+            if (post.CreatedAt is DateTimeOffset dto)
+            {
+                metaPillsWrap.Children.Add(StatusPill.Create(
+                    this._theme,
+                    dto.ToLocalTime().ToString("dd/MM HH:mm", CultureInfo.InvariantCulture),
+                    AuditSeverity.Info));
+            }
+
+            contentStack.Children.Add(metaPillsWrap);
+
+            // Large Media Preview (if post has photo or video)
+            if (!string.IsNullOrWhiteSpace(post.MediaPreviewUrl))
+            {
+                Image previewImg = new()
+                {
+                    Height = 155,
+                    Stretch = Stretch.UniformToFill,
+                    IsVisible = false
+                };
+
+                Panel mediaPanel = new()
+                {
+                    Height = 155,
+                    Children = { previewImg }
+                };
+
+                if (post.IsVideo)
+                {
+                    Border videoBadge = new()
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)),
+                        CornerRadius = new CornerRadius(14),
+                        Padding = new Thickness(10, 4),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = $"▶ {this._i18n["Leads.MediaVideoBadge"]}",
+                            FontSize = 11.5,
+                            FontWeight = FontWeight.Bold,
+                            Foreground = Brushes.White
+                        }
+                    };
+                    mediaPanel.Children.Add(videoBadge);
+                }
+
+                Border mediaBorder = new()
+                {
+                    Height = 155,
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = this._theme.Palette.SubtleBorder,
+                    ClipToBounds = true,
+                    Child = mediaPanel,
+                    IsVisible = false
+                };
+
+                RemoteImageLoader.Attach(previewImg, post.MediaPreviewUrl, mediaBorder);
+                contentStack.Children.Add(mediaBorder);
+            }
+
+            // Full Post Message Body inside Inset Card
+            string fullText = string.IsNullOrWhiteSpace(post.MessageText)
+                ? this._i18n["Leads.EmptyPostText"]
+                : post.MessageText;
+            SelectableTextBlock fullMessageTb = new()
+            {
+                Text = fullText,
+                FontSize = 12.5,
+                LineHeight = 19,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = this._theme.Palette.TextPrimary
+            };
+
+            contentStack.Children.Add(SurfaceCard.CreateInset(this._theme, fullMessageTb, new Thickness(12, 10)));
+
+            detailBodyHost.Content = new ScrollViewer
+            {
+                Content = contentStack
+            };
+        }
+
         postsTable.RowsListBox.SelectionChanged += (_, _) =>
         {
             if (postsTable.RowsListBox.SelectedItem is PostSummary p)
             {
                 this._vm.SelectedScrapedPost = p;
+                RefreshSelectedPostDetail();
             }
         };
 
         this._vm.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedScrapedPost), StringComparison.Ordinal) &&
-                !ReferenceEquals(postsTable.RowsListBox.SelectedItem, this._vm.SelectedScrapedPost))
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedScrapedPost), StringComparison.Ordinal))
             {
-                postsTable.RowsListBox.SelectedItem = this._vm.SelectedScrapedPost;
+                if (!ReferenceEquals(postsTable.RowsListBox.SelectedItem, this._vm.SelectedScrapedPost))
+                {
+                    postsTable.RowsListBox.SelectedItem = this._vm.SelectedScrapedPost;
+                }
+
+                RefreshSelectedPostDetail();
             }
         };
 
-        Grid.SetRow(postsTable, 2);
-        tabGrid.Children.Add(postsTable);
+        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshSelectedPostDetail();
+        this._theme.ThemeChanged += (_, _) => RefreshSelectedPostDetail();
+        RefreshSelectedPostDetail();
+
+        Grid.SetColumn(postsTable, 0);
+        Grid.SetColumn(detailCard, 1);
+        masterDetailSplit.Children.Add(postsTable);
+        masterDetailSplit.Children.Add(detailCard);
+
+        Grid.SetRow(masterDetailSplit, 2);
+        tabGrid.Children.Add(masterDetailSplit);
 
         refreshI18n = () =>
         {
@@ -339,6 +596,9 @@ public sealed partial class SalesLeadsPage : UserControl
             descTb.Text = this._i18n["Leads.Desc"];
             AppButton.SetText(scrapeNowBtn, this._i18n["Leads.BtnScanPosts"]);
             AppButton.SetText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
+            detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
+            AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
+            AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
             filterCardTitleTb.Text = this._i18n["Common.FilterButton"];
             statusSegmentPill.UpdateLabels(
             [
@@ -361,6 +621,7 @@ public sealed partial class SalesLeadsPage : UserControl
                 ],
                 this._i18n["Empty.Leads"],
                 this._i18n["Leads.TableTitlePrefix"]);
+            RefreshSelectedPostDetail();
         };
 
         return tabGrid;

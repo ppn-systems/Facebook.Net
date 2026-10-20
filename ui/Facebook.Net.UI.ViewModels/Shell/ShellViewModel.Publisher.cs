@@ -124,9 +124,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Post,
             AuditSeverity.Success,
             this._context.Localization["Publisher.TemplatesTitle"],
-            this.Msg(
-                $"Đã lưu mẫu bài viết '{title}' vào kho lưu trữ.",
-                $"Saved post template '{title}' to the content library.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
     }
 
     private async Task DeleteSelectedTemplateAsync()
@@ -145,9 +143,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Post,
             AuditSeverity.Info,
             this._context.Localization["Publisher.TemplatesTitle"],
-            this.Msg(
-                $"Đã xóa mẫu '{title}' khỏi kho lưu trữ.",
-                $"Deleted template '{title}' from the content library.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
     }
 
     private async Task PublishCampaignAsync()
@@ -158,9 +154,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Post,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Post"],
-                this.Msg(
-                    "Vui lòng nhập nội dung bài đăng trước khi chạy chiến dịch.",
-                    "Please enter post content before starting the campaign.")).ConfigureAwait(true);
+                this._context.Localization["Log.EnterPostContent"]).ConfigureAwait(true);
             return;
         }
 
@@ -174,9 +168,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     this._context.Localization["Audit.Cat.Post"],
-                    this.Msg(
-                        $"Đã hẹn giờ chiến dịch đăng bài — sẽ tự động bắt đầu sau {waitMins} phút nữa...",
-                        $"Scheduled publishing campaign — starting automatically in {waitMins} minute(s)...")).ConfigureAwait(true);
+                    this._context.Localization.Format("Log.CampaignScheduled", waitMins)).ConfigureAwait(true);
                 await Task.Delay(TimeSpan.FromMinutes(waitMins), ct).ConfigureAwait(true);
             }
 
@@ -193,9 +185,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     this._context.Localization["Audit.Cat.Post"],
-                    this.Msg(
-                        "Đang tải ảnh sản phẩm lên máy chủ Facebook...",
-                        "Uploading product photo to Facebook...")).ConfigureAwait(true);
+                    this._context.Localization["Log.UploadingPhoto"]).ConfigureAwait(true);
 
                 string uploadedFbid = await this._context.CometClient
                     .UploadUfiPhotoAsync(session, this.PostMediaFilePath.Trim(), ct)
@@ -237,9 +227,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Success,
                     this._context.Localization["Publisher.TargetModePersonal"],
-                    this.Msg(
-                        "Đã đăng bài lên Trang cá nhân thành công!",
-                        "Published post to Personal Timeline successfully!"),
+                    this._context.Localization["Log.PublishedPersonalTimeline"],
                     !string.IsNullOrWhiteSpace(postId) ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{postId}" : null).ConfigureAwait(true);
 
                 return;
@@ -265,9 +253,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Warning,
                     this._context.Localization["Audit.Cat.Group"],
-                    this.Msg(
-                        "Chưa có nhóm nào được chọn. Hãy đồng bộ hoặc chọn nhóm ở mục 'Nhóm & Cộng đồng' trước.",
-                        "No target groups selected. Please sync or check groups in 'Groups & Communities' first.")).ConfigureAwait(true);
+                    this._context.Localization["Log.NoTargetGroupsForPost"]).ConfigureAwait(true);
                 return;
             }
 
@@ -284,9 +270,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     group.GroupName,
-                    this.Msg(
-                        $"Đang đăng bài vào nhóm '{group.GroupName}', lượt {i + 1}/{targets.Count}...",
-                        $"Publishing post to group '{group.GroupName}' ({i + 1}/{targets.Count})...")).ConfigureAwait(true);
+                    this._context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
                 string? postId = await this._context.CometClient
                     .PublishPostAsync(session, this.PostSpintaxText, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
@@ -317,12 +301,8 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Success,
                     group.GroupName,
                     string.IsNullOrWhiteSpace(postId)
-                        ? this.Msg(
-                            $"Đã gửi bài đăng vào nhóm '{group.GroupName}', đang chờ quản trị viên duyệt.",
-                            $"Submitted post to group '{group.GroupName}' (pending admin approval).")
-                        : this.Msg(
-                            $"Đăng bài thành công vào nhóm '{group.GroupName}'!",
-                            $"Published post to group '{group.GroupName}' successfully!"),
+                        ? this._context.Localization.Format("Log.PostSubmittedPending", group.GroupName)
+                        : this._context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
                     !string.IsNullOrWhiteSpace(postId) ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{postId}" : null).ConfigureAwait(true);
             }
         }
@@ -352,9 +332,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
                 this._context.Localization["Publisher.BumpTitle"],
-                this.Msg(
-                    "Chưa có bài viết vừa đăng nào trong phiên này để đẩy bài — hãy chạy đăng bài trước.",
-                    "No recently published posts in this session to bump — please publish a post first.")).ConfigureAwait(true);
+                this._context.Localization["Log.NoRecentPostsToBump"]).ConfigureAwait(true);
             return;
         }
 
@@ -388,9 +366,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.SalesComment,
                     AuditSeverity.Success,
                     this._context.Localization["Publisher.TabBump"],
-                    this.Msg(
-                        $"Đã bình luận đẩy bài viết lượt {i + 1}/{this._recentPublishedPostIds.Count} lên đầu nhóm thành công!",
-                        $"Bumped post ({i + 1}/{this._recentPublishedPostIds.Count}) to the top of the group feed!")).ConfigureAwait(true);
+                    this._context.Localization.Format("Log.PostBumpedSuccess", i + 1, this._recentPublishedPostIds.Count)).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)
@@ -407,7 +383,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
                 this._context.Localization["Publisher.TabBump"],
-                this.Msg($"Lỗi khi đẩy bài viết: {this.SanitizeErrorMessage(ex)}", $"Post bump failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.PostBumpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {

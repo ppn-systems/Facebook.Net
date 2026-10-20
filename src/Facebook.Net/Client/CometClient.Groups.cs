@@ -95,8 +95,43 @@ public sealed partial class CometClient
 
         if (cursor is null && firstPage.Items.Count == 0)
         {
+            activeSorting = "RECENT_ACTIVITY";
+            firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor: null, activeSorting, ct).ConfigureAwait(false);
+        }
+
+        if (cursor is null && firstPage.Items.Count == 0)
+        {
             activeSorting = "TOP_POSTS";
             firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor: null, activeSorting, ct).ConfigureAwait(false);
+        }
+
+        if (cursor is null && firstPage.Items.Count < count)
+        {
+            PagedResult<PostSummary> ssrPage = await this.TryFetchGroupSsrStoriesAsync(session, groupId, activeSorting, ct).ConfigureAwait(false);
+            if (ssrPage.Items.Count > 0)
+            {
+                List<PostSummary> mergedInitial = new(firstPage.Items.Count + ssrPage.Items.Count);
+                HashSet<string> initialSeen = new(StringComparer.Ordinal);
+                for (int i = 0; i < ssrPage.Items.Count; i++)
+                {
+                    if (initialSeen.Add(ssrPage.Items[i].PostId))
+                    {
+                        mergedInitial.Add(ssrPage.Items[i]);
+                    }
+                }
+
+                for (int i = 0; i < firstPage.Items.Count; i++)
+                {
+                    if (initialSeen.Add(firstPage.Items[i].PostId))
+                    {
+                        mergedInitial.Add(firstPage.Items[i]);
+                    }
+                }
+
+                string? mergedCursor = firstPage.EndCursor ?? ssrPage.EndCursor;
+                bool mergedHasNext = firstPage.HasNextPage || ssrPage.HasNextPage;
+                firstPage = new PagedResult<PostSummary>(mergedInitial, mergedCursor, mergedHasNext);
+            }
         }
 
         if (cursor is not null ||
@@ -189,9 +224,14 @@ public sealed partial class CometClient
                 w.WriteNull("cursor"u8);
             }
 
-            w.WriteString("id"u8, groupId);
             w.WriteString("feedLocation"u8, "GROUP");
+            w.WriteString("feedType"u8, "DISCUSSION");
+            w.WriteNull("focusCommentID"u8);
+            w.WriteString("id"u8, groupId);
+            w.WriteString("privacySelectorRenderLocation"u8, "COMET_STREAM");
+            w.WriteString("renderLocation"u8, "group");
             w.WriteString("sortingSetting"u8, sortingSetting);
+            w.WriteBoolean("useDefaultActor"u8, false);
             w.WriteBoolean("RELAY_INCREMENTAL_DELIVERY"u8, true);
             w.WriteNumber("scale"u8, 2);
         });
@@ -200,11 +240,40 @@ public sealed partial class CometClient
             FriendlyName: ProtocolConstants.Queries.GroupFeedName,
             DocId: ProtocolConstants.Queries.GroupFeedDocId,
             VariablesJson: variablesJson,
-            PreNavigateUrl: cursor is null ? $"/groups/{groupId}" : null,
+            PreNavigateUrl: cursor is null ? $"/groups/{groupId}?sorting_setting={sortingSetting}" : null,
             IsMultipartStream: true);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.ParsePosts(res);
+    }
+
+    private async Task<PagedResult<PostSummary>> TryFetchGroupSsrStoriesAsync(
+        IBrowserSession session,
+        string groupId,
+        string sortingSetting,
+        CancellationToken ct)
+    {
+        try
+        {
+            string groupPageUrl = ResolveFullUrl($"/groups/{groupId}?sorting_setting={sortingSetting}");
+            string rawScripts = await session.ExecuteInPagePostAsync(
+                groupPageUrl,
+                new Dictionary<string, string>(0),
+                "__SSR_RELAY_JSON__",
+                ct).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(rawScripts))
+            {
+                return new PagedResult<PostSummary>(Array.Empty<PostSummary>(), null, false);
+            }
+
+            GraphQlResult ssrRes = ResponseParser.ParseGraphQlResult(session.AccountUid, rawScripts);
+            return ResponseParser.ParsePosts(ssrRes);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return new PagedResult<PostSummary>(Array.Empty<PostSummary>(), null, false);
+        }
     }
 
     /// <inheritdoc />

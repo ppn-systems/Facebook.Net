@@ -449,12 +449,22 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             string viVal = svc[key];
             Assert.False(string.IsNullOrWhiteSpace(viVal));
             Assert.NotEqual(key, viVal);
+            Assert.DoesNotContain("(", viVal, StringComparison.Ordinal);
+            Assert.DoesNotContain(")", viVal, StringComparison.Ordinal);
 
             svc.SetLanguage(AppLanguage.EnUs);
             string enVal = svc[key];
             Assert.False(string.IsNullOrWhiteSpace(enVal));
             Assert.NotEqual(key, enVal);
+            Assert.DoesNotContain("(", enVal, StringComparison.Ordinal);
+            Assert.DoesNotContain(")", enVal, StringComparison.Ordinal);
         }
+
+        svc.SetLanguage(AppLanguage.ViVn);
+        Assert.Equal("Khởi động hoàn tất — 3 tài khoản, 12 nhóm mục tiêu.", svc.Format("Log.SystemInitialized", 3, 12));
+
+        svc.SetLanguage(AppLanguage.EnUs);
+        Assert.Equal("System initialized — 3 accounts, 12 target groups.", svc.Format("Log.SystemInitialized", 3, 12));
     }
 
     [Fact]

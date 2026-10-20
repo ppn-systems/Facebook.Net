@@ -103,8 +103,8 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             this._context.Localization["Audit.Cat.Group"],
             isEnabled
-                ? this.Msg($"Đã bật tất cả {this.TargetGroups.Count} nhóm mục tiêu.", $"Enabled all {this.TargetGroups.Count} target groups.")
-                : this.Msg($"Đã tạm tắt tất cả {this.TargetGroups.Count} nhóm mục tiêu.", $"Disabled all {this.TargetGroups.Count} target groups.")).ConfigureAwait(true);
+                ? this._context.Localization.Format("Log.TargetGroupsEnabledAll", this.TargetGroups.Count)
+                : this._context.Localization.Format("Log.TargetGroupsDisabledAll", this.TargetGroups.Count)).ConfigureAwait(true);
     }
 
     private async Task SyncJoinedGroupsAsync()
@@ -134,7 +134,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this._context.Localization["Audit.Cat.Group"],
-                this.Msg($"Lỗi tải danh sách nhóm: {this.SanitizeErrorMessage(ex)}", $"Failed to sync groups: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.GroupsSyncFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -172,9 +172,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Group,
             AuditSeverity.Success,
             this._context.Localization["Audit.Cat.Group"],
-            this.Msg(
-                $"Đã tự động đồng bộ {this.JoinedGroups.Count} nhóm đã tham gia vào danh sách chọn trực quan.",
-                $"Automatically synced {this.JoinedGroups.Count} joined groups into the visual catalog.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.GroupsSyncedCount", this.JoinedGroups.Count)).ConfigureAwait(true);
     }
 
     private async Task SearchGroupsByKeywordAsync()
@@ -185,9 +183,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Group"],
-                this.Msg(
-                    "Vui lòng nhập từ khóa tìm nhóm, ví dụ Chợ cư dân hoặc Mua bán nhà đất.",
-                    "Please enter a group search keyword (e.g., Real Estate Deals, Laptop Market...).")).ConfigureAwait(true);
+                this._context.Localization["Log.EnterGroupKeyword"]).ConfigureAwait(true);
             return;
         }
 
@@ -205,9 +201,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Info,
                 keyword,
-                this.Msg(
-                    $"Đang tìm kiếm các nhóm Facebook theo từ khóa '{keyword}'...",
-                    $"Searching Facebook groups matching '{keyword}'...")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.SearchingGroups", keyword)).ConfigureAwait(true);
 
             PagedResult<GroupSummary> result = await this._context.CometClient
                 .SearchGroupsAsync(session, keyword, count: 15, ct: ct)
@@ -230,9 +224,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 keyword,
-                this.Msg(
-                    $"Tìm thấy {this.JoinedGroups.Count} nhóm khớp từ khóa '{keyword}'.",
-                    $"Found {this.JoinedGroups.Count} groups matching '{keyword}'.")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.GroupsSearchFound", this.JoinedGroups.Count, keyword)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -248,7 +240,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.GroupSearchKeyword,
-                this.Msg($"Lỗi tìm kiếm nhóm: {this.SanitizeErrorMessage(ex)}", $"Group search failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.GroupsSearchFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -271,9 +263,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Group,
             AuditSeverity.Success,
             target.GroupName,
-            this.Msg(
-                $"Đã đưa nhóm '{target.GroupName}' vào danh sách Nhóm Mục tiêu.",
-                $"Added group '{target.GroupName}' to Target Campaign Groups.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.TargetGroupAdded", target.GroupName)).ConfigureAwait(true);
     }
 
     private async Task RemoveSelectedTargetGroupAsync()
@@ -291,9 +281,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Group,
             AuditSeverity.Info,
             name,
-            this.Msg(
-                $"Đã xóa nhóm '{name}' khỏi danh sách Nhóm Mục tiêu.",
-                $"Removed group '{name}' from Target Campaign Groups.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.TargetGroupRemoved", name)).ConfigureAwait(true);
     }
 
     private async Task JoinSelectedGroupAsync()
@@ -333,9 +321,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 group.Name,
-                this.Msg(
-                    $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' — trạng thái: {friendlyState}.",
-                    $"Sent request to join group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.GroupJoinRequested", group.Name, friendlyState)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -351,7 +337,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"],
-                this.Msg($"Lỗi tham gia nhóm: {this.SanitizeErrorMessage(ex)}", $"Failed to join group: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.GroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -381,9 +367,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Group"],
-                this.Msg(
-                    "Không có nhóm mới nào chưa tham gia trong danh sách hiện tại — hãy tìm kiếm nhóm theo từ khóa trước.",
-                    "No unjoined groups in the current catalog — please search for groups by keyword first.")).ConfigureAwait(true);
+                this._context.Localization["Log.NoUnjoinedGroups"]).ConfigureAwait(true);
             return;
         }
 
@@ -425,9 +409,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Group,
                     AuditSeverity.Success,
                     group.Name,
-                    this.Msg(
-                        $"[{joinedOrRequested}/{candidates.Count}] Đã tham gia nhóm '{group.Name}' — trạng thái: {friendlyState}.",
-                        $"[{joinedOrRequested}/{candidates.Count}] Joined group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
+                    this._context.Localization.Format("Log.BatchGroupJoined", joinedOrRequested, candidates.Count, group.Name, friendlyState)).ConfigureAwait(true);
             }
 
             await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
@@ -446,7 +428,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this._context.Localization["Audit.Cat.Group"],
-                this.Msg($"Lỗi tham gia nhóm hàng loạt: {this.SanitizeErrorMessage(ex)}", $"Batch group join failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.BatchGroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {

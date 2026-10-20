@@ -3,10 +3,10 @@
         xmlns:vm="using:Facebook.Net.UI.ViewModels.Shell"
         x:Class="Facebook.Net.App.Views.MainWindow"
         x:DataType="vm:ShellViewModel"
-        Width="1240"
-        Height="780"
-        MinWidth="1100"
-        MinHeight="700"
+        Width="1380"
+        Height="850"
+        MinWidth="1180"
+        MinHeight="720"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
         Icon="avares://Facebook.Net.App/Assets/app.ico">
@@ -18,6 +18,12 @@
                                              Grid.Row="0"
                                              HorizontalAlignment="Stretch"
                                              VerticalAlignment="Stretch" />
+                <Border x:Name="TopBusyContainer"
+                        Grid.Row="0"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Top"
+                        Margin="0,-8,0,0"
+                        ZIndex="15" />
                 <Border x:Name="TopContextContainer"
                         Grid.Row="0"
                         HorizontalAlignment="Right"

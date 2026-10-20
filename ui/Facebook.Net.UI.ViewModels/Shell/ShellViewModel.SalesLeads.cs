@@ -235,9 +235,12 @@ public sealed partial class ShellViewModel
             }
         }
 
-        matched.Sort((a, b) =>
-            CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
-                .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+        if (keywords.Length > 0)
+        {
+            matched.Sort((a, b) =>
+                CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
+                    .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+        }
 
         this.ScrapedPosts.ReplaceAll(matched);
         this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
@@ -295,9 +298,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Scrape,
             AuditSeverity.Info,
             this._context.Localization["Audit.Cat.Scrape"],
-            this.Msg(
-                $"Đã xóa {removed} bài viết cũ khỏi kho dữ liệu nội bộ.",
-                $"Cleared {removed} old posts from the local database.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.ScrapedPostsCleared", removed)).ConfigureAwait(true);
     }
 
     private async Task ScanGroupLeadsAsync()
@@ -337,9 +338,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Scrape,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Scrape"],
-                this.Msg(
-                    "Vui lòng chọn hoặc bật ít nhất một Nhóm Đích trước khi thu thập bài viết.",
-                    "Please select or enable at least one Target Group before scraping posts.")).ConfigureAwait(true);
+                this._context.Localization["Log.NoTargetGroupsForScrape"]).ConfigureAwait(true);
             return;
         }
 
@@ -393,9 +392,7 @@ public sealed partial class ShellViewModel
                     AuditCategory.Scrape,
                     AuditSeverity.Info,
                     groupName,
-                    this.Msg(
-                        $"Đang thu thập bài viết mới nhất lượt {gIdx + 1}/{targets.Count} từ nhóm '{groupName}' vào kho dữ liệu...",
-                        $"Scraping newest posts ({gIdx + 1}/{targets.Count}) from group '{groupName}' into local database...")).ConfigureAwait(true);
+                    this._context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
 
                 PagedResult<PostSummary> feed = await this._context.CometClient
                     .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
@@ -436,15 +433,11 @@ public sealed partial class ShellViewModel
 
             string summaryTarget = targets.Count == 1
                 ? firstGroupName
-                : this.Msg($"{targets.Count} nhóm mục tiêu", $"{targets.Count} target groups");
+                : this._context.Localization.Format("Log.TargetGroupsSummaryCount", targets.Count);
 
             string logMessage = selectiveKeywords.Length > 0
-                ? this.Msg(
-                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết chọn lọc theo từ khóa '{this.ScrapeFilterKeywords}' từ {summaryTarget} vào kho lưu trữ, đang hiển thị {this.ScrapedPosts.Count} bài.",
-                    $"Scraped and saved {collectedForDb.Count} selective posts (keywords: '{this.ScrapeFilterKeywords}') from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).")
-                : this.Msg(
-                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết mới nhất từ {summaryTarget} vào kho lưu trữ, đang hiển thị {this.ScrapedPosts.Count} bài.",
-                    $"Scraped and saved {collectedForDb.Count} latest posts from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).");
+                ? this._context.Localization.Format("Log.ScrapedSelectiveSuccess", collectedForDb.Count, this.ScrapeFilterKeywords, summaryTarget, this.ScrapedPosts.Count)
+                : this._context.Localization.Format("Log.ScrapedLatestSuccess", collectedForDb.Count, summaryTarget, this.ScrapedPosts.Count);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
@@ -466,7 +459,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Scrape,
                 AuditSeverity.Error,
                 firstGroupName,
-                this.Msg($"Lỗi quét bài viết nhóm: {this.SanitizeErrorMessage(ex)}", $"Group post scan failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.ScrapeFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -482,9 +475,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.SalesComment"],
-                this.Msg(
-                    "Vui lòng bấm chọn một bài viết trong danh sách bài thu thập được trước khi gửi bình luận tư vấn.",
-                    "Please click a post card from the discovered list before sending a Sales Comment.")).ConfigureAwait(true);
+                this._context.Localization["Log.SelectScrapedPostFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -513,7 +504,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
                 this.SelectedScrapedPost.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"],
-                this.Msg($"Lỗi gửi bình luận tư vấn: {this.SanitizeErrorMessage(ex)}", $"Sales comment failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.SalesCommentFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -529,9 +520,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.SalesComment"],
-                this.Msg(
-                    "Danh sách bài viết đang trống — hãy bấm Thu thập bài mới trước.",
-                    "Discovered post list is empty — please click 'Scan Recent Posts' first.")).ConfigureAwait(true);
+                this._context.Localization["Log.ScrapedListEmpty"]).ConfigureAwait(true);
             return;
         }
 
@@ -592,9 +581,7 @@ public sealed partial class ShellViewModel
                 category,
                 AuditSeverity.Error,
                 targetName,
-                this.Msg(
-                    "Cơ chế bảo vệ tự động: Phát hiện phiên đăng nhập hết hạn hoặc cần xác minh bảo mật. Đã dừng chiến dịch ngay lập tức để bảo vệ tài khoản!",
-                    "Safety Circuit Breaker tripped: Session expired or Checkpoint detected. Campaign halted immediately to protect account!")).ConfigureAwait(true);
+                this._context.Localization["Log.CircuitBreakerAuthFailure"]).ConfigureAwait(true);
             return;
         }
 
@@ -604,9 +591,7 @@ public sealed partial class ShellViewModel
                 category,
                 AuditSeverity.Error,
                 targetName,
-                this.Msg(
-                    "Cơ chế bảo vệ tự động: Hệ thống báo giới hạn tốc độ thao tác. Đã tự động tạm dừng chiến dịch để tránh khóa tính năng!",
-                    "Safety Circuit Breaker tripped (Code 368): Facebook action rate-limit detected. Campaign paused automatically to protect account!")).ConfigureAwait(true);
+                this._context.Localization["Log.CircuitBreakerRateLimit"]).ConfigureAwait(true);
             return;
         }
 
@@ -614,7 +599,7 @@ public sealed partial class ShellViewModel
             category,
             AuditSeverity.Error,
             targetName,
-            this.Msg($"Lỗi tác vụ: {this.SanitizeErrorMessage(ex)}", $"Task error: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.TaskError", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         _ = ct;
     }
 
@@ -636,9 +621,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Scrape,
             AuditSeverity.Info,
             this.SelectedScrapedPost.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"],
-            this.Msg(
-                "Đã mở bài viết trực tiếp trên cửa sổ trình duyệt.",
-                "Opened post directly in the browser window.")).ConfigureAwait(true);
+            this._context.Localization["Log.PostOpenedInBrowser"]).ConfigureAwait(true);
     }
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)
@@ -654,9 +637,7 @@ public sealed partial class ShellViewModel
             AuditCategory.System,
             AuditSeverity.Info,
             nextTargetName,
-            this.Msg(
-                $"Đang nghỉ giãn cách an toàn {totalSec} giây trước khi xử lý '{nextTargetName}'...",
-                $"Waiting humanized Gaussian delay of {totalSec}s before processing '{nextTargetName}'...")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.WaitingSafeDelay", totalSec, nextTargetName)).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
@@ -676,9 +657,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Scrape,
             AuditSeverity.Info,
             nextGroupName,
-            this.Msg(
-                $"Giãn cách an toàn: Đang nghỉ {totalSec} giây trước khi thu thập nhóm tiếp theo '{nextGroupName}'...",
-                $"Anti-Ban Rate-Limit: Waiting {totalSec}s before scraping next group '{nextGroupName}'...")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.WaitingScraperDelay", totalSec, nextGroupName)).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
@@ -686,7 +665,7 @@ public sealed partial class ShellViewModel
     private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
     {
         string targetLabel = !string.IsNullOrWhiteSpace(post.AuthorName)
-            ? this.Msg($"Bài của {post.AuthorName}", $"Post by {post.AuthorName}")
+            ? this._context.Localization.Format("Log.PostAuthorLabel", post.AuthorName)
             : this._context.Localization["Leads.DefaultAuthor"];
 
         bool alreadyCommented = await this._context.AccountStore
@@ -700,9 +679,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
                 targetLabel,
-                this.Msg(
-                    $"Bỏ qua '{targetLabel}' vì tài khoản này đã từng bình luận vào bài viết đó trước đây.",
-                    $"Skipped '{targetLabel}' because this account already commented on it earlier.")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.SkippedDuplicateComment", targetLabel)).ConfigureAwait(true);
             return;
         }
 
@@ -744,9 +721,7 @@ public sealed partial class ShellViewModel
             AuditCategory.SalesComment,
             AuditSeverity.Success,
             targetLabel,
-            this.Msg(
-                $"Đã gửi bình luận tư vấn thành công vào '{targetLabel}'!",
-                $"Posted Sales Comment on '{targetLabel}' successfully!"),
+            this._context.Localization.Format("Log.SalesCommentSent", targetLabel),
             post.PermalinkUrl).ConfigureAwait(true);
     }
 
@@ -814,9 +789,12 @@ public sealed partial class ShellViewModel
             return false;
         }
 
+        string normalizedMsg = RemoveVietnameseDiacritics(messageText);
         for (int i = 0; i < keywords.Length; i++)
         {
-            if (messageText.Contains(keywords[i], StringComparison.OrdinalIgnoreCase))
+            string kw = keywords[i];
+            if (messageText.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                normalizedMsg.Contains(RemoveVietnameseDiacritics(kw), StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -832,17 +810,48 @@ public sealed partial class ShellViewModel
             return true;
         }
 
+        string normMsg = !string.IsNullOrWhiteSpace(post.MessageText) ? RemoveVietnameseDiacritics(post.MessageText) : string.Empty;
+        string normAuthor = !string.IsNullOrWhiteSpace(post.AuthorName) ? RemoveVietnameseDiacritics(post.AuthorName) : string.Empty;
+        string normGroup = !string.IsNullOrWhiteSpace(post.GroupName) ? RemoveVietnameseDiacritics(post.GroupName) : string.Empty;
+
         for (int i = 0; i < keywords.Length; i++)
         {
             string kw = keywords[i];
-            if ((!string.IsNullOrWhiteSpace(post.MessageText) && post.MessageText.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrWhiteSpace(post.AuthorName) && post.AuthorName.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrWhiteSpace(post.GroupName) && post.GroupName.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+            string normKw = RemoveVietnameseDiacritics(kw);
+            if ((!string.IsNullOrWhiteSpace(post.MessageText) && (post.MessageText.Contains(kw, StringComparison.OrdinalIgnoreCase) || normMsg.Contains(normKw, StringComparison.OrdinalIgnoreCase))) ||
+                (!string.IsNullOrWhiteSpace(post.AuthorName) && (post.AuthorName.Contains(kw, StringComparison.OrdinalIgnoreCase) || normAuthor.Contains(normKw, StringComparison.OrdinalIgnoreCase))) ||
+                (!string.IsNullOrWhiteSpace(post.GroupName) && (post.GroupName.Contains(kw, StringComparison.OrdinalIgnoreCase) || normGroup.Contains(normKw, StringComparison.OrdinalIgnoreCase))))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static string RemoveVietnameseDiacritics(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        string normalized = input.Normalize(System.Text.NormalizationForm.FormD);
+        System.Text.StringBuilder sb = new(normalized.Length);
+        for (int i = 0; i < normalized.Length; i++)
+        {
+            char c = normalized[i];
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                _ = sb.Append(c switch
+                {
+                    'đ' => 'd',
+                    'Đ' => 'D',
+                    _ => c
+                });
+            }
+        }
+
+        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
     }
 }

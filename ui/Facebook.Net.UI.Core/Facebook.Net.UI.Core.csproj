@@ -17,4 +17,8 @@
     <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Locales\*.json" LogicalName="Assets.Locales.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

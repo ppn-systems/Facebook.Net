@@ -42,6 +42,37 @@ public sealed partial class ChromiumSession
             return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
         }
 
+        if (string.Equals(formUrlEncodedBody, "__SSR_RELAY_JSON__", StringComparison.Ordinal))
+        {
+            string ssrJs = """
+                (() => {
+                    const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+                    const lines = [];
+                    for (const s of scripts) {
+                        const t = s.textContent;
+                        if (t && (t.includes('"post_id"') || t.includes('"Story"') || t.includes('"comet_sections"') || t.includes('"page_info"'))) {
+                            lines.push(t.trim());
+                        }
+                    }
+                    return lines.join('\n');
+                })()
+                """;
+            try
+            {
+                string domLines = await this.EvaluateStringAsync(ssrJs, awaitPromise: false, ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(domLines))
+                {
+                    return domLines;
+                }
+            }
+            catch (ProtocolException) when (!ct.IsCancellationRequested)
+            {
+                // Fall back to HTTP GET extraction below
+            }
+
+            return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
+        }
+
         string headersJson = JsonSerializer.Serialize(headers, BrowserJsonContext.Default.IReadOnlyDictionaryStringString);
         string escapedUrl = JsonSerializer.Serialize(url, ContractsJsonContext.Default.String);
         string escapedBody = JsonSerializer.Serialize(formUrlEncodedBody, ContractsJsonContext.Default.String);
@@ -294,6 +325,26 @@ public sealed partial class ChromiumSession
             ?? throw new ProtocolException("Cannot execute detached HTTP request before extracting SessionMaterial.");
 
         HttpClient client = this.GetOrCreateDetachedHttpClient();
+        if (string.Equals(formUrlEncodedBody, "__SSR_RELAY_JSON__", StringComparison.Ordinal))
+        {
+            using HttpRequestMessage getReq = new(HttpMethod.Get, url);
+            _ = getReq.Headers.TryAddWithoutValidation("User-Agent", material.UserAgent);
+            _ = getReq.Headers.TryAddWithoutValidation("Cookie", material.CookieHeader);
+            _ = getReq.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            _ = getReq.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "document");
+            _ = getReq.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
+            _ = getReq.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-origin");
+
+            using HttpResponseMessage getResp = await client.SendAsync(getReq, ct).ConfigureAwait(false);
+            if (!getResp.IsSuccessStatusCode)
+            {
+                return string.Empty;
+            }
+
+            string html = await getResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return ExtractRelayJsonScriptsFromHtml(html);
+        }
+
         using HttpRequestMessage req = new(HttpMethod.Post, url)
         {
             Content = new StringContent(formUrlEncodedBody, Encoding.UTF8, "application/x-www-form-urlencoded")
@@ -445,4 +496,37 @@ public sealed partial class ChromiumSession
 
     [GeneratedRegex(@"""USER_ID""\s*:\s*""(\d+)""", RegexOptions.CultureInvariant)]
     private static partial Regex UserIdRegex();
+
+    [GeneratedRegex(@"<script\b[^>]*type=""application/json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ApplicationJsonScriptRegex();
+
+    private static string ExtractRelayJsonScriptsFromHtml(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return string.Empty;
+        }
+
+        StringBuilder sb = new(4096);
+        MatchCollection matches = ApplicationJsonScriptRegex().Matches(html);
+        for (int i = 0; i < matches.Count; i++)
+        {
+            string json = matches[i].Groups[1].Value.Trim();
+            if (json.Length > 2 &&
+                (json.Contains("\"post_id\"", StringComparison.Ordinal) ||
+                 json.Contains("\"Story\"", StringComparison.Ordinal) ||
+                 json.Contains("\"comet_sections\"", StringComparison.Ordinal) ||
+                 json.Contains("\"page_info\"", StringComparison.Ordinal)))
+            {
+                if (sb.Length > 0)
+                {
+                    _ = sb.Append('\n');
+                }
+
+                _ = sb.Append(json);
+            }
+        }
+
+        return sb.ToString();
+    }
 }

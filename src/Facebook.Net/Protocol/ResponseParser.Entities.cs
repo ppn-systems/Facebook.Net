@@ -128,10 +128,16 @@ public static partial class ResponseParser
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            if (element.TryGetProperty("post_id"u8, out JsonElement postIdEl) &&
-                postIdEl.ValueKind == JsonValueKind.String)
+            bool isStoryCandidate =
+                element.TryGetProperty("post_id"u8, out _) ||
+                element.TryGetProperty("comet_sections"u8, out _) ||
+                (element.TryGetProperty("__typename"u8, out JsonElement tnEl) &&
+                 tnEl.ValueKind == JsonValueKind.String &&
+                 string.Equals(tnEl.GetString(), "Story", StringComparison.Ordinal));
+
+            if (isStoryCandidate)
             {
-                string? postId = postIdEl.GetString();
+                string? postId = FindPostIdFromStoryNode(element);
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
                     string? text = FindPostMessageText(element);
@@ -139,7 +145,7 @@ public static partial class ResponseParser
                     string? authorName = FindActorName(element);
                     string? authorAvatar = FindActorAvatarUri(element);
                     (string? mediaPreviewUrl, bool isVideo) = FindPostMediaPreview(element);
-                    string? wwwUrl = FindStringRecursive(element, "wwwURL");
+                    string? wwwUrl = FindStringRecursive(element, "wwwURL") ?? FindPermalinkUrlRecursive(element);
                     int reactionCount = FindNestedCount(element, "reaction_count");
                     int commentCount = FindNestedCount(element, "total_comment_count");
                     DateTimeOffset? createdAt = FindCreationTime(element);
@@ -220,23 +226,134 @@ public static partial class ResponseParser
         }
     }
 
+    private static string? FindPostIdFromStoryNode(JsonElement storyElement)
+    {
+        if (storyElement.TryGetProperty("post_id"u8, out JsonElement directEl) &&
+            directEl.ValueKind == JsonValueKind.String)
+        {
+            string? id = directEl.GetString();
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                return id;
+            }
+        }
+
+        string? nestedPostId = FindStringRecursive(storyElement, "post_id");
+        if (!string.IsNullOrWhiteSpace(nestedPostId))
+        {
+            return nestedPostId;
+        }
+
+        string? url = FindStringRecursive(storyElement, "wwwURL") ?? FindPermalinkUrlRecursive(storyElement);
+        return ExtractPostIdFromUrl(url);
+    }
+
+    private static string? FindPermalinkUrlRecursive(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (string key in new[] { "wwwURL", "permalink_url", "url" })
+            {
+                if (element.TryGetProperty(key, out JsonElement uEl) &&
+                    uEl.ValueKind == JsonValueKind.String)
+                {
+                    string? val = uEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(val) &&
+                        (val.Contains("/posts/", StringComparison.OrdinalIgnoreCase) ||
+                         val.Contains("/permalink/", StringComparison.OrdinalIgnoreCase) ||
+                         val.Contains("story_fbid=", StringComparison.OrdinalIgnoreCase) ||
+                         val.Contains("multi_permalinks=", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return val;
+                    }
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                string? nested = FindPermalinkUrlRecursive(prop.Value);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? nested = FindPermalinkUrlRecursive(item);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractPostIdFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<char> span = url.AsSpan();
+        foreach (string marker in new[] { "/posts/", "/permalink/", "story_fbid=", "multi_permalinks=" })
+        {
+            int idx = span.IndexOf(marker.AsSpan(), StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                ReadOnlySpan<char> rest = span[(idx + marker.Length)..];
+                int len = 0;
+                while (len < rest.Length && char.IsAsciiDigit(rest[len]))
+                {
+                    len++;
+                }
+
+                if (len >= 5)
+                {
+                    return rest[..len].ToString();
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static string? FindPostMessageText(JsonElement storyElement)
     {
-        string? messageText = FindNestedContainerText(storyElement, "message");
+        string? listingTitle = FindStringRecursive(storyElement, "marketplace_listing_title")
+            ?? FindNestedContainerText(storyElement, "title");
+
+        string? messageText = FindNestedContainerText(storyElement, "message")
+            ?? FindNestedContainerText(storyElement, "description")
+            ?? FindNestedContainerText(storyElement, "translation");
+
+        if (!string.IsNullOrWhiteSpace(listingTitle) && !string.IsNullOrWhiteSpace(messageText))
+        {
+            return messageText.Contains(listingTitle, StringComparison.OrdinalIgnoreCase)
+                ? messageText
+                : string.Concat(listingTitle, " — ", messageText);
+        }
+
         if (!string.IsNullOrWhiteSpace(messageText))
         {
             return messageText;
         }
 
-        string? descriptionText = FindNestedContainerText(storyElement, "description");
-        if (!string.IsNullOrWhiteSpace(descriptionText))
+        if (!string.IsNullOrWhiteSpace(listingTitle))
         {
-            return descriptionText;
+            return listingTitle;
         }
 
         if (storyElement.TryGetProperty("comet_sections"u8, out JsonElement sectionsEl))
         {
-            return FindStringRecursive(sectionsEl, "text");
+            return FindNestedContainerText(sectionsEl, "message")
+                ?? FindNestedContainerText(sectionsEl, "description")
+                ?? FindStringRecursive(sectionsEl, "text");
         }
 
         return null;

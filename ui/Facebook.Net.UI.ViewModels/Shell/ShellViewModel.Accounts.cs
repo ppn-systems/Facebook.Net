@@ -325,9 +325,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Success,
             profile.DisplayName,
-            this.Msg(
-                $"Đã lưu phiên đăng nhập cho tài khoản '{profile.DisplayName}' thành công.",
-                $"Saved login session for account '{profile.DisplayName}' successfully.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.SessionSaved", profile.DisplayName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -364,9 +362,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 cleared.DisplayName,
-                this.Msg(
-                    $"Đã gỡ máy chủ trung gian và chuyển tài khoản '{cleared.DisplayName}' về kết nối mạng trực tiếp.",
-                    $"Removed proxy and switched account '{cleared.DisplayName}' to direct connection.")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.ProxyCleared", cleared.DisplayName)).ConfigureAwait(true);
             return;
         }
 
@@ -377,9 +373,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 current.DisplayName,
-                this.Msg(
-                    "Định dạng địa chỉ mạng chưa hợp lệ, vui lòng nhập theo mẫu 103.1.2.3:8080.",
-                    "Invalid proxy format (valid examples: 103.1.2.3:8080 or socks5://103.1.2.3:1080:user:pass).")).ConfigureAwait(true);
+                this._context.Localization["Log.ProxyInvalidFormat"]).ConfigureAwait(true);
             return;
         }
 
@@ -393,9 +387,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Success,
             updated.DisplayName,
-            this.Msg(
-                $"Đã lưu cấu hình kết nối mạng {parsed.Host}:{parsed.Port} cho tài khoản '{updated.DisplayName}'.",
-                $"Saved proxy ({parsed.Protocol.ToString().ToUpperInvariant()} {parsed.Host}:{parsed.Port}) for '{updated.DisplayName}'.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.ProxySaved", parsed.Host, parsed.Port, updated.DisplayName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -471,12 +463,8 @@ public sealed partial class ShellViewModel
                 isHealthy ? AuditSeverity.Success : AuditSeverity.Warning,
                 checkedProfile.DisplayName,
                 isHealthy
-                    ? this.Msg(
-                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đang hoạt động bình thường.",
-                        $"Session for '{checkedProfile.DisplayName}' is HEALTHY and ACTIVE (Live).")
-                    : this.Msg(
-                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đã hết hạn, cần đăng nhập lại.",
-                        $"Session for '{checkedProfile.DisplayName}' has expired and needs re-login.")).ConfigureAwait(true);
+                    ? this._context.Localization.Format("Log.SessionHealthy", checkedProfile.DisplayName)
+                    : this._context.Localization.Format("Log.SessionExpired", checkedProfile.DisplayName)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -505,9 +493,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 updated.DisplayName,
-                this.Msg(
-                    $"Kiểm tra trạng thái '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} — {this.SanitizeErrorMessage(ex)}.",
-                    $"Health check for '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.HealthCheckFault", updated.DisplayName, this._context.Localization.FormatAccountStatus(faultStatus), this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -536,9 +522,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 account.DisplayName,
-                this.Msg(
-                    $"Đang mở trình duyệt cho '{account.DisplayName}'...",
-                    $"Launching browser for '{account.DisplayName}'...")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.LaunchingBrowser", account.DisplayName)).ConfigureAwait(true);
 
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct, forceVisible: true).ConfigureAwait(true);
             if (session is null)
@@ -584,7 +568,7 @@ public sealed partial class ShellViewModel
 
                 if (material is null)
                 {
-                    throw lastExtractEx ?? new InvalidOperationException("Chưa phát hiện phiên đăng nhập trên trình duyệt.");
+                    throw lastExtractEx ?? new InvalidOperationException(this._context.Localization["Log.ConnectionInterrupted"]);
                 }
             }
 
@@ -597,7 +581,7 @@ public sealed partial class ShellViewModel
                 account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
 
             string displayName = isDefaultPlaceholder
-                ? $"Tài khoản {suffix}"
+                ? $"{this._context.Localization["Accounts.DefaultImportedName"]} {suffix}"
                 : account.DisplayName;
 
             AccountProfile updated = account with
@@ -622,9 +606,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Success,
                 updated.DisplayName,
-                this.Msg(
-                    "Đã đồng bộ phiên trình duyệt thành công! Đang tự động tải danh sách nhóm đã tham gia...",
-                    "Browser session synced! Automatically loading joined Groups...")).ConfigureAwait(true);
+                this._context.Localization["Log.BrowserSessionSynced"]).ConfigureAwait(true);
 
             // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
             await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
@@ -643,9 +625,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
-                this.Msg(
-                    $"Trình duyệt đã mở — vui lòng đăng nhập trên cửa sổ trình duyệt rồi bấm lại để đồng bộ: {this.SanitizeErrorMessage(ex)}.",
-                    $"Browser opened — please sign in to Facebook in the browser window and click again to sync ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.BrowserSignInPrompt", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -678,9 +658,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Account,
             AuditSeverity.Info,
             removedName,
-            this.Msg(
-                $"Đã gỡ tài khoản '{removedName}' khỏi danh sách.",
-                $"Removed account '{removedName}' from the vault.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.AccountRemoved", removedName)).ConfigureAwait(true);
     }
 
     private async Task WarmUpSelectedAccountAsync()
@@ -709,9 +687,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 account.DisplayName,
-                this.Msg(
-                    $"Đang khởi động tương tác tự nhiên cho '{account.DisplayName}': lướt bảng tin và bày tỏ cảm xúc...",
-                    $"Running organic session warm-up for '{account.DisplayName}': scrolling Newsfeed & reacting...")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.WarmUpStarted", account.DisplayName)).ConfigureAwait(true);
 
             await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
             _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
@@ -752,9 +728,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Success,
                 updated.DisplayName,
-                this.Msg(
-                    $"Đã hoàn tất tương tác tự nhiên cho '{updated.DisplayName}', đã lướt bảng tin và bày tỏ cảm xúc {reactedCount} bài viết!",
-                    $"Completed organic warm-up for '{updated.DisplayName}' (scrolled Newsfeed & reacted to {reactedCount} posts)!")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.WarmUpCompleted", updated.DisplayName, reactedCount)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -770,9 +744,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Error,
                 account.DisplayName,
-                this.Msg(
-                    $"Lỗi khi tương tác nuôi tài khoản: {this.SanitizeErrorMessage(ex)}",
-                    $"Account warm-up failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization.Format("Log.WarmUpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {

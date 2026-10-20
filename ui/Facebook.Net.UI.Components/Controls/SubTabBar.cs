@@ -53,8 +53,7 @@ public sealed class SubTabBar : Grid
         {
             Orientation = Orientation.Horizontal,
             Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 310, 0)
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         for (int i = 0; i < items.Count; i++)
@@ -62,18 +61,18 @@ public sealed class SubTabBar : Grid
             int capturedIndex = i;
             SubTabItem spec = items[i];
 
-            Control icon = VectorIcons.Create(spec.IconSvg, 15, margin: new Thickness(0));
+            Control icon = VectorIcons.Create(spec.IconSvg, 14, margin: new Thickness(0));
             TextBlock lbl = new()
             {
                 Text = spec.Title,
-                FontSize = 13,
+                FontSize = 12.5,
                 VerticalAlignment = VerticalAlignment.Center
             };
 
             StackPanel btnContent = new()
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 8,
+                Spacing = 7,
                 VerticalAlignment = VerticalAlignment.Center,
                 Children = { icon, lbl }
             };
@@ -81,7 +80,7 @@ public sealed class SubTabBar : Grid
             Button tabBtn = new()
             {
                 Content = btnContent,
-                Padding = new Thickness(14, 7),
+                Padding = new Thickness(12, 6),
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
                 Cursor = new Cursor(StandardCursorType.Hand),
@@ -96,11 +95,25 @@ public sealed class SubTabBar : Grid
             tabStripStack.Children.Add(tabBtn);
         }
 
+        ScrollViewer tabScroll = new()
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = tabStripStack
+        };
+
+        Grid topStripGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,330")
+        };
+        SetColumn(tabScroll, 0);
+        topStripGrid.Children.Add(tabScroll);
+
         Border topStripBorder = new()
         {
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(2, 0, 2, 10),
-            Child = tabStripStack
+            Child = topStripGrid
         };
 
         this._viewHost = new ContentControl
@@ -173,9 +186,9 @@ public sealed class SubTabBar : Grid
             (Button btn, TextBlock lbl, Control icon, _) = this._tabs[i];
             bool active = i == this._selectedIndex;
 
-            btn.Background = active ? p.BrandPrimary : Brushes.Transparent;
-            btn.BorderBrush = active ? p.BrandPrimary : Brushes.Transparent;
-            lbl.Foreground = active ? Brushes.White : p.TextSecondary;
+            btn.Background = active ? p.BrandPrimary : p.SecondarySurface;
+            btn.BorderBrush = active ? p.BrandPrimary : p.SubtleBorder;
+            lbl.Foreground = active ? Brushes.White : p.TextPrimary;
             lbl.FontWeight = active ? FontWeight.SemiBold : FontWeight.Medium;
             VectorIcons.SetForeground(icon, active ? Brushes.White : p.TextSecondary);
         }

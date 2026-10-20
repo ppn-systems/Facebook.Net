@@ -238,8 +238,6 @@ public sealed partial class ShellViewModel
             AuditCategory.System,
             AuditSeverity.Success,
             this._context.Localization["Nav.Settings"],
-            this.Msg(
-                $"Đã lưu cấu hình: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Giãn cách {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.",
-                $"Saved settings: {friendlyTheme} | {friendlyLang} | {friendlyBrowser} | Delay {updated.MinDelaySeconds}–{updated.MaxDelaySeconds}s.")).ConfigureAwait(true);
+            this._context.Localization.Format("Log.SettingsSaved", friendlyTheme, friendlyLang, friendlyBrowser, updated.MinDelaySeconds, updated.MaxDelaySeconds)).ConfigureAwait(true);
     }
 }
