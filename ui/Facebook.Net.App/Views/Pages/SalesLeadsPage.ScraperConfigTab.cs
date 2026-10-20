@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
@@ -31,7 +30,7 @@ public sealed partial class SalesLeadsPage
         // Left Column: Multi-Group Selection for Scraping with Quick Group Filter
         Grid leftPane = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"),
             RowSpacing = 10
         };
 
@@ -77,9 +76,10 @@ public sealed partial class SalesLeadsPage
         Grid.SetRow(bulkGroupBtnRow, 1);
         leftPane.Children.Add(bulkGroupBtnRow);
 
-        // Quick Search & Filter Bar for Target Groups
+        // Quick Search & 2-Level Filter Bar for Target Groups
         BulkObservableCollection<SavedTargetGroup> filteredTargetGroups = new();
         int targetStateFilter = 2; // 0 = Enabled, 1 = Disabled, 2 = All
+        string? selectedTagFilterId = null;
         SearchFilterBar groupSearchBar = null!;
 
         void RefreshFilteredGroups()
@@ -99,6 +99,21 @@ public sealed partial class SalesLeadsPage
                     continue;
                 }
 
+                if (!string.IsNullOrEmpty(selectedTagFilterId))
+                {
+                    if (string.Equals(selectedTagFilterId, "__untagged__", StringComparison.Ordinal))
+                    {
+                        if (this._vm.GetGroupTagsForGroup(tg.GroupId).Count > 0)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (!tg.HasTag(selectedTagFilterId))
+                    {
+                        continue;
+                    }
+                }
+
                 if (!string.IsNullOrEmpty(q) &&
                     !tg.GroupName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 {
@@ -111,26 +126,60 @@ public sealed partial class SalesLeadsPage
             filteredTargetGroups.ReplaceAll(matches);
         }
 
-        SegmentedFilterPill groupStatePill = new(
-            this._theme,
-            [
-                this._i18n["Groups.FilterSegEnabled"],
-                this._i18n["Groups.FilterSegDisabled"],
-                this._i18n["Groups.FilterSegAll"]
-            ],
-            initialIndex: 2,
-            onSelected: idx =>
-            {
-                targetStateFilter = idx;
-                groupSearchBar?.SetFilterActive(idx != 2);
-                RefreshFilteredGroups();
-            });
-
         groupSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
-            this._i18n["Groups.FilterPlaceholder"],
-            filterFlyoutContent: groupStatePill);
+            this._i18n["Groups.FilterPlaceholder"]);
+
+        FilterCategoryDefinition stateCategory = new(
+            "state",
+            this._i18n["Groups.FilterCatTargetState"],
+            VectorIcons.CheckCircle,
+            () =>
+            [
+                new FilterOptionItem("enabled", this._i18n["Groups.FilterSegEnabled"]),
+                new FilterOptionItem("disabled", this._i18n["Groups.FilterSegDisabled"])
+            ],
+            selectedIds =>
+            {
+                string? sel = selectedIds.Count > 0 ? selectedIds[0] : null;
+                targetStateFilter = sel switch
+                {
+                    "enabled" => 0,
+                    "disabled" => 1,
+                    _ => 2
+                };
+                RefreshFilteredGroups();
+            },
+            allowMultiple: false);
+
+        FilterCategoryDefinition tagCategory = new(
+            "tag",
+            this._i18n["Groups.FilterCatColorTag"],
+            VectorIcons.Bookmark,
+            () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.GroupTags.Count + 1);
+                for (int i = 0; i < this._vm.GroupTags.Count; i++)
+                {
+                    GroupTag tag = this._vm.GroupTags[i];
+                    options.Add(new FilterOptionItem(tag.Id, tag.Name, ColorHex: tag.ColorHex));
+                }
+
+                options.Add(new FilterOptionItem("__untagged__", this._i18n["Groups.FilterUntagged"]));
+                return options;
+            },
+            selectedIds =>
+            {
+                selectedTagFilterId = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshFilteredGroups();
+            },
+            allowMultiple: false);
+
+        groupSearchBar.SetFilterCategories(
+            [stateCategory, tagCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
 
         groupSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredGroups();
         groupSearchBar.SearchButton.Click += (_, _) => RefreshFilteredGroups();
@@ -145,7 +194,15 @@ public sealed partial class SalesLeadsPage
             tg => GroupRowCard.CreateTargetRow(
                 this._theme,
                 tg,
-                nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)),
+                nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState),
+                assignedTags: this._vm.GetGroupTagsForGroup(tg.GroupId),
+                allTags: this._vm.GroupTags,
+                onToggleTag: async tagId =>
+                {
+                    await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, tagId).ConfigureAwait(true);
+                    RefreshFilteredGroups();
+                },
+                addTagLabel: this._i18n["Groups.BtnAddTagOnRow"]),
             selectedItem: this._vm.SelectedTargetGroup,
             isVisible: filteredTargetGroups.Count > 0);
 
@@ -163,6 +220,11 @@ public sealed partial class SalesLeadsPage
             emptyTargetsBanner.IsVisible = isEmpty;
             targetGroupsList.IsVisible = !isEmpty;
         };
+        this._vm.GroupTags.CollectionChanged += (_, _) =>
+        {
+            RefreshFilteredGroups();
+            groupSearchBar.RefreshFilterChips();
+        };
         filteredTargetGroups.CollectionChanged += (_, _) =>
         {
             bool isEmpty = filteredTargetGroups.Count == 0;
@@ -173,40 +235,6 @@ public sealed partial class SalesLeadsPage
         Grid targetListHost = EmptyStateBanner.CreateHost(targetGroupsList, emptyTargetsBanner);
         Grid.SetRow(targetListHost, 3);
         leftPane.Children.Add(targetListHost);
-
-        // Quick Add from Joined Groups row at bottom of Left Card
-        Grid quickAddJoinedRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        ComboBox joinedGroupPicker = FormField.CreateComboBox<GroupSummary>(
-            this._theme,
-            this._vm.JoinedGroups,
-            g => SectionHeader.CreateLabel(this._theme, g.Name, 12, FontWeight.Medium),
-            this._vm.SelectedGroup,
-            this._i18n["Groups.Header"]);
-        joinedGroupPicker.SelectionChanged += (_, _) =>
-        {
-            if (joinedGroupPicker.SelectedItem is GroupSummary g)
-            {
-                this._vm.SelectedGroup = g;
-            }
-        };
-
-        Button addJoinedToTargetsBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Groups.BtnSaveTarget"],
-            this._vm.AddSelectedGroupToTargetsCommand,
-            VectorIcons.Plus);
-
-        Grid.SetColumn(joinedGroupPicker, 0);
-        Grid.SetColumn(addJoinedToTargetsBtn, 1);
-        quickAddJoinedRow.Children.Add(joinedGroupPicker);
-        quickAddJoinedRow.Children.Add(addJoinedToTargetsBtn);
-        Grid.SetRow(quickAddJoinedRow, 4);
-        leftPane.Children.Add(quickAddJoinedRow);
 
         Border leftCard = SurfaceCard.Create(this._theme, leftPane, new Thickness(16));
 
@@ -369,8 +397,25 @@ public sealed partial class SalesLeadsPage
         Button clearDbBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Leads.BtnClearScrapedDb"],
-            this._vm.ClearScrapedPostsDbCommand,
+            null,
             VectorIcons.Trash);
+        clearDbBtn.Click += (_, _) =>
+        {
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.ClearScrapedDbTitle"],
+                this._i18n["Confirm.ClearScrapedDbMessage"],
+                this._i18n["Confirm.BtnConfirmDelete"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    if (this._vm.ClearScrapedPostsDbCommand.CanExecute(null))
+                    {
+                        await this._vm.ClearScrapedPostsDbCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
+        };
 
         Grid.SetColumn(runScrapeBtn, 0);
         Grid.SetColumn(clearDbBtn, 1);
@@ -389,19 +434,17 @@ public sealed partial class SalesLeadsPage
         {
             multiGroupTitleTb.Text = this._i18n["Leads.ConfigMultiGroupTitle"];
             multiGroupDescTb.Text = this._i18n["Leads.ConfigMultiGroupDesc"];
-            groupSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.FilterPlaceholder"]);
-            groupStatePill.UpdateLabels(
-            [
-                this._i18n["Groups.FilterSegEnabled"],
-                this._i18n["Groups.FilterSegDisabled"],
-                this._i18n["Groups.FilterSegAll"]
-            ]);
+            stateCategory.Title = this._i18n["Groups.FilterCatTargetState"];
+            tagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
+            groupSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Groups.FilterPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             AppButton.SetText(enableAllBtn, this._i18n["Groups.BtnSelectAllTargets"]);
             AppButton.SetText(disableAllBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
             AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
-            joinedGroupPicker.PlaceholderText = this._i18n["Groups.Header"];
-            AppButton.SetText(addJoinedToTargetsBtn, this._i18n["Groups.BtnSaveTarget"]);
             configTitleTb.Text = this._i18n["Leads.ConfigTitle"];
             chronoBadgeTb.Text = this._i18n["Leads.ConfigChronologicalBadge"];
             scrapeKeywordsLbl.Text = this._i18n["Leads.ConfigKeywordsLabel"];
@@ -416,6 +459,7 @@ public sealed partial class SalesLeadsPage
             autoBgScrapeLbl.Text = this._i18n["Leads.ConfigAutoBackgroundToggle"];
             AppButton.SetText(runScrapeBtn, this._i18n["Leads.BtnScanPosts"]);
             AppButton.SetText(clearDbBtn, this._i18n["Leads.BtnClearScrapedDb"]);
+            RefreshFilteredGroups();
         };
 
         return splitGrid;

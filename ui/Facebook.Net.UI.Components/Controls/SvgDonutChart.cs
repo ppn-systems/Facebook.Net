@@ -151,7 +151,10 @@ public sealed class SvgDonutChart : Border
     /// <summary>
     /// Renders the vector donut slices and colorful legend items.
     /// </summary>
-    public void SetSlices(IReadOnlyList<SvgDonutSlice> slices)
+    public void SetSlices(
+        IReadOnlyList<SvgDonutSlice> slices,
+        string? customTotalText = null,
+        Func<int, string>? valueFormatter = null)
     {
         ArgumentNullException.ThrowIfNull(slices);
 
@@ -168,7 +171,11 @@ public sealed class SvgDonutChart : Border
             }
         }
 
-        this._totalValueTb.Text = total.ToString("N0", CultureInfo.InvariantCulture);
+        string centerText = !string.IsNullOrWhiteSpace(customTotalText)
+            ? customTotalText
+            : total.ToString("N0", CultureInfo.InvariantCulture);
+        this._totalValueTb.Text = centerText;
+        this._totalValueTb.FontSize = centerText.Length > 5 ? 16 : 22;
 
         double cx = this._size / 2.0;
         double cy = this._size / 2.0;
@@ -279,6 +286,10 @@ public sealed class SvgDonutChart : Border
                 VerticalAlignment = VerticalAlignment.Center
             };
 
+            string formattedVal = valueFormatter is not null
+                ? valueFormatter(slice.Value)
+                : slice.Value.ToString("N0", CultureInfo.InvariantCulture);
+
             Border countBadge = new()
             {
                 CornerRadius = new CornerRadius(4),
@@ -287,7 +298,7 @@ public sealed class SvgDonutChart : Border
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
-                    Text = $"{slice.Value:N0} · {pct}%",
+                    Text = $"{formattedVal} · {pct}%",
                     FontSize = 11,
                     FontWeight = FontWeight.Bold,
                     Foreground = sliceBrush

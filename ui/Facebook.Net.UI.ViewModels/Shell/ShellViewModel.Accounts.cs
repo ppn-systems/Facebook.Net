@@ -43,34 +43,43 @@ public sealed partial class ShellViewModel
     private readonly List<AccountProfile> _allAccounts = new();
 
     /// <summary>
-    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword and optional status.
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, optional status, and optional proxy assignment.
     /// </summary>
-    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null)
+    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null, bool? hasProxyFilter = null)
     {
-        if (this._allAccounts.Count == 0 && this.Accounts.Count > 0)
+        if (_allAccounts.Count == 0 && this.Accounts.Count > 0)
         {
             for (int i = 0; i < this.Accounts.Count; i++)
             {
-                this._allAccounts.Add(this.Accounts[i]);
+                _allAccounts.Add(this.Accounts[i]);
             }
         }
 
         this.AccountFilterText = filterText ?? string.Empty;
         string kw = this.AccountFilterText.Trim();
 
-        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null)
+        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null && hasProxyFilter is null)
         {
-            this.Accounts.ReplaceAll(this._allAccounts);
+            this.Accounts.ReplaceAll(_allAccounts);
             return;
         }
 
-        List<AccountProfile> filtered = new(this._allAccounts.Count);
-        for (int i = 0; i < this._allAccounts.Count; i++)
+        List<AccountProfile> filtered = new(_allAccounts.Count);
+        for (int i = 0; i < _allAccounts.Count; i++)
         {
-            AccountProfile acc = this._allAccounts[i];
+            AccountProfile acc = _allAccounts[i];
             if (statusFilter is not null && acc.Status != statusFilter.Value)
             {
                 continue;
+            }
+
+            if (hasProxyFilter is not null)
+            {
+                bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
+                if (hasProxyFilter.Value != hasProxy)
+                {
+                    continue;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(kw) &&
@@ -83,6 +92,55 @@ public sealed partial class ShellViewModel
         }
 
         this.Accounts.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and runs a live session health check.
+    /// </summary>
+    public async Task CheckAccountItemHealthAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.CheckAccountHealthAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and either warms it up (when active) or launches browser login/sync.
+    /// </summary>
+    public async Task WarmUpOrLoginAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        if (account.Status == AccountStatus.Active)
+        {
+            await this.WarmUpSelectedAccountAsync().ConfigureAwait(true);
+        }
+        else
+        {
+            await this.OpenBrowserAndSyncAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and deletes it from the local vault.
+    /// </summary>
+    public async Task DeleteAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.DeleteSelectedAccountAsync().ConfigureAwait(true);
     }
 
     partial void OnSelectedAccountChanged(AccountProfile? value)
@@ -103,7 +161,7 @@ public sealed partial class ShellViewModel
 
     private async Task LoadSelectedAccountProxyTextAsync(string proxyId)
     {
-        IReadOnlyList<ProxyConfig> proxies = await this._context.AccountStore.GetAllProxiesAsync().ConfigureAwait(true);
+        IReadOnlyList<ProxyConfig> proxies = await _context.AccountStore.GetAllProxiesAsync().ConfigureAwait(true);
         for (int i = 0; i < proxies.Count; i++)
         {
             if (string.Equals(proxies[i].Id, proxyId, StringComparison.Ordinal))
@@ -120,44 +178,23 @@ public sealed partial class ShellViewModel
     {
         string? targetUid = preferredUid
             ?? this.SelectedAccount?.Uid
-            ?? this._context.Settings.Current.LastSelectedAccountUid;
-        IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
+            ?? _context.Settings.Current.LastSelectedAccountUid;
+        IReadOnlyList<AccountProfile> storedAccounts = await _context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
 
         List<AccountProfile> normalizedAccounts = new(storedAccounts.Count);
         for (int i = 0; i < storedAccounts.Count; i++)
         {
-            AccountProfile acc = storedAccounts[i];
-            bool modified = false;
-
-            if (acc.DisplayName.Contains('(', StringComparison.Ordinal) || acc.DisplayName.Contains(')', StringComparison.Ordinal))
-            {
-                string cleanedName = acc.DisplayName.Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal).Trim();
-                if (cleanedName.StartsWith("Facebook ", StringComparison.OrdinalIgnoreCase))
-                {
-                    cleanedName = $"Tài khoản {cleanedName["Facebook ".Length..].Trim()}";
-                }
-
-                acc = acc with { DisplayName = cleanedName };
-                modified = true;
-            }
-
-            if ((acc.Status == AccountStatus.CookieExpired || acc.Status == AccountStatus.Idle) &&
-                (!string.IsNullOrWhiteSpace(acc.CookieHeader) || HasProfileAuthenticatedCookieStore(acc.ProfileDirectory)))
-            {
-                acc = acc with { Status = AccountStatus.Active };
-                modified = true;
-            }
-
+            (AccountProfile acc, bool modified) = _context.AccountVault.NormalizeAccountProfile(storedAccounts[i]);
             if (modified)
             {
-                await this._context.AccountStore.UpsertAccountAsync(acc).ConfigureAwait(true);
+                await _context.AccountStore.UpsertAccountAsync(acc).ConfigureAwait(true);
             }
 
             normalizedAccounts.Add(acc);
         }
 
-        this._allAccounts.Clear();
-        this._allAccounts.AddRange(normalizedAccounts);
+        _allAccounts.Clear();
+        _allAccounts.AddRange(normalizedAccounts);
         this.Accounts.ReplaceAll(normalizedAccounts);
 
         AccountProfile? matched = null;
@@ -185,23 +222,24 @@ public sealed partial class ShellViewModel
             this.SelectedAccount = null;
         }
 
-        IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+        IReadOnlyList<SavedTargetGroup> storedGroups = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
         this.TargetGroups.ReplaceAll(storedGroups);
+        this.RebuildTargetGroupIndex();
         if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
         {
             this.SelectedTargetGroup = this.TargetGroups[0];
         }
 
         // Only seed _allCatalogGroups and JoinedGroups from storedGroups if no live catalog has been loaded yet
-        if (this._allCatalogGroups.Count == 0)
+        if (_allCatalogGroups.Count == 0)
         {
             for (int i = 0; i < storedGroups.Count; i++)
             {
                 GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member, storedGroups[i].AvatarUrl);
-                this._allCatalogGroups.Add(summary);
+                _allCatalogGroups.Add(summary);
             }
 
-            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
+            this.JoinedGroups.ReplaceAll(_allCatalogGroups);
         }
 
         if (this.SelectedGroup is null && this.JoinedGroups.Count > 0)
@@ -209,68 +247,21 @@ public sealed partial class ShellViewModel
             this.SelectedGroup = this.JoinedGroups[0];
         }
 
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+        await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
         await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
         this.SyncBackgroundScraperLoop();
     }
 
     private async Task ReloadTemplatesOnlyAsync()
     {
-        IReadOnlyList<CampaignTemplate> storedTemplates = await this._context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
-        this.SavedTemplates.Clear();
-        for (int i = 0; i < storedTemplates.Count; i++)
-        {
-            this.SavedTemplates.Add(storedTemplates[i]);
-        }
+        IReadOnlyList<CampaignTemplate> storedTemplates = await _context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
+        this.SavedTemplates.ReplaceAll(storedTemplates);
     }
 
-    private static bool HasProfileAuthenticatedCookieStore(string? profileDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
-        {
-            return false;
-        }
-
-        string[] candidates =
-        [
-            Path.Combine(profileDirectory, "Default", "Network", "Cookies"),
-            Path.Combine(profileDirectory, "Default", "Cookies")
-        ];
-
-        for (int i = 0; i < candidates.Length; i++)
-        {
-            string cookieDbPath = candidates[i];
-            if (!File.Exists(cookieDbPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                using FileStream fs = new(cookieDbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                if (fs.Length <= 0 || fs.Length > 16 * 1024 * 1024)
-                {
-                    continue;
-                }
-
-                byte[] bytes = new byte[(int)fs.Length];
-                int read = fs.Read(bytes, 0, bytes.Length);
-                string ascii = System.Text.Encoding.Latin1.GetString(bytes, 0, read);
-                if (ascii.Contains("facebook.com", StringComparison.OrdinalIgnoreCase) &&
-                    ascii.Contains("c_user", StringComparison.Ordinal) &&
-                    ascii.Contains("xs", StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-            catch
-            {
-                // Ignore locked or unreadable cookie database
-            }
-        }
-
-        return false;
-    }
+    private bool HasProfileAuthenticatedCookieStore(string? profileDirectory) =>
+        _context.AccountVault.HasProfileAuthenticatedCookieStore(profileDirectory);
 
     /// <summary>
     /// Imports a session from J2Team JSON, Cookie-Editor JSON, pipe-delimited string, or creates a new browser login profile.
@@ -280,10 +271,10 @@ public sealed partial class ShellViewModel
         ImportedSessionBundle bundle = UniversalSessionImporter.Parse(
             this.SessionImportRawInput,
             this.AccountFriendlyNameInput,
-            this._context.Localization["Accounts.DefaultBrowserLoginName"],
-            this._context.Localization["Accounts.DefaultImportedName"]);
+            _context.Localization["Accounts.DefaultBrowserLoginName"],
+            _context.Localization["Accounts.DefaultImportedName"]);
 
-        string profileDir = Path.Combine(this._context.ProfilesRootDirectory, bundle.AccountUid);
+        string profileDir = Path.Combine(_context.ProfilesRootDirectory, bundle.AccountUid);
         _ = Directory.CreateDirectory(profileDir);
 
         string resolvedUa = !string.IsNullOrWhiteSpace(bundle.UserAgent)
@@ -299,7 +290,7 @@ public sealed partial class ShellViewModel
             if (UniversalSessionImporter.TryParseProxySpec(this.AccountProxyInput, candidateId, out ProxyConfig? parsedProxy) &&
                 parsedProxy is not null)
             {
-                await this._context.AccountStore.UpsertProxyAsync(parsedProxy).ConfigureAwait(true);
+                await _context.AccountStore.UpsertProxyAsync(parsedProxy).ConfigureAwait(true);
                 proxyId = parsedProxy.Id;
             }
         }
@@ -315,17 +306,17 @@ public sealed partial class ShellViewModel
             Status: string.IsNullOrWhiteSpace(bundle.CookieHeader) ? AccountStatus.Idle : AccountStatus.Active,
             LastActiveAt: DateTimeOffset.UtcNow);
 
-        await this._context.AccountStore.UpsertAccountAsync(profile).ConfigureAwait(true);
+        await _context.AccountStore.UpsertAccountAsync(profile).ConfigureAwait(true);
         await this.ReloadAllStoredDataAsync(profile.Uid).ConfigureAwait(true);
 
         this.AccountFriendlyNameInput = string.Empty;
         this.SessionImportRawInput = string.Empty;
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             profile.DisplayName,
-            this._context.Localization.Format("Log.SessionSaved", profile.DisplayName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.SessionSaved", profile.DisplayName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -338,8 +329,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -350,19 +341,19 @@ public sealed partial class ShellViewModel
         {
             if (!string.IsNullOrWhiteSpace(current.ProxyId))
             {
-                _ = await this._context.AccountStore.DeleteProxyAsync(current.ProxyId).ConfigureAwait(true);
+                _ = await _context.AccountStore.DeleteProxyAsync(current.ProxyId).ConfigureAwait(true);
             }
 
             AccountProfile cleared = current with { ProxyId = null };
-            await this._context.AccountStore.UpsertAccountAsync(cleared).ConfigureAwait(true);
-            await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(cleared).ConfigureAwait(true);
+            await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(cleared.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
-                AuditCategory.Account,
+                AuditCategory.Personal,
                 AuditSeverity.Info,
                 cleared.DisplayName,
-                this._context.Localization.Format("Log.ProxyCleared", cleared.DisplayName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.ProxyCleared", cleared.DisplayName)).ConfigureAwait(true);
             return;
         }
 
@@ -373,21 +364,21 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 current.DisplayName,
-                this._context.Localization["Log.ProxyInvalidFormat"]).ConfigureAwait(true);
+                _context.Localization["Log.ProxyInvalidFormat"]).ConfigureAwait(true);
             return;
         }
 
-        await this._context.AccountStore.UpsertProxyAsync(parsed).ConfigureAwait(true);
+        await _context.AccountStore.UpsertProxyAsync(parsed).ConfigureAwait(true);
         AccountProfile updated = current with { ProxyId = parsed.Id };
-        await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
-        await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+        await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+        await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
         await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Success,
             updated.DisplayName,
-            this._context.Localization.Format("Log.ProxySaved", parsed.Host, parsed.Port, updated.DisplayName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.ProxySaved", parsed.Host, parsed.Port, updated.DisplayName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -400,8 +391,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -432,13 +423,16 @@ public sealed partial class ShellViewModel
             string realUid = isHealthy ? material.Uid : current.Uid;
             string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
             bool isDefaultPlaceholder =
-                current.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
-                current.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
-                current.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+                current.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
 
-            string displayName = isDefaultPlaceholder && isHealthy
-                ? $"Tài khoản {suffix}"
-                : current.DisplayName;
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder && isHealthy
+                    ? $"Tài khoản {suffix}"
+                    : current.DisplayName);
 
             AccountProfile checkedProfile = current with
             {
@@ -447,15 +441,16 @@ public sealed partial class ShellViewModel
                 CookieHeader = !string.IsNullOrWhiteSpace(material.CookieHeader) ? material.CookieHeader : current.CookieHeader,
                 UserAgent = !string.IsNullOrWhiteSpace(material.UserAgent) ? material.UserAgent : current.UserAgent,
                 Status = resolvedStatus,
-                LastActiveAt = DateTimeOffset.UtcNow
+                LastActiveAt = DateTimeOffset.UtcNow,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : current.AvatarUrl
             };
 
             if (!string.Equals(current.Uid, realUid, StringComparison.Ordinal))
             {
-                _ = await this._context.AccountStore.DeleteAccountAsync(current.Uid, ct).ConfigureAwait(true);
+                _ = await _context.AccountStore.DeleteAccountAsync(current.Uid, ct).ConfigureAwait(true);
             }
 
-            await this._context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(checkedProfile.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
@@ -463,8 +458,8 @@ public sealed partial class ShellViewModel
                 isHealthy ? AuditSeverity.Success : AuditSeverity.Warning,
                 checkedProfile.DisplayName,
                 isHealthy
-                    ? this._context.Localization.Format("Log.SessionHealthy", checkedProfile.DisplayName)
-                    : this._context.Localization.Format("Log.SessionExpired", checkedProfile.DisplayName)).ConfigureAwait(true);
+                    ? _context.Localization.Format("Log.SessionHealthy", checkedProfile.DisplayName)
+                    : _context.Localization.Format("Log.SessionExpired", checkedProfile.DisplayName)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -472,7 +467,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 current.DisplayName,
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -486,14 +481,14 @@ public sealed partial class ShellViewModel
                 : AccountStatus.CookieExpired;
 
             AccountProfile updated = current with { Status = faultStatus };
-            await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 updated.DisplayName,
-                this._context.Localization.Format("Log.HealthCheckFault", updated.DisplayName, this._context.Localization.FormatAccountStatus(faultStatus), this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization.Format("Log.HealthCheckFault", updated.DisplayName, _context.Localization.FormatAccountStatus(faultStatus), this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -522,7 +517,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 account.DisplayName,
-                this._context.Localization.Format("Log.LaunchingBrowser", account.DisplayName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.LaunchingBrowser", account.DisplayName)).ConfigureAwait(true);
 
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct, forceVisible: true).ConfigureAwait(true);
             if (session is null)
@@ -568,7 +563,7 @@ public sealed partial class ShellViewModel
 
                 if (material is null)
                 {
-                    throw lastExtractEx ?? new InvalidOperationException(this._context.Localization["Log.ConnectionInterrupted"]);
+                    throw lastExtractEx ?? new InvalidOperationException(_context.Localization["Log.ConnectionInterrupted"]);
                 }
             }
 
@@ -576,13 +571,16 @@ public sealed partial class ShellViewModel
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
             string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
             bool isDefaultPlaceholder =
-                account.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
-                account.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
-                account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+                account.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
 
-            string displayName = isDefaultPlaceholder
-                ? $"{this._context.Localization["Accounts.DefaultImportedName"]} {suffix}"
-                : account.DisplayName;
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder
+                    ? $"{_context.Localization["Accounts.DefaultImportedName"]} {suffix}"
+                    : account.DisplayName);
 
             AccountProfile updated = account with
             {
@@ -591,22 +589,23 @@ public sealed partial class ShellViewModel
                 CookieHeader = material.CookieHeader,
                 UserAgent = material.UserAgent,
                 Status = AccountStatus.Active,
-                LastActiveAt = material.ExtractedAt
+                LastActiveAt = material.ExtractedAt,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : account.AvatarUrl
             };
 
             if (!string.Equals(account.Uid, realUid, StringComparison.Ordinal))
             {
-                _ = await this._context.AccountStore.DeleteAccountAsync(account.Uid, ct).ConfigureAwait(true);
+                _ = await _context.AccountStore.DeleteAccountAsync(account.Uid, ct).ConfigureAwait(true);
             }
 
-            await this._context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Success,
                 updated.DisplayName,
-                this._context.Localization["Log.BrowserSessionSynced"]).ConfigureAwait(true);
+                _context.Localization["Log.BrowserSessionSynced"]).ConfigureAwait(true);
 
             // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
             await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
@@ -616,16 +615,16 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                this.SelectedAccount?.DisplayName ?? _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization.Format("Log.BrowserSignInPrompt", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                this.SelectedAccount?.DisplayName ?? _context.Localization["Audit.Cat.Account"],
+                _context.Localization.Format("Log.BrowserSignInPrompt", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -646,19 +645,19 @@ public sealed partial class ShellViewModel
 
         if (!string.IsNullOrWhiteSpace(removedProxyId))
         {
-            _ = await this._context.AccountStore.DeleteProxyAsync(removedProxyId).ConfigureAwait(true);
+            _ = await _context.AccountStore.DeleteProxyAsync(removedProxyId).ConfigureAwait(true);
         }
 
-        await this._context.SessionManager.CloseSessionAsync(removedUid).ConfigureAwait(true);
-        _ = await this._context.AccountStore.DeleteAccountAsync(removedUid).ConfigureAwait(true);
+        await _context.SessionManager.CloseSessionAsync(removedUid).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeleteAccountAsync(removedUid).ConfigureAwait(true);
         this.SelectedAccount = null;
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
-            AuditCategory.Account,
+            AuditCategory.Personal,
             AuditSeverity.Info,
             removedName,
-            this._context.Localization.Format("Log.AccountRemoved", removedName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.AccountRemoved", removedName)).ConfigureAwait(true);
     }
 
     private async Task WarmUpSelectedAccountAsync()
@@ -668,8 +667,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -687,12 +686,12 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Info,
                 account.DisplayName,
-                this._context.Localization.Format("Log.WarmUpStarted", account.DisplayName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.WarmUpStarted", account.DisplayName)).ConfigureAwait(true);
 
             await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
             _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
 
-            PagedResult<PostSummary> feed = await this._context.CometClient
+            PagedResult<PostSummary> feed = await _context.CometClient
                 .GetNewsFeedAsync(session, count: 5, ct: ct)
                 .ConfigureAwait(true);
 
@@ -707,7 +706,7 @@ public sealed partial class ShellViewModel
                 }
 
                 ReactionKind reaction = Random.Shared.NextDouble() < 0.7 ? ReactionKind.Like : ReactionKind.Love;
-                bool ok = await this._context.CometClient
+                bool ok = await _context.CometClient
                     .ReactToPostAsync(session, item.PostId, reaction, ct)
                     .ConfigureAwait(true);
                 if (ok)
@@ -721,14 +720,14 @@ public sealed partial class ShellViewModel
                 Status = AccountStatus.Active,
                 LastActiveAt = DateTimeOffset.UtcNow
             };
-            await this._context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Success,
                 updated.DisplayName,
-                this._context.Localization.Format("Log.WarmUpCompleted", updated.DisplayName, reactedCount)).ConfigureAwait(true);
+                _context.Localization.Format("Log.WarmUpCompleted", updated.DisplayName, reactedCount)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -736,7 +735,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Warning,
                 account.DisplayName,
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -744,7 +743,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Account,
                 AuditSeverity.Error,
                 account.DisplayName,
-                this._context.Localization.Format("Log.WarmUpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization.Format("Log.WarmUpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {

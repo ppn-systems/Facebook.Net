@@ -12,8 +12,10 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Facebook.Net.App.Views.Pages;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Localization;
@@ -124,7 +126,7 @@ public sealed partial class MainWindow : Window
     {
         Grid sidebarGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
             Margin = new Thickness(10, 14)
         };
 
@@ -161,8 +163,8 @@ public sealed partial class MainWindow : Window
 
         TextBlock brandTitle = new()
         {
-            Text = "Facebook One Client",
-            FontSize = 13,
+            Text = "One Client",
+            FontSize = 14,
             FontWeight = FontWeight.Bold,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(9, 0, 6, 0),
@@ -192,9 +194,27 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Top
         };
 
+        StackPanel bottomNavStack = new()
+        {
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+
+        Border bottomNavDivider = new()
+        {
+            Height = 1,
+            Margin = new Thickness(4, 0, 4, 2)
+        };
+        bottomNavStack.Children.Add(bottomNavDivider);
+
         List<(Button Btn, TextBlock Label, Control Icon, string Key, NavigationSection Section)> navEntries = new(6);
 
-        void AddNavItem(string i18nKey, string svgFileName, NavigationSection section, System.Windows.Input.ICommand cmd)
+        void AddNavItem(
+            StackPanel targetPanel,
+            string i18nKey,
+            string svgFileName,
+            NavigationSection section,
+            System.Windows.Input.ICommand cmd)
         {
             Button btn = AppButton.CreateSidebarNav(
                 this._i18n[i18nKey],
@@ -203,18 +223,20 @@ public sealed partial class MainWindow : Window
                 out TextBlock lbl,
                 out Control icn);
             navEntries.Add((btn, lbl, icn, i18nKey, section));
-            navStack.Children.Add(btn);
+            targetPanel.Children.Add(btn);
         }
 
-        AddNavItem("Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
-        AddNavItem("Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
-        AddNavItem("Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
-        AddNavItem("Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
-        AddNavItem("Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
-        AddNavItem("Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
+        AddNavItem(navStack, "Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
+        AddNavItem(navStack, "Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
+        AddNavItem(navStack, "Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
+        AddNavItem(navStack, "Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
+        AddNavItem(navStack, "Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
+        AddNavItem(bottomNavStack, "Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
 
         Grid.SetRow(navStack, 1);
+        Grid.SetRow(bottomNavStack, 2);
         sidebarGrid.Children.Add(navStack);
+        sidebarGrid.Children.Add(bottomNavStack);
 
         Border sidebar = new()
         {
@@ -230,6 +252,7 @@ public sealed partial class MainWindow : Window
             sidebar.Width = collapsed ? 60 : 232;
             sidebar.Background = p.ElevatedSurface;
             sidebar.BorderBrush = p.SubtleBorder;
+            bottomNavDivider.Background = p.SubtleBorder;
 
             brandBadge.IsVisible = !collapsed;
             brandTitle.IsVisible = !collapsed;
@@ -332,18 +355,90 @@ public sealed partial class MainWindow : Window
         stopTaskBtn.IsVisible = this._vm.IsBusy;
         stopTaskBtn.Padding = new Thickness(10, 5);
 
+        List<Border> disconnectedStatusDots = new();
+        bool pulseDim = false;
+        DispatcherTimer pulseTimer = new()
+        {
+            Interval = TimeSpan.FromMilliseconds(650)
+        };
+        pulseTimer.Tick += (_, _) =>
+        {
+            pulseDim = !pulseDim;
+            double nextOpacity = pulseDim ? 0.32 : 1.0;
+            for (int i = disconnectedStatusDots.Count - 1; i >= 0; i--)
+            {
+                disconnectedStatusDots[i].Opacity = nextOpacity;
+            }
+        };
+        pulseTimer.Start();
+
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            acc => SectionHeader.CreateLabel(
-                this._theme,
-                $"{acc.DisplayName} — {this._i18n.FormatAccountStatus(acc.Status)}",
-                12,
-                FontWeight.Medium),
+            acc =>
+            {
+                bool isConnected = acc.Status == AccountStatus.Active;
+                Grid itemRow = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Border av = AvatarBadge.Create(this._theme, acc.DisplayName, 20, acc.AvatarUrl);
+                TextBlock tb = SectionHeader.CreateLabel(
+                    this._theme,
+                    acc.DisplayName,
+                    12.5,
+                    FontWeight.SemiBold);
+                tb.MaxLines = 1;
+                tb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                Color dotColor = isConnected
+                    ? Color.Parse("#10B981")
+                    : Color.Parse("#EF4444");
+                Color haloColor = isConnected
+                    ? Color.FromArgb(55, 16, 185, 129)
+                    : Color.FromArgb(65, 239, 68, 68);
+
+                Border innerDot = new()
+                {
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(999),
+                    Background = new SolidColorBrush(dotColor),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                Border statusDotHalo = new()
+                {
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius = new CornerRadius(999),
+                    Background = new SolidColorBrush(haloColor),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 0, 2, 0),
+                    Child = innerDot
+                };
+                ToolTip.SetTip(statusDotHalo, this._i18n.FormatAccountStatus(acc.Status));
+
+                if (!isConnected)
+                {
+                    disconnectedStatusDots.Add(statusDotHalo);
+                }
+
+                Grid.SetColumn(av, 0);
+                Grid.SetColumn(tb, 1);
+                Grid.SetColumn(statusDotHalo, 2);
+                itemRow.Children.Add(av);
+                itemRow.Children.Add(tb);
+                itemRow.Children.Add(statusDotHalo);
+                return itemRow;
+            },
             selectedItem: this._vm.SelectedAccount,
             placeholderText: this._i18n["TopBar.NoAccount"]);
         activeAccCombo.MinWidth = 195;
-        activeAccCombo.MaxWidth = 230;
+        activeAccCombo.MaxWidth = 245;
         activeAccCombo.Height = 32;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);

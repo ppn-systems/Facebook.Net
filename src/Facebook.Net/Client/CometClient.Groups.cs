@@ -15,73 +15,246 @@ namespace Facebook.Net.Client;
 public sealed partial class CometClient
 {
     /// <inheritdoc />
-    public async Task<PagedResult<GroupSummary>> SearchGroupsAsync(IBrowserSession session, string keyword, int count = 5, string? cursor = null, CancellationToken ct = default)
+    public async Task<PagedResult<GroupSummary>> SearchGroupsAsync(IBrowserSession session, string keyword, int count = 30, string? cursor = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(keyword);
 
-        string variablesJson = BuildJson(w =>
+        string bsid = PayloadBuilder.NewUuidV4();
+        List<GroupSummary> combined = new(Math.Max(count, 16));
+        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        string? nextCursor = cursor;
+        bool hasNext = true;
+
+        if (cursor is null)
         {
-            w.WriteNumber("count"u8, count);
-            if (!string.IsNullOrWhiteSpace(cursor))
+            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
+                session,
+                $"/search/groups/?q={Uri.EscapeDataString(keyword)}",
+                ct).ConfigureAwait(false);
+
+            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
             {
-                w.WriteString("cursor"u8, cursor);
+                GroupSummary item = ssrGroups.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    combined.Add(item);
+                }
             }
-            else
+        }
+
+        int maxPages = cursor is null && count > 5 ? 5 : 1;
+        for (int page = 0; page < maxPages && combined.Count < count && (page == 0 || (hasNext && !string.IsNullOrWhiteSpace(nextCursor))); page++)
+        {
+            if (page > 0)
             {
-                w.WriteNull("cursor"u8);
+                await Task.Delay(250, ct).ConfigureAwait(false);
             }
 
-            w.WriteString("text"u8, keyword);
-            w.WritePropertyName("experience"u8);
-            w.WriteStartObject();
-            w.WriteString("type"u8, "GROUPS_TAB");
-            w.WriteEndObject();
-            w.WriteNumber("scale"u8, 2);
-        });
+            string? currentCursor = nextCursor;
+            int pageCount = Math.Clamp(count - combined.Count, 5, 20);
+            string variablesJson = BuildJson(w =>
+            {
+                w.WriteNumber("count"u8, pageCount);
+                w.WriteBoolean("allow_streaming"u8, false);
+                w.WritePropertyName("args"u8);
+                w.WriteStartObject();
+                w.WriteString("callsite"u8, "COMET_GLOBAL_SEARCH");
+                w.WritePropertyName("config"u8);
+                w.WriteStartObject();
+                w.WriteBoolean("exact_match"u8, false);
+                w.WriteNull("high_confidence_config"u8);
+                w.WriteNull("intercept_config"u8);
+                w.WriteNull("sts_disambiguation"u8);
+                w.WriteNull("watch_config"u8);
+                w.WriteEndObject();
+                w.WritePropertyName("context"u8);
+                w.WriteStartObject();
+                w.WriteString("bsid"u8, bsid);
+                w.WriteNull("tsid"u8);
+                w.WriteEndObject();
+                w.WritePropertyName("experience"u8);
+                w.WriteStartObject();
+                w.WriteNull("encoded_server_defined_params"u8);
+                w.WriteNull("fbid"u8);
+                w.WriteString("type"u8, "GROUPS_TAB");
+                w.WriteEndObject();
+                w.WritePropertyName("filters"u8);
+                w.WriteStartArray();
+                w.WriteEndArray();
+                w.WriteString("text"u8, keyword);
+                w.WriteEndObject();
+                if (!string.IsNullOrWhiteSpace(currentCursor))
+                {
+                    w.WriteString("cursor"u8, currentCursor);
+                }
+                else
+                {
+                    w.WriteNull("cursor"u8);
+                }
 
-        GraphQlRequest request = new(
-            FriendlyName: ProtocolConstants.Queries.SearchGroupsName,
-            DocId: ProtocolConstants.Queries.SearchGroupsDocId,
-            VariablesJson: variablesJson,
-            PreNavigateUrl: cursor is null ? $"/search/groups/?q={Uri.EscapeDataString(keyword)}" : null);
+                w.WriteBoolean("feedbackSource"u8, false);
+                w.WriteBoolean("fetch_filters"u8, false);
+                w.WriteBoolean("renderLocation"u8, false);
+                w.WriteNumber("scale"u8, 2);
+                w.WriteNumber("stream_initial_count"u8, 0);
+                w.WriteBoolean("useDefaultActor"u8, false);
+            });
 
-        GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
-        return ResponseParser.ParseGroups(res);
+            GraphQlRequest request = new(
+                FriendlyName: ProtocolConstants.Queries.SearchGroupsName,
+                DocId: ProtocolConstants.Queries.SearchGroupsDocId,
+                VariablesJson: variablesJson,
+                PreNavigateUrl: page == 0 && cursor is null ? $"/search/groups/?q={Uri.EscapeDataString(keyword)}" : null);
+
+            GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
+            PagedResult<GroupSummary> parsed = ResponseParser.ParseGroups(res);
+
+            int addedThisPage = 0;
+            for (int i = 0; i < parsed.Items.Count && combined.Count < count; i++)
+            {
+                GroupSummary item = parsed.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    combined.Add(item);
+                    addedThisPage++;
+                }
+            }
+
+            nextCursor = parsed.EndCursor;
+            hasNext = parsed.HasNextPage;
+
+            if (addedThisPage == 0 && string.IsNullOrWhiteSpace(nextCursor))
+            {
+                break;
+            }
+        }
+
+        return new PagedResult<GroupSummary>(combined, nextCursor, hasNext);
     }
 
     /// <inheritdoc />
-    public async Task<PagedResult<GroupSummary>> GetJoinedGroupsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
+    public async Task<PagedResult<GroupSummary>> GetJoinedGroupsAsync(IBrowserSession session, int count = 500, string? cursor = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        string variablesJson = BuildJson(w =>
+        List<GroupSummary> combined = new(Math.Min(count, 256));
+        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        string? nextCursor = cursor;
+        bool hasNext = true;
+
+        if (cursor is null)
         {
-            w.WriteNumber("count"u8, count);
-            if (!string.IsNullOrWhiteSpace(cursor))
+            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
+                session,
+                "/groups/joins?nav_source=tab&ordering=viewer_added",
+                ct).ConfigureAwait(false);
+
+            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
             {
-                w.WriteString("cursor"u8, cursor);
+                GroupSummary item = ssrGroups.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    GroupSummary normalized = item.MembershipState == GroupMembershipState.Unknown
+                        ? item with { MembershipState = GroupMembershipState.Member }
+                        : item;
+                    combined.Add(normalized);
+                }
             }
-            else
+        }
+
+        int maxPages = cursor is null && count > 20 ? 25 : 1;
+        for (int page = 0; page < maxPages && combined.Count < count && (page == 0 || (hasNext && !string.IsNullOrWhiteSpace(nextCursor))); page++)
+        {
+            if (page > 0)
             {
-                w.WriteNull("cursor"u8);
+                await Task.Delay(200, ct).ConfigureAwait(false);
             }
 
-            w.WritePropertyName("ordering"u8);
-            w.WriteStartArray();
-            w.WriteStringValue("integrity_signals");
-            w.WriteEndArray();
-            w.WriteNumber("scale"u8, 2);
-        });
+            string? currentCursor = nextCursor;
+            int pageCount = Math.Clamp(count - combined.Count, 20, 50);
+            string variablesJson = BuildJson(w =>
+            {
+                w.WriteNumber("count"u8, pageCount);
+                if (!string.IsNullOrWhiteSpace(currentCursor))
+                {
+                    w.WriteString("cursor"u8, currentCursor);
+                }
+                else
+                {
+                    w.WriteNull("cursor"u8);
+                }
 
-        GraphQlRequest request = new(
-            FriendlyName: ProtocolConstants.Queries.JoinedGroupsName,
-            DocId: ProtocolConstants.Queries.JoinedGroupsDocId,
-            VariablesJson: variablesJson,
-            PreNavigateUrl: cursor is null ? "/groups/joins?nav_source=tab&ordering=viewer_added" : null);
+                w.WritePropertyName("ordering"u8);
+                w.WriteStartArray();
+                w.WriteStringValue("viewer_added");
+                w.WriteEndArray();
+                w.WriteNumber("scale"u8, 2);
+            });
 
-        GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
-        return ResponseParser.ParseGroups(res);
+            GraphQlRequest request = new(
+                FriendlyName: ProtocolConstants.Queries.JoinedGroupsName,
+                DocId: ProtocolConstants.Queries.JoinedGroupsDocId,
+                VariablesJson: variablesJson,
+                PreNavigateUrl: page == 0 && cursor is null && combined.Count == 0
+                    ? "/groups/joins?nav_source=tab&ordering=viewer_added"
+                    : null);
+
+            GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
+            PagedResult<GroupSummary> parsed = ResponseParser.ParseGroups(res);
+
+            int addedThisPage = 0;
+            for (int i = 0; i < parsed.Items.Count && combined.Count < count; i++)
+            {
+                GroupSummary item = parsed.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    GroupSummary normalized = item.MembershipState == GroupMembershipState.Unknown
+                        ? item with { MembershipState = GroupMembershipState.Member }
+                        : item;
+                    combined.Add(normalized);
+                    addedThisPage++;
+                }
+            }
+
+            nextCursor = parsed.EndCursor;
+            hasNext = parsed.HasNextPage;
+
+            if (addedThisPage == 0 && string.IsNullOrWhiteSpace(nextCursor))
+            {
+                break;
+            }
+        }
+
+        return new PagedResult<GroupSummary>(combined, nextCursor, hasNext);
+    }
+
+    private async Task<PagedResult<GroupSummary>> TryFetchGroupsSsrAsync(
+        IBrowserSession session,
+        string relativePath,
+        CancellationToken ct)
+    {
+        try
+        {
+            string fullUrl = ResolveFullUrl(relativePath);
+            string rawScripts = await session.ExecuteInPagePostAsync(
+                fullUrl,
+                new Dictionary<string, string>(0),
+                "__SSR_RELAY_JSON__",
+                ct).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(rawScripts))
+            {
+                return new PagedResult<GroupSummary>(Array.Empty<GroupSummary>(), null, false);
+            }
+
+            GraphQlResult ssrRes = ResponseParser.ParseGraphQlResult(session.AccountUid, rawScripts);
+            return ResponseParser.ParseGroups(ssrRes);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return new PagedResult<GroupSummary>(Array.Empty<GroupSummary>(), null, false);
+        }
     }
 
     /// <inheritdoc />

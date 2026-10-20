@@ -28,14 +28,18 @@ public static class StatusPill
             Text = text,
             FontSize = 11,
             FontWeight = FontWeight.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         Border pill = new()
         {
-            CornerRadius = new CornerRadius(999),
+            CornerRadius = new CornerRadius(8),
+            MinHeight = 26,
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(9, 2),
+            Padding = new Thickness(9, 3),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
             Child = label

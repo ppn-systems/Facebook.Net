@@ -192,7 +192,7 @@ public sealed partial class CometClient
         {
             w.WritePropertyName("input"u8);
             w.WriteStartObject();
-            w.WriteString("click_proof_validation_result"u8, "{\"validated\":true}");
+            w.WriteString("click_proof_validation_result"u8, /*lang=json,strict*/ "{\"validated\":true}");
             w.WriteString("friend_requester_id"u8, requesterUid);
             w.WriteString("friending_channel"u8, "FRIENDS_HOME_REQUESTS");
             w.WriteBoolean("warn_ack"u8, false);
@@ -233,7 +233,7 @@ public sealed partial class CometClient
             w.WriteStartObject();
             if (isIncoming)
             {
-                w.WriteString("click_proof_validation_result"u8, "{\"validated\":true}");
+                w.WriteString("click_proof_validation_result"u8, /*lang=json,strict*/ "{\"validated\":true}");
                 w.WriteString("friend_requester_id"u8, targetUid);
                 w.WriteString("friending_channel"u8, "FRIENDS_HOME_MAIN");
                 w.WriteString("actor_id"u8, material.Uid);

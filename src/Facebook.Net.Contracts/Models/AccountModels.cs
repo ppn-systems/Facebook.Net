@@ -18,7 +18,8 @@ public sealed record AccountProfile(
     string? ProxyId = null,
     string? TwoFactorSecret = null,
     AccountStatus Status = AccountStatus.Idle,
-    DateTimeOffset? LastActiveAt = null);
+    DateTimeOffset? LastActiveAt = null,
+    string? AvatarUrl = null);
 
 /// <summary>
 /// Represents a proxy configuration for network isolation per account profile.
@@ -44,7 +45,9 @@ public sealed record SessionMaterial(
     string HasteSession,
     string WebSessionId,
     string UserAgent,
-    DateTimeOffset ExtractedAt);
+    DateTimeOffset ExtractedAt,
+    string? DisplayName = null,
+    string? AvatarUrl = null);
 
 /// <summary>
 /// Launch configuration for starting an isolated Chromium instance via OS-specific adapter.

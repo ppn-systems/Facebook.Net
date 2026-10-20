@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
@@ -25,7 +24,7 @@ namespace Facebook.Net.App.Views.Pages;
 /// <summary>
 /// Independent Buyer Lead Scanner &amp; Sales Commenting Page (<c>SalesLeadsPage.axaml</c>).
 /// Uses a top <see cref="SubTabBar"/> to cleanly separate:
-/// 1) Local SQLite Post Repository &amp; Master-Detail Inspector (<see cref="DataTableView{T}"/> + <see cref="SegmentedFilterPill"/>),
+/// 1) Local SQLite Post Repository &amp; Master-Detail Inspector (<see cref="DataTableView{T}"/> + <see cref="SearchFilterBar"/>),
 /// 2) Multi-Group Selector &amp; Anti-Ban Rate-Limit Scraper Configuration,
 /// 3) Sales Comment Composer &amp; Batch Auto-Commenter.
 /// </summary>
@@ -95,7 +94,7 @@ public sealed partial class SalesLeadsPage : UserControl
         return subTabBar;
     }
 
-    private Control BuildRepositoryAndFilterTab(Action onQuickReplyClicked, out Action refreshI18n)
+    private Control BuildRepositoryAndFilterTab(Action onNavigateToAutoCommentTab, out Action refreshI18n)
     {
         Grid tabGrid = new()
         {
@@ -124,169 +123,75 @@ public sealed partial class SalesLeadsPage : UserControl
             this._vm.ScanGroupLeadsCommand,
             VectorIcons.Sync);
 
-        Button openPostBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Leads.BtnOpenPostInBrowser"],
-            this._vm.OpenSelectedPostInBrowserCommand,
-            VectorIcons.Browser);
-
-        StackPanel headerBtnRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children = { openPostBtn, scrapeNowBtn }
-        };
-
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(headerBtnRow, 1);
+        Grid.SetColumn(scrapeNowBtn, 1);
         topHeaderBar.Children.Add(header);
-        topHeaderBar.Children.Add(headerBtnRow);
+        topHeaderBar.Children.Add(scrapeNowBtn);
         Grid.SetRow(topHeaderBar, 0);
         tabGrid.Children.Add(topHeaderBar);
 
-        // 2. Unified Search & Filter Bar ([ ▽ Bộ lọc | Nhập từ khóa... | 🔍 ]) with Flyout Popover
-        SearchFilterBar dbSearchBar = null!;
-
-        void UpdateLeadFilterActiveState()
-        {
-            dbSearchBar?.SetFilterActive(
-                this._vm.LeadCommentStatusFilter != 0 ||
-                !string.IsNullOrEmpty(this._vm.FilterScrapedGroupId));
-        }
-
-        SegmentedFilterPill statusSegmentPill = new(
-            this._theme,
-            [
-                this._i18n["Leads.FilterSegPending"],
-                this._i18n["Leads.FilterSegCommented"],
-                this._i18n["Leads.FilterSegAll"]
-            ],
-            initialIndex: 2,
-            onSelected: idx =>
-            {
-                this._vm.LeadCommentStatusFilter = idx switch
-                {
-                    0 => 1,
-                    1 => 2,
-                    _ => 0
-                };
-                UpdateLeadFilterActiveState();
-            },
-            borderless: true);
-
-        ObservableCollection<object> groupFilterItems = new() { "ALL" };
-        for (int i = 0; i < this._vm.TargetGroups.Count; i++)
-        {
-            groupFilterItems.Add(this._vm.TargetGroups[i]);
-        }
-
-        ListBox groupFilterList = FormField.CreateListBox<object>(
-            this._theme,
-            groupFilterItems,
-            obj =>
-            {
-                if (obj is SavedTargetGroup grp)
-                {
-                    Grid grpItemRow = new()
-                    {
-                        ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                        ColumnSpacing = 8,
-                        Margin = new Thickness(6, 3),
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
-                    Border badge = AvatarBadge.Create(this._theme, grp.GroupName, 24, grp.AvatarUrl);
-                    TextBlock grpItemTb = SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium);
-                    grpItemTb.MaxLines = 1;
-                    grpItemTb.TextTrimming = TextTrimming.CharacterEllipsis;
-                    grpItemTb.VerticalAlignment = VerticalAlignment.Center;
-                    Grid.SetColumn(badge, 0);
-                    Grid.SetColumn(grpItemTb, 1);
-                    grpItemRow.Children.Add(badge);
-                    grpItemRow.Children.Add(grpItemTb);
-                    return grpItemRow;
-                }
-
-                Grid allRow = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                    ColumnSpacing = 8,
-                    Margin = new Thickness(6, 4),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                Control allIcon = VectorIcons.Create(VectorIcons.Groups, 16, margin: new Thickness(4, 0));
-                VectorIcons.SetForeground(allIcon, this._theme.Palette.BrandPrimary);
-                TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Leads.FilterAllGroups"], 12.5, FontWeight.SemiBold);
-                allTb.VerticalAlignment = VerticalAlignment.Center;
-                this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Leads.FilterAllGroups"];
-                Grid.SetColumn(allIcon, 0);
-                Grid.SetColumn(allTb, 1);
-                allRow.Children.Add(allIcon);
-                allRow.Children.Add(allTb);
-                return allRow;
-            },
-            selectedItem: "ALL");
-        groupFilterList.MaxHeight = 230;
-
-        this._vm.TargetGroups.CollectionChanged += (_, _) =>
-        {
-            object? prev = groupFilterList.SelectedItem;
-            groupFilterItems.Clear();
-            groupFilterItems.Add("ALL");
-            object? restored = "ALL";
-            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
-            {
-                SavedTargetGroup item = this._vm.TargetGroups[i];
-                groupFilterItems.Add(item);
-                if (prev is SavedTargetGroup prevGrp &&
-                    string.Equals(prevGrp.GroupId, item.GroupId, StringComparison.Ordinal))
-                {
-                    restored = item;
-                }
-            }
-
-            groupFilterList.SelectedItem = restored;
-        };
-
-        groupFilterList.SelectionChanged += (_, _) =>
-        {
-            if (groupFilterList.SelectedItem is SavedTargetGroup grp)
-            {
-                this._vm.SelectedTargetGroup = grp;
-                this._vm.FilterScrapedGroupId = grp.GroupId;
-            }
-            else
-            {
-                this._vm.FilterScrapedGroupId = null;
-            }
-
-            UpdateLeadFilterActiveState();
-        };
-
-        StackPanel groupFilterField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.FilterGroupLabel"],
-            groupFilterList,
-            out TextBlock groupFilterLbl);
-
-        StackPanel filterFlyoutStack = new() { Spacing = 12, Width = 340 };
-        filterFlyoutStack.Children.Add(statusSegmentPill);
-        filterFlyoutStack.Children.Add(groupFilterField);
-        Border filterFlyoutCard = SurfaceCard.Create(this._theme, filterFlyoutStack, new Thickness(14));
-
-        dbSearchBar = new SearchFilterBar(
+        // 2. Unified Search & Filter Bar ([ ▽ Bộ lọc | Nhập từ khóa... | 🔍 ]) with 2-Level Drill-Down Popover
+        SearchFilterBar searchFilterBar = new(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Leads.BuyerKeywordPlaceholder"],
             this._vm.BuyerIntentKeywords,
-            filterFlyoutContent: filterFlyoutCard,
             searchCommand: this._vm.QueryLocalScrapedPostsCommand);
 
-        dbSearchBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.ApplyLocalLeadFilter(dbSearchBar.SearchTextBox.Text);
+        FilterCategoryDefinition statusCategory = new(
+            "status",
+            this._i18n["Leads.ColStatus"],
+            VectorIcons.CheckCircle,
+            () =>
+            [
+                new FilterOptionItem("pending", this._i18n["Leads.FilterSegPending"]),
+                new FilterOptionItem("commented", this._i18n["Leads.FilterSegCommented"])
+            ],
+            selectedIds =>
+            {
+                string? sel = selectedIds.Count > 0 ? selectedIds[0] : null;
+                this._vm.LeadCommentStatusFilter = sel switch
+                {
+                    "pending" => 1,
+                    "commented" => 2,
+                    _ => 0
+                };
+            },
+            allowMultiple: false);
 
-        Grid.SetRow(dbSearchBar, 1);
-        tabGrid.Children.Add(dbSearchBar);
+        FilterCategoryDefinition groupCategory = new(
+            "group",
+            this._i18n["Leads.FilterGroupLabel"],
+            VectorIcons.Groups,
+            () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.TargetGroups.Count);
+                for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+                {
+                    SavedTargetGroup g = this._vm.TargetGroups[i];
+                    options.Add(new FilterOptionItem(g.GroupId, g.GroupName));
+                }
+
+                return options;
+            },
+            selectedIds =>
+            {
+                this._vm.FilterScrapedGroupId = selectedIds.Count > 0 ? selectedIds[0] : null;
+            },
+            allowMultiple: false);
+
+        searchFilterBar.SetFilterCategories(
+            [statusCategory, groupCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+
+        this._vm.TargetGroups.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
+
+        searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
+            this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
+
+        Grid.SetRow(searchFilterBar, 1);
+        tabGrid.Children.Add(searchFilterBar);
 
         // 3. Master-Detail Split: Left = Spacious DataTableView<PostSummary>, Right = Selected Post Detail Inspector Card
         Grid masterDetailSplit = new()
@@ -304,13 +209,34 @@ public sealed partial class SalesLeadsPage : UserControl
                 new DataTableColumn("135", this._i18n["Leads.ColStatus"])
             ],
             this._vm.ScrapedPosts,
-            post => LeadPostTableRow.Create(
-                this._theme,
-                this._i18n,
-                post,
-                ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords),
-                () => this._vm.FormatBuyerIntentBadge(post),
-                this._vm.IsPostCommented(post.PostId)),
+            post =>
+            {
+                PostSummary enriched = string.IsNullOrWhiteSpace(post.GroupAvatarUrl)
+                    ? post with { GroupAvatarUrl = this._vm.FindTargetGroupById(post.GroupId)?.AvatarUrl }
+                    : post;
+                return LeadPostTableRow.Create(
+                    this._theme,
+                    this._i18n,
+                    enriched,
+                    ShellViewModel.CalculateBuyerIntentScore(enriched.MessageText, this._vm.BuyerIntentKeywords),
+                    () => this._vm.FormatBuyerIntentBadge(enriched),
+                    this._vm.IsPostCommented(enriched.PostId),
+                    onQuickReply: () =>
+                    {
+                        this._vm.SelectedScrapedPost = post;
+                        onNavigateToAutoCommentTab?.Invoke();
+                    },
+                    quickReplyLabel: this._i18n["Leads.BtnRowQuickReply"],
+                    onOpenInBrowser: () =>
+                    {
+                        this._vm.SelectedScrapedPost = post;
+                        if (this._vm.OpenSelectedPostInBrowserCommand.CanExecute(null))
+                        {
+                            this._vm.OpenSelectedPostInBrowserCommand.Execute(null);
+                        }
+                    },
+                    openBrowserLabel: this._i18n["Leads.BtnRowOpenBrowser"]);
+            },
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
             this._i18n["Leads.TableTitlePrefix"]);
@@ -348,7 +274,7 @@ public sealed partial class SalesLeadsPage : UserControl
         Button quickReplyBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnQuickReplyTab"],
-            new CommunityToolkit.Mvvm.Input.RelayCommand(onQuickReplyClicked),
+            new CommunityToolkit.Mvvm.Input.RelayCommand(onNavigateToAutoCommentTab),
             VectorIcons.SalesComment);
         quickReplyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
@@ -369,11 +295,6 @@ public sealed partial class SalesLeadsPage : UserControl
         void RefreshSelectedPostDetail()
         {
             PostSummary? post = this._vm.SelectedScrapedPost;
-            if (post is null && this._vm.ScrapedPosts.Count > 0)
-            {
-                post = this._vm.ScrapedPosts[0];
-            }
-
             if (post is null)
             {
                 detailBtnStack.IsVisible = false;
@@ -430,7 +351,10 @@ public sealed partial class SalesLeadsPage : UserControl
                 ColumnSpacing = 6,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Border grpTinyAvatar = AvatarBadge.Create(this._theme, groupName, 16, post.GroupAvatarUrl);
+            string? resolvedGroupAvatar = !string.IsNullOrWhiteSpace(post.GroupAvatarUrl)
+                ? post.GroupAvatarUrl
+                : this._vm.FindTargetGroupById(post.GroupId)?.AvatarUrl;
+            Border grpTinyAvatar = AvatarBadge.Create(this._theme, groupName, 18, resolvedGroupAvatar);
             TextBlock grpTb = SectionHeader.CreateLabel(this._theme, groupName, 11.5, FontWeight.Medium, isSecondary: true);
             grpTb.MaxLines = 1;
             grpTb.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -593,18 +517,16 @@ public sealed partial class SalesLeadsPage : UserControl
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
             AppButton.SetText(scrapeNowBtn, this._i18n["Leads.BtnScanPosts"]);
-            AppButton.SetText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
             detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
-            statusSegmentPill.UpdateLabels(
-            [
-                this._i18n["Leads.FilterSegPending"],
-                this._i18n["Leads.FilterSegCommented"],
-                this._i18n["Leads.FilterSegAll"]
-            ]);
-            groupFilterLbl.Text = this._i18n["Leads.FilterGroupLabel"];
-            dbSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
+            statusCategory.Title = this._i18n["Leads.ColStatus"];
+            groupCategory.Title = this._i18n["Leads.FilterGroupLabel"];
+            searchFilterBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Leads.BuyerKeywordPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             postsTable.UpdateHeadersAndEmptyText(
                 [
                     this._i18n["Leads.ColAuthor"],

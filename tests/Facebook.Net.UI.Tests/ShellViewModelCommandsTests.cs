@@ -214,6 +214,15 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
         }
 
+        public Task<PagedResult<PostSummary>> GetTimelinePostsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
+        {
+            List<PostSummary> items =
+            [
+                new PostSummary("tl_1", session.AccountUid, "Nick Bán Hàng Chủ Lực", "Bài đăng trang cá nhân số 1", "https://www.facebook.com/posts/tl_1", 15, 4, DateTimeOffset.UtcNow)
+            ];
+            return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
+        }
+
         public Task<PostSummary?> GetSinglePostAsync(IBrowserSession session, string postId, CancellationToken ct = default) =>
             Task.FromResult<PostSummary?>(new PostSummary(postId, "1001", "Alice", "Full post text", null, 1, 1, null));
 
@@ -398,6 +407,34 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         // Duplicate comment prevention check
         await vm.SendSalesCommentOnSelectedPostCommand.ExecuteAsync(null);
         Assert.Equal(3, cometClient.CreatedCommentsCount);
+
+        // 7. Custom Color Group Tags + Tag Filtering + 1-Click Tag Selection
+        Assert.True(vm.GroupTags.Count >= 5);
+        vm.NewGroupTagName = "Nhóm BĐS VIP";
+        vm.NewGroupTagColorHex = "#EC4899";
+        await vm.CreateGroupTagAsync();
+        GroupTag? customTag = null;
+        for (int i = 0; i < vm.GroupTags.Count; i++)
+        {
+            if (vm.GroupTags[i].Name == "Nhóm BĐS VIP")
+            {
+                customTag = vm.GroupTags[i];
+                break;
+            }
+        }
+
+        Assert.NotNull(customTag);
+        await vm.ToggleGroupTagAsync("grp_101", "Chợ Cư Dân Vinhomes", null, customTag.Id);
+        SavedTargetGroup? taggedGrp = vm.FindTargetGroupById("grp_101");
+        Assert.NotNull(taggedGrp);
+        Assert.True(taggedGrp.HasTag(customTag.Id));
+
+        // 8. Sync Personal Profile Timeline Posts & Repost to Groups
+        await vm.SyncPersonalTimelinePostsAsync();
+        Assert.Contains(vm.PublishedPosts, p => p.PostId == "tl_1" && p.IsPersonalProfilePost);
+        vm.SelectedPublishedPost = vm.PublishedPosts[0];
+        await vm.RepostSelectedPostToGroupsAsync();
+        Assert.True(vm.PublishedPosts.Count >= 3);
     }
 
     [Fact]
@@ -516,6 +553,74 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         // Navigate back returns to Settings
         vm.NavigateBackCommand.Execute(null);
         Assert.Equal(NavigationSection.Settings, vm.CurrentSection);
+    }
+
+    [Fact]
+    public async Task ShellViewModel_PersonalAuditLogs_RecordsAllUserInitiatedCrudAndSettingActions()
+    {
+        string workspaceDir = Path.Combine(this._tempDir, "personal_audit_test");
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher());
+        using ShellViewModel vm = new(context);
+
+        await vm.InitializeAsync();
+        await vm.AuditDrawer.ClearLogsCommand.ExecuteAsync(null);
+
+        // 1. Account Import & Proxy Update
+        vm.AccountFriendlyNameInput = "Nick Test Audit Cá Nhân";
+        vm.SessionImportRawInput = "c_user=1000333444555; xs=55%3Apersonal_audit_xs;";
+        await vm.QuickImportSessionCommand.ExecuteAsync(null);
+
+        vm.AccountProxyInput = "127.0.0.1:8080";
+        await vm.SaveAccountProxyCommand.ExecuteAsync(null);
+
+        // 2. Group Tag Create, Edit, Assign, Batch Assign, Delete
+        vm.NewGroupTagName = "Nhãn Cá Nhân 01";
+        vm.NewGroupTagColorHex = "#3B82F6";
+        await vm.CreateGroupTagAsync();
+        GroupTag createdTag = vm.GroupTags[^1];
+
+        await vm.UpdateGroupTagAsync(createdTag.Id, "Nhãn Cá Nhân Đã Sửa", "#10B981");
+
+        vm.SelectedGroup = new GroupSummary("grp_audit_1", "Nhóm Kiểm Thử Audit", GroupMembershipState.Member);
+        await vm.AddSelectedGroupToTargetsCommand.ExecuteAsync(null);
+        SavedTargetGroup? tg = vm.FindTargetGroupById("grp_audit_1");
+        Assert.NotNull(tg);
+
+        await vm.ToggleTargetGroupEnabledAsync(tg, false);
+        await vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, null, createdTag.Id);
+        await vm.BatchSetTagOnGroupsAsync(createdTag.Id, [tg], assignTag: false);
+        await vm.DeleteGroupTagAsync(createdTag);
+
+        // 3. Template Save (Post & Bump) + Delete
+        vm.PostSpintaxText = "Nội dung mẫu bài viết cá nhân";
+        await vm.SaveTemplateCommand.ExecuteAsync(null);
+        vm.BumpCommentSpintaxText = "Nội dung mẫu đẩy bài cá nhân";
+        await vm.SaveBumpTemplateCommand.ExecuteAsync(null);
+        Assert.True(vm.SavedTemplates.Count >= 2);
+        vm.SelectedTemplate = vm.SavedTemplates[0];
+        await vm.DeleteSelectedTemplateCommand.ExecuteAsync(null);
+
+        // 4. Browser Profile Create, Assign, Cache Clean, Delete & Settings Changes
+        string? newProfPath = await vm.CreateAndAssignBrowserProfileAsync("Profile Audit Test");
+        Assert.NotNull(newProfPath);
+        _ = await vm.CleanBrowserProfilesCacheAsync();
+        bool deletedProf = await vm.DeleteManagedBrowserProfileAsync(
+            new BrowserProfileOption("Profile Audit Test", newProfPath, IsManagedByApp: true));
+        Assert.True(deletedProf);
+
+        vm.SelectedThemeMode = Facebook.Net.UI.Core.Theming.AppThemeMode.Light;
+        vm.SelectedLanguage = AppLanguage.EnUs;
+        await vm.SaveSettingsCommand.ExecuteAsync(null);
+
+        // 5. Query strictly by AuditCategory.Personal ("Cá nhân")
+        vm.AuditDrawer.SelectedCategory = Facebook.Net.UI.Core.Audit.AuditCategory.Personal;
+        await vm.AuditDrawer.RefreshLogsAsync();
+
+        Assert.True(vm.AuditDrawer.FilteredLogs.Count >= 14, $"Expected at least 14 Personal audit logs, got {vm.AuditDrawer.FilteredLogs.Count}.");
+        Assert.All(vm.AuditDrawer.FilteredLogs, r => Assert.Equal(Facebook.Net.UI.Core.Audit.AuditCategory.Personal, r.Category));
     }
 
     public void Dispose()

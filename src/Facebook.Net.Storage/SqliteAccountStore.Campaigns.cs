@@ -21,9 +21,9 @@ public sealed partial class SqliteAccountStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<SavedTargetGroup>> GetAllTargetGroupsAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT group_id, group_name, is_enabled, notes, avatar_url FROM target_groups ORDER BY group_name ASC;";
+        const string sql = "SELECT group_id, group_name, is_enabled, notes, avatar_url, tags_csv FROM target_groups ORDER BY group_name ASC;";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -44,16 +44,17 @@ public sealed partial class SqliteAccountStore
         ArgumentNullException.ThrowIfNull(group);
 
         const string sql = """
-            INSERT INTO target_groups (group_id, group_name, is_enabled, notes, avatar_url)
-            VALUES ($group_id, $group_name, $is_enabled, $notes, $avatar_url)
+            INSERT INTO target_groups (group_id, group_name, is_enabled, notes, avatar_url, tags_csv)
+            VALUES ($group_id, $group_name, $is_enabled, $notes, $avatar_url, $tags_csv)
             ON CONFLICT(group_id) DO UPDATE SET
                 group_name = excluded.group_name,
                 is_enabled = excluded.is_enabled,
                 notes = excluded.notes,
-                avatar_url = COALESCE(excluded.avatar_url, target_groups.avatar_url);
+                avatar_url = COALESCE(excluded.avatar_url, target_groups.avatar_url),
+                tags_csv = COALESCE(excluded.tags_csv, target_groups.tags_csv);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -62,6 +63,7 @@ public sealed partial class SqliteAccountStore
         _ = cmd.Parameters.AddWithValue("$is_enabled", group.IsEnabled ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("$notes", (object?)group.Notes ?? DBNull.Value);
         _ = cmd.Parameters.AddWithValue("$avatar_url", (object?)group.AvatarUrl ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$tags_csv", (object?)group.TagsCsv ?? DBNull.Value);
 
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -72,7 +74,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
         const string sql = "DELETE FROM target_groups WHERE group_id = $group_id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -91,7 +93,7 @@ public sealed partial class SqliteAccountStore
             ORDER BY title ASC;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -121,7 +123,7 @@ public sealed partial class SqliteAccountStore
                 is_comment_template = excluded.is_comment_template;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -140,7 +142,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(templateId);
 
         const string sql = "DELETE FROM campaign_templates WHERE id = $id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -164,7 +166,7 @@ public sealed partial class SqliteAccountStore
             LIMIT 1;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -189,7 +191,7 @@ public sealed partial class SqliteAccountStore
                 executed_at = excluded.executed_at;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -212,7 +214,7 @@ public sealed partial class SqliteAccountStore
             LIMIT $limit;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -267,7 +269,7 @@ public sealed partial class SqliteAccountStore
 
         string nowIso = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
 
@@ -316,16 +318,29 @@ public sealed partial class SqliteAccountStore
         CancellationToken ct = default)
     {
         const string sql = """
-            SELECT post_id, group_id, group_name, author_uid, author_name,
-                   message_text, permalink_url, reaction_count, comment_count, created_at,
-                   media_preview_url, is_video, author_avatar_url, group_avatar_url
-            FROM scraped_posts
-            WHERE ($group_id IS NULL OR group_id = $group_id)
+            SELECT sp.post_id,
+                   sp.group_id,
+                   COALESCE(NULLIF(sp.group_name, ''), tg.group_name, '') AS resolved_group_name,
+                   sp.author_uid,
+                   sp.author_name,
+                   sp.message_text,
+                   sp.permalink_url,
+                   sp.reaction_count,
+                   sp.comment_count,
+                   sp.created_at,
+                   sp.media_preview_url,
+                   sp.is_video,
+                   sp.author_avatar_url,
+                   COALESCE(NULLIF(sp.group_avatar_url, ''), tg.avatar_url) AS resolved_group_avatar_url
+            FROM scraped_posts sp
+            LEFT JOIN target_groups tg ON tg.group_id = sp.group_id
+            WHERE ($group_id IS NULL OR sp.group_id = $group_id)
               AND ($keyword IS NULL
-                   OR message_text LIKE $keyword
-                   OR author_name LIKE $keyword
-                   OR group_name LIKE $keyword)
-            ORDER BY COALESCE(created_at, scraped_at) DESC
+                   OR sp.message_text LIKE $keyword
+                   OR sp.author_name LIKE $keyword
+                   OR sp.group_name LIKE $keyword
+                   OR tg.group_name LIKE $keyword)
+            ORDER BY COALESCE(sp.created_at, sp.scraped_at) DESC
             LIMIT $limit;
             """;
 
@@ -334,7 +349,7 @@ public sealed partial class SqliteAccountStore
             ? null
             : $"%{searchKeyword.Trim()}%";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -362,7 +377,7 @@ public sealed partial class SqliteAccountStore
 
         string? normalizedGroup = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -371,13 +386,223 @@ public sealed partial class SqliteAccountStore
         return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<GroupTag>> GetAllGroupTagsAsync(CancellationToken ct = default)
+    {
+        const string sql = "SELECT id, name, color_hex FROM group_tags ORDER BY name ASC;";
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        List<GroupTag> list = new();
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            list.Add(new GroupTag(
+                Id: reader.GetString(0),
+                Name: reader.GetString(1),
+                ColorHex: reader.GetString(2)));
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertGroupTagAsync(GroupTag tag, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(tag);
+
+        const string sql = """
+            INSERT INTO group_tags (id, name, color_hex)
+            VALUES ($id, $name, $color_hex)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color_hex = excluded.color_hex;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("$name", tag.Name);
+        _ = cmd.Parameters.AddWithValue("$color_hex", tag.ColorHex);
+
+        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteGroupTagAsync(string tagId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagId);
+
+        const string sql = "DELETE FROM group_tags WHERE id = $id;";
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$id", tagId);
+
+        int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PublishedPostRecord>> GetPublishedPostsAsync(string? accountUid = null, int limit = 200, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT pp.post_id,
+                   pp.account_uid,
+                   COALESCE(NULLIF(pp.account_name, ''), a.display_name, pp.account_uid),
+                   COALESCE(NULLIF(pp.account_avatar_url, ''), a.avatar_url),
+                   pp.target_kind,
+                   pp.target_group_id,
+                   COALESCE(NULLIF(pp.target_group_name, ''), tg.group_name),
+                   COALESCE(NULLIF(pp.target_group_avatar_url, ''), tg.avatar_url),
+                   pp.message_text,
+                   pp.media_file_path,
+                   pp.media_preview_url,
+                   pp.permalink_url,
+                   pp.published_at,
+                   pp.reaction_count,
+                   pp.comment_count
+            FROM published_posts pp
+            LEFT JOIN accounts a ON a.uid = pp.account_uid
+            LEFT JOIN target_groups tg ON tg.group_id = pp.target_group_id
+            WHERE ($account_uid IS NULL OR pp.account_uid = $account_uid)
+            ORDER BY pp.published_at DESC
+            LIMIT $limit;
+            """;
+
+        string? normalizedUid = string.IsNullOrWhiteSpace(accountUid) ? null : accountUid.Trim();
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$account_uid", (object?)normalizedUid ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$limit", limit <= 0 ? 200 : limit);
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        List<PublishedPostRecord> list = new();
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            list.Add(MapPublishedPost(reader));
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertPublishedPostAsync(PublishedPostRecord post, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+
+        const string sql = """
+            INSERT INTO published_posts (
+                post_id, account_uid, account_name, account_avatar_url,
+                target_kind, target_group_id, target_group_name, target_group_avatar_url,
+                message_text, media_file_path, media_preview_url, permalink_url,
+                published_at, reaction_count, comment_count
+            )
+            VALUES (
+                $post_id, $account_uid, $account_name, $account_avatar_url,
+                $target_kind, $target_group_id, $target_group_name, $target_group_avatar_url,
+                $message_text, $media_file_path, $media_preview_url, $permalink_url,
+                $published_at, $reaction_count, $comment_count
+            )
+            ON CONFLICT(post_id) DO UPDATE SET
+                account_name = CASE WHEN excluded.account_name <> '' THEN excluded.account_name ELSE published_posts.account_name END,
+                account_avatar_url = COALESCE(excluded.account_avatar_url, published_posts.account_avatar_url),
+                target_kind = excluded.target_kind,
+                target_group_id = COALESCE(excluded.target_group_id, published_posts.target_group_id),
+                target_group_name = COALESCE(excluded.target_group_name, published_posts.target_group_name),
+                target_group_avatar_url = COALESCE(excluded.target_group_avatar_url, published_posts.target_group_avatar_url),
+                message_text = CASE WHEN excluded.message_text <> '' THEN excluded.message_text ELSE published_posts.message_text END,
+                media_file_path = COALESCE(excluded.media_file_path, published_posts.media_file_path),
+                media_preview_url = COALESCE(excluded.media_preview_url, published_posts.media_preview_url),
+                permalink_url = COALESCE(excluded.permalink_url, published_posts.permalink_url),
+                reaction_count = MAX(published_posts.reaction_count, excluded.reaction_count),
+                comment_count = MAX(published_posts.comment_count, excluded.comment_count);
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$post_id", post.PostId);
+        _ = cmd.Parameters.AddWithValue("$account_uid", post.AccountUid);
+        _ = cmd.Parameters.AddWithValue("$account_name", post.AuthorName ?? string.Empty);
+        _ = cmd.Parameters.AddWithValue("$account_avatar_url", (object?)post.AuthorAvatarUrl ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$target_kind", post.IsPersonalProfilePost ? "Feed" : "Group");
+        _ = cmd.Parameters.AddWithValue("$target_group_id", (object?)post.TargetGroupId ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$target_group_name", (object?)post.TargetGroupName ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$target_group_avatar_url", (object?)post.TargetGroupAvatarUrl ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$message_text", post.MessageText);
+        _ = cmd.Parameters.AddWithValue("$media_file_path", (object?)post.LocalMediaFilePath ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$media_preview_url", (object?)post.MediaPreviewUrl ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$permalink_url", (object?)post.PermalinkUrl ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$published_at", post.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+        _ = cmd.Parameters.AddWithValue("$reaction_count", post.ReactionCount);
+        _ = cmd.Parameters.AddWithValue("$comment_count", post.CommentCount);
+
+        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeletePublishedPostAsync(string postId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+
+        const string sql = "DELETE FROM published_posts WHERE post_id = $post_id;";
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$post_id", postId);
+
+        int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     private static SavedTargetGroup MapTargetGroup(SqliteDataReader reader) =>
         new(
             GroupId: reader.GetString(0),
             GroupName: reader.GetString(1),
             IsEnabled: reader.GetInt32(2) != 0,
             Notes: reader.IsDBNull(3) ? null : reader.GetString(3),
-            AvatarUrl: reader.FieldCount > 4 && !reader.IsDBNull(4) ? reader.GetString(4) : null);
+            AvatarUrl: reader.FieldCount > 4 && !reader.IsDBNull(4) ? reader.GetString(4) : null,
+            TagsCsv: reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null);
+
+    private static PublishedPostRecord MapPublishedPost(SqliteDataReader reader)
+    {
+        string rawTime = reader.GetString(12);
+        DateTimeOffset publishedAt = DateTimeOffset.TryParse(rawTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)
+            ? parsed
+            : DateTimeOffset.UtcNow;
+
+        string targetKind = reader.GetString(4);
+        string? targetGroupId = reader.IsDBNull(5) ? null : reader.GetString(5);
+
+        return new PublishedPostRecord(
+            PostId: reader.GetString(0),
+            AccountUid: reader.GetString(1),
+            AuthorName: reader.GetString(2),
+            AuthorAvatarUrl: reader.IsDBNull(3) ? null : reader.GetString(3),
+            MessageText: reader.GetString(8),
+            MediaPreviewUrl: reader.IsDBNull(10) ? null : reader.GetString(10),
+            LocalMediaFilePath: reader.IsDBNull(9) ? null : reader.GetString(9),
+            TargetGroupId: targetGroupId,
+            TargetGroupName: reader.IsDBNull(6) ? null : reader.GetString(6),
+            TargetGroupAvatarUrl: reader.IsDBNull(7) ? null : reader.GetString(7),
+            PermalinkUrl: reader.IsDBNull(11) ? null : reader.GetString(11),
+            ReactionCount: reader.GetInt32(13),
+            CommentCount: reader.GetInt32(14),
+            CreatedAt: publishedAt,
+            IsPersonalProfilePost: string.IsNullOrWhiteSpace(targetGroupId) && !string.Equals(targetKind, "Group", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static CampaignTemplate MapCampaignTemplate(SqliteDataReader reader) =>
         new(

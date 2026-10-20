@@ -37,7 +37,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             Pooling = true,
             DefaultTimeout = 5
         };
-        this._connectionString = builder.ToString();
+        _connectionString = builder.ToString();
     }
 
     /// <inheritdoc />
@@ -47,6 +47,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 67108864;
+            PRAGMA cache_size = -8000;
 
             CREATE TABLE IF NOT EXISTS proxies (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -66,7 +68,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 proxy_id TEXT NULL,
                 two_factor_secret TEXT NULL,
                 status INTEGER NOT NULL DEFAULT 0,
-                last_active_at TEXT NULL
+                last_active_at TEXT NULL,
+                avatar_url TEXT NULL
             );
 
             CREATE TABLE IF NOT EXISTS target_groups (
@@ -74,8 +77,36 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 group_name TEXT NOT NULL,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
                 notes TEXT NULL,
-                avatar_url TEXT NULL
+                avatar_url TEXT NULL,
+                tags_csv TEXT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS group_tags (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                color_hex TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS published_posts (
+                post_id TEXT PRIMARY KEY NOT NULL,
+                account_uid TEXT NOT NULL,
+                account_name TEXT NOT NULL,
+                account_avatar_url TEXT NULL,
+                target_kind TEXT NOT NULL,
+                target_group_id TEXT NULL,
+                target_group_name TEXT NULL,
+                target_group_avatar_url TEXT NULL,
+                message_text TEXT NOT NULL,
+                media_file_path TEXT NULL,
+                media_preview_url TEXT NULL,
+                permalink_url TEXT NULL,
+                published_at TEXT NOT NULL,
+                reaction_count INTEGER NOT NULL DEFAULT 0,
+                comment_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_published_posts_account_uid ON published_posts(account_uid);
+            CREATE INDEX IF NOT EXISTS idx_published_posts_published_at ON published_posts(published_at DESC);
 
             CREATE TABLE IF NOT EXISTS campaign_templates (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -116,17 +147,43 @@ public sealed partial class SqliteAccountStore : IAccountStore
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_scraped_at ON scraped_posts(scraped_at DESC);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
+        await EnsureColumnExistsAsync(conn, "accounts", "avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "target_groups", "avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "target_groups", "tags_csv", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "media_preview_url", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "is_video", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "author_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "group_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+
+        using SqliteCommand seedTagsCmd = conn.CreateCommand();
+        seedTagsCmd.CommandText = """
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_market', 'Mua bán & Chợ', '#F6821F'
+            WHERE NOT EXISTS (SELECT 1 FROM group_tags);
+
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_bds', 'Bất động sản', '#3B82F6'
+            WHERE (SELECT COUNT(1) FROM group_tags) < 2;
+
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_job', 'Việc làm & Tuyển dụng', '#10B981'
+            WHERE (SELECT COUNT(1) FROM group_tags) < 3;
+
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_community', 'Cộng đồng & Giao lưu', '#8B5CF6'
+            WHERE (SELECT COUNT(1) FROM group_tags) < 4;
+
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_vip', 'Nhóm Ưu tiên VIP', '#F43F5E'
+            WHERE (SELECT COUNT(1) FROM group_tags) < 5;
+            """;
+        _ = await seedTagsCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
         using SqliteCommand cleanupCmd = conn.CreateCommand();
         cleanupCmd.CommandText = """
@@ -162,12 +219,12 @@ public sealed partial class SqliteAccountStore : IAccountStore
     {
         const string sql = """
             SELECT uid, display_name, cookie_header, user_agent, profile_directory,
-                   proxy_id, two_factor_secret, status, last_active_at
+                   proxy_id, two_factor_secret, status, last_active_at, avatar_url
             FROM accounts
             ORDER BY uid ASC;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -189,13 +246,13 @@ public sealed partial class SqliteAccountStore : IAccountStore
 
         const string sql = """
             SELECT uid, display_name, cookie_header, user_agent, profile_directory,
-                   proxy_id, two_factor_secret, status, last_active_at
+                   proxy_id, two_factor_secret, status, last_active_at, avatar_url
             FROM accounts
             WHERE uid = $uid
             LIMIT 1;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -213,11 +270,11 @@ public sealed partial class SqliteAccountStore : IAccountStore
         const string sql = """
             INSERT INTO accounts (
                 uid, display_name, cookie_header, user_agent, profile_directory,
-                proxy_id, two_factor_secret, status, last_active_at
+                proxy_id, two_factor_secret, status, last_active_at, avatar_url
             )
             VALUES (
                 $uid, $display_name, $cookie_header, $user_agent, $profile_directory,
-                $proxy_id, $two_factor_secret, $status, $last_active_at
+                $proxy_id, $two_factor_secret, $status, $last_active_at, $avatar_url
             )
             ON CONFLICT(uid) DO UPDATE SET
                 display_name = excluded.display_name,
@@ -227,10 +284,11 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 proxy_id = excluded.proxy_id,
                 two_factor_secret = excluded.two_factor_secret,
                 status = excluded.status,
-                last_active_at = excluded.last_active_at;
+                last_active_at = excluded.last_active_at,
+                avatar_url = COALESCE(excluded.avatar_url, accounts.avatar_url);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -247,6 +305,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             account.LastActiveAt.HasValue
                 ? account.LastActiveAt.Value.ToString("O", CultureInfo.InvariantCulture)
                 : DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$avatar_url", (object?)account.AvatarUrl ?? DBNull.Value);
 
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -257,7 +316,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(uid);
 
         const string sql = "DELETE FROM accounts WHERE uid = $uid;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -288,6 +347,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
             }
         }
 
+        string? avatarUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
+
         return new AccountProfile(
             Uid: uid,
             DisplayName: displayName,
@@ -297,6 +358,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             ProxyId: proxyId,
             TwoFactorSecret: twoFactor,
             Status: status,
-            LastActiveAt: lastActive);
+            LastActiveAt: lastActive,
+            AvatarUrl: avatarUrl);
     }
 }

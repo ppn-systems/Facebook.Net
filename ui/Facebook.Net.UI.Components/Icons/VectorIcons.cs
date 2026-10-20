@@ -114,6 +114,12 @@ public static class VectorIcons
     /// <summary>Filter funnel icon asset file name for the Search &amp; Filter bar.</summary>
     public const string Filter = "filter.svg";
 
+    /// <summary>Pencil / Edit item icon asset file name.</summary>
+    public const string Edit = "edit.svg";
+
+    /// <summary>External link / Open in browser icon asset file name.</summary>
+    public const string ExternalLink = "external-link.svg";
+
     // ───────────────────────────── Create ─────────────────────────────
 
     /// <summary>

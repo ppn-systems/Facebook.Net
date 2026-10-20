@@ -79,7 +79,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.Accounts = new BulkObservableCollection<AccountProfile>();
         this.JoinedGroups = new BulkObservableCollection<GroupSummary>();
         this.TargetGroups = new BulkObservableCollection<SavedTargetGroup>();
+        this.GroupTags = new BulkObservableCollection<GroupTag>();
         this.SavedTemplates = new BulkObservableCollection<CampaignTemplate>();
+        this.PublishedPosts = new BulkObservableCollection<PublishedPostRecord>();
         this.ScrapedPosts = new BulkObservableCollection<PostSummary>();
 
         // Load persisted settings synchronously BEFORE the UI window constructs controls
@@ -116,12 +118,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.AutoJoinDiscoveredGroupsCommand = new AsyncRelayCommand(this.AutoJoinDiscoveredGroupsAsync);
         this.EnableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(true));
         this.DisableAllTargetGroupsCommand = new AsyncRelayCommand(() => this.SetAllTargetGroupsEnabledAsync(false));
+        this.CreateGroupTagCommand = new AsyncRelayCommand(this.CreateGroupTagAsync);
+        this.DeleteGroupTagCommand = new AsyncRelayCommand<GroupTag>(this.DeleteGroupTagAsync);
 
         // Publisher & Sales Leads commands
         this.PreviewSpintaxCommand = new RelayCommand(this.GenerateSpintaxPreview);
         this.SaveTemplateCommand = new AsyncRelayCommand(this.SaveTemplateAsync);
+        this.SaveBumpTemplateCommand = new AsyncRelayCommand(this.SaveBumpTemplateAsync);
         this.DeleteSelectedTemplateCommand = new AsyncRelayCommand(this.DeleteSelectedTemplateAsync);
         this.PublishCampaignCommand = new AsyncRelayCommand(this.PublishCampaignAsync);
+        this.SyncPersonalTimelinePostsCommand = new AsyncRelayCommand(this.SyncPersonalTimelinePostsAsync);
+        this.RepostSelectedPostToGroupsCommand = new AsyncRelayCommand(this.RepostSelectedPostToGroupsAsync);
+        this.DeletePublishedPostCommand = new AsyncRelayCommand(this.DeleteSelectedPublishedPostAsync);
+        this.OpenPublishedPostInBrowserCommand = new AsyncRelayCommand(this.OpenSelectedPublishedPostInBrowserAsync);
         this.BumpRecentPostsCommand = new AsyncRelayCommand(this.BumpRecentPostsAsync);
         this.ScanGroupLeadsCommand = new AsyncRelayCommand(this.ScanGroupLeadsAsync);
         this.QueryLocalScrapedPostsCommand = new AsyncRelayCommand(() => this.QueryLocalScrapedPostsAsync());
@@ -174,8 +183,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the collection of saved target groups selected for publishing and lead scanning.</summary>
     public BulkObservableCollection<SavedTargetGroup> TargetGroups { get; }
 
+    /// <summary>Gets the collection of user-defined color-coded group tags.</summary>
+    public BulkObservableCollection<GroupTag> GroupTags { get; }
+
     /// <summary>Gets the collection of saved Spintax post/comment templates.</summary>
     public BulkObservableCollection<CampaignTemplate> SavedTemplates { get; }
+
+    /// <summary>Gets the collection of posts published from the app or synced from the personal profile timeline.</summary>
+    public BulkObservableCollection<PublishedPostRecord> PublishedPosts { get; }
 
     /// <summary>Gets the collection of scraped group posts (selected visually as cards).</summary>
     public BulkObservableCollection<PostSummary> ScrapedPosts { get; }
@@ -258,17 +273,38 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the command to disable all target groups for campaigns.</summary>
     public IAsyncRelayCommand DisableAllTargetGroupsCommand { get; }
 
+    /// <summary>Gets the command to create a new color-coded group tag.</summary>
+    public IAsyncRelayCommand CreateGroupTagCommand { get; }
+
+    /// <summary>Gets the command to delete a color-coded group tag.</summary>
+    public IAsyncRelayCommand<GroupTag> DeleteGroupTagCommand { get; }
+
     /// <summary>Gets the command to generate a live randomized Spintax preview.</summary>
     public IRelayCommand PreviewSpintaxCommand { get; }
 
     /// <summary>Gets the command to save the current Spintax content as a reusable template.</summary>
     public IAsyncRelayCommand SaveTemplateCommand { get; }
 
+    /// <summary>Gets the command to save the current Bump comment Spintax content as a reusable comment template.</summary>
+    public IAsyncRelayCommand SaveBumpTemplateCommand { get; }
+
     /// <summary>Gets the command to delete the currently selected template from the library.</summary>
     public IAsyncRelayCommand DeleteSelectedTemplateCommand { get; }
 
     /// <summary>Gets the command to publish a post to selected target groups or personal timeline.</summary>
     public IAsyncRelayCommand PublishCampaignCommand { get; }
+
+    /// <summary>Gets the command to sync recent posts from the active account's personal timeline.</summary>
+    public IAsyncRelayCommand SyncPersonalTimelinePostsCommand { get; }
+
+    /// <summary>Gets the command to repost the selected personal/published post into selected target groups.</summary>
+    public IAsyncRelayCommand RepostSelectedPostToGroupsCommand { get; }
+
+    /// <summary>Gets the command to delete the selected published post record from local history.</summary>
+    public IAsyncRelayCommand DeletePublishedPostCommand { get; }
+
+    /// <summary>Gets the command to open the selected published post in the browser.</summary>
+    public IAsyncRelayCommand OpenPublishedPostInBrowserCommand { get; }
 
     /// <summary>Gets the command to bump (Up-Top) recently published group posts with a comment.</summary>
     public IAsyncRelayCommand BumpRecentPostsCommand { get; }

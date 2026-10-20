@@ -53,9 +53,9 @@ public sealed partial class ChromiumSession : IBrowserSession
         ArgumentNullException.ThrowIfNull(cdp);
 
         this.AccountUid = accountUid;
-        this._process = process;
-        this._cdp = cdp;
-        this._options = options;
+        _process = process;
+        _cdp = cdp;
+        _options = options;
     }
 
     /// <inheritdoc />
@@ -63,26 +63,26 @@ public sealed partial class ChromiumSession : IBrowserSession
 
     /// <inheritdoc />
     public bool IsBrowserProcessAttached =>
-        !this._isDisposed && !this._isDetached && !this._process.HasExited && this._cdp.IsConnected;
+        !_isDisposed && !_isDetached && !_process.HasExited && _cdp.IsConnected;
 
     /// <inheritdoc />
     public BrowserState State
     {
         get
         {
-            if (this._isDisposed)
+            if (_isDisposed)
             {
                 return BrowserState.Stopped;
             }
 
-            if (this._isDetached)
+            if (_isDetached)
             {
                 return this.CurrentMaterial is not null ? BrowserState.Running : BrowserState.Stopped;
             }
 
-            return this._process.HasExited
+            return _process.HasExited
                 ? BrowserState.Stopped
-                : (this._cdp.IsConnected ? BrowserState.Running : BrowserState.Faulted);
+                : (_cdp.IsConnected ? BrowserState.Running : BrowserState.Faulted);
         }
     }
 
@@ -96,17 +96,17 @@ public sealed partial class ChromiumSession : IBrowserSession
     /// </summary>
     public async Task ConfigureNetworkOptimizationAsync(bool blockStaticMedia, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         if (!blockStaticMedia || !this.IsBrowserProcessAttached)
         {
             return;
         }
 
-        using JsonDocument enableDoc = await this._cdp
+        using JsonDocument enableDoc = await _cdp
             .SendCommandAsync("Network.enable", null, ct)
             .ConfigureAwait(false);
 
-        using JsonDocument blockDoc = await this._cdp
+        using JsonDocument blockDoc = await _cdp
             .SendCommandAsync(
                 "Network.setBlockedURLs",
                 new CdpSetBlockedUrlsParams(BrowserLauncherHelpers.BlockedStaticAssetPatterns),
@@ -117,35 +117,35 @@ public sealed partial class ChromiumSession : IBrowserSession
     /// <inheritdoc />
     public async Task DetachBrowserProcessAsync(CancellationToken ct = default)
     {
-        if (this._isDisposed || this._isDetached)
+        if (_isDisposed || _isDetached)
         {
             return;
         }
 
-        this._isDetached = true;
-        await this._cdp.DisposeAsync().ConfigureAwait(false);
-        await this._process.TerminateAsync(ct).ConfigureAwait(false);
-        await this._process.DisposeAsync().ConfigureAwait(false);
+        _isDetached = true;
+        await _cdp.DisposeAsync().ConfigureAwait(false);
+        await _process.TerminateAsync(ct).ConfigureAwait(false);
+        await _process.DisposeAsync().ConfigureAwait(false);
 
-        if (this._options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(this._options.UserDataDir))
+        if (_options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(_options.UserDataDir))
         {
-            _ = BrowserLauncherHelpers.CleanProfileDiskCache(this._options.UserDataDir);
+            _ = BrowserLauncherHelpers.CleanProfileDiskCache(_options.UserDataDir);
         }
     }
 
     /// <inheritdoc />
     public async Task NavigateAsync(string url, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
 
-        if (this._isDetached && this.CurrentMaterial is not null)
+        if (_isDetached && this.CurrentMaterial is not null)
         {
             // Browser process was intentionally terminated after token extraction; direct HTTP calls do not require DOM navigation
             return;
         }
 
-        using JsonDocument navDoc = await this._cdp.SendCommandAsync(
+        using JsonDocument navDoc = await _cdp.SendCommandAsync(
             "Page.navigate",
             new CdpNavigateParams(url),
             ct).ConfigureAwait(false);
@@ -200,7 +200,7 @@ public sealed partial class ChromiumSession : IBrowserSession
             })
             """;
 
-        using JsonDocument evalDoc = await this._cdp.SendCommandAsync(
+        using JsonDocument evalDoc = await _cdp.SendCommandAsync(
             "Runtime.evaluate",
             new CdpEvaluateParams(waitReadyJs, AwaitPromise: true, ReturnByValue: true),
             ct).ConfigureAwait(false);
@@ -209,14 +209,14 @@ public sealed partial class ChromiumSession : IBrowserSession
     /// <inheritdoc />
     public async Task<SessionMaterial> ExtractMaterialAsync(CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        if (this._isDetached && this.CurrentMaterial is not null)
+        if (_isDetached && this.CurrentMaterial is not null)
         {
             return this.CurrentMaterial;
         }
 
-        using JsonDocument cookieDoc = await this._cdp.SendCommandAsync(
+        using JsonDocument cookieDoc = await _cdp.SendCommandAsync(
             "Network.getCookies",
             new CdpGetCookiesParams(s_baseOriginUrls),
             ct).ConfigureAwait(false);
@@ -262,10 +262,12 @@ public sealed partial class ChromiumSession : IBrowserSession
                     const hs = html.match(/"haste_session"\s*:\s*"([^"]+)"/);
 
                     let reqUid = '';
+                    let reqName = '';
                     if (userMod) {
                         try {
                             const candidate = userMod.USER_ID || userMod.ACCOUNT_ID || (typeof userMod.getID === 'function' ? userMod.getID() : '');
                             if (candidate && String(candidate) !== '0') reqUid = String(candidate);
+                            if (typeof userMod.NAME === 'string' && userMod.NAME.trim()) reqName = userMod.NAME.trim();
                         } catch {}
                     }
                     let cookieStr = '';
@@ -281,6 +283,26 @@ public sealed partial class ChromiumSession : IBrowserSession
                     const resolvedRev = reqRev || (rev ? rev[1] : '1020000000');
                     const resolvedHs = reqHs || (hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1');
 
+                    let resolvedName = reqName;
+                    if (!resolvedName) {
+                        const nm = html.match(/"CurrentUserInitialData"\s*,\s*\[\]\s*,\s*\{[^}]*"NAME"\s*:\s*"([^"]+)"/)
+                            || html.match(/"NAME"\s*:\s*"([^"]+)"/);
+                        if (nm && nm[1]) {
+                            try { resolvedName = JSON.parse('"' + nm[1] + '"'); } catch { resolvedName = nm[1]; }
+                        }
+                    }
+
+                    let resolvedAvatar = '';
+                    if (resolvedUid) {
+                        try {
+                            const avRe = new RegExp('"' + resolvedUid + '"[^}]{0,400}"profile_picture"\\s*:\\s*\\{\\s*"uri"\\s*:\\s*"([^"]+)"');
+                            const avMatch = html.match(avRe) || html.match(/"viewer"\s*:\s*\{[^}]{0,400}"profile_picture"\s*:\s*\{\s*"uri"\s*:\s*"([^"]+)"/);
+                            if (avMatch && avMatch[1]) {
+                                try { resolvedAvatar = JSON.parse('"' + avMatch[1] + '"'); } catch { resolvedAvatar = avMatch[1].replace(/\\\//g, '/'); }
+                            }
+                        } catch {}
+                    }
+
                     return JSON.stringify({
                         uid: resolvedUid,
                         fbDtsg: resolvedDtsg,
@@ -288,7 +310,9 @@ public sealed partial class ChromiumSession : IBrowserSession
                         clientRevision: resolvedRev,
                         hasteSession: resolvedHs,
                         webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
-                        userAgent: navigator.userAgent || ''
+                        userAgent: navigator.userAgent || '',
+                        displayName: resolvedName || null,
+                        avatarUrl: resolvedAvatar || null
                     });
                 } catch {
                     return JSON.stringify({
@@ -322,7 +346,7 @@ public sealed partial class ChromiumSession : IBrowserSession
             ClientRevision: "1020000000",
             HasteSession: "20745.HYP:comet_pkg.2.1...1",
             WebSessionId: "abc123:def456:ghi789",
-            UserAgent: this._options?.UserAgent ?? ProtocolConstants.Protocol.DefaultWindowsUserAgent);
+            UserAgent: _options?.UserAgent ?? ProtocolConstants.Protocol.DefaultWindowsUserAgent);
 
         string resolvedUid = !string.IsNullOrWhiteSpace(cookieUid) && cookieUid != "0"
             ? cookieUid
@@ -360,14 +384,26 @@ public sealed partial class ChromiumSession : IBrowserSession
             }
         }
 
-        if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(cookieHeader))
+        if ((string.IsNullOrWhiteSpace(resolvedFbDtsg) || string.IsNullOrWhiteSpace(snapshot.DisplayName)) &&
+            !string.IsNullOrWhiteSpace(cookieHeader))
         {
-            // If the browser tab was still on about:blank or before cookies were injected, fetch real tokens via direct HTTP GET
+            // If the browser tab was still on about:blank or missing profile metadata, fetch tokens & profile identity via direct HTTP GET
             DomMaterialSnapshot? httpSnapshot = await this.TryFetchMaterialFromHttpHtmlAsync(cookieHeader, snapshot.UserAgent, ct).ConfigureAwait(false);
-            if (httpSnapshot is not null && !string.IsNullOrWhiteSpace(httpSnapshot.FbDtsg))
+            if (httpSnapshot is not null)
             {
-                snapshot = httpSnapshot;
-                resolvedFbDtsg = httpSnapshot.FbDtsg;
+                if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(httpSnapshot.FbDtsg))
+                {
+                    snapshot = httpSnapshot;
+                    resolvedFbDtsg = httpSnapshot.FbDtsg;
+                }
+                else
+                {
+                    snapshot = snapshot with
+                    {
+                        DisplayName = !string.IsNullOrWhiteSpace(snapshot.DisplayName) ? snapshot.DisplayName : httpSnapshot.DisplayName,
+                        AvatarUrl = !string.IsNullOrWhiteSpace(snapshot.AvatarUrl) ? snapshot.AvatarUrl : httpSnapshot.AvatarUrl
+                    };
+                }
             }
         }
 
@@ -388,11 +424,13 @@ public sealed partial class ChromiumSession : IBrowserSession
             HasteSession: snapshot.HasteSession,
             WebSessionId: snapshot.WebSessionId,
             UserAgent: snapshot.UserAgent,
-            ExtractedAt: DateTimeOffset.UtcNow);
+            ExtractedAt: DateTimeOffset.UtcNow,
+            DisplayName: snapshot.DisplayName,
+            AvatarUrl: snapshot.AvatarUrl);
 
         this.CurrentMaterial = material;
 
-        if (this._options is { TerminateProcessAfterExtract: true })
+        if (_options is { TerminateProcessAfterExtract: true })
         {
             await this.DetachBrowserProcessAsync(ct).ConfigureAwait(false);
         }
@@ -403,7 +441,7 @@ public sealed partial class ChromiumSession : IBrowserSession
     /// <inheritdoc />
     public async Task<int> ImportCookiesAsync(string rawCookieHeader, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         if (string.IsNullOrWhiteSpace(rawCookieHeader))
         {
             return 0;
@@ -415,7 +453,7 @@ public sealed partial class ChromiumSession : IBrowserSession
             return 0;
         }
 
-        if (this._isDetached)
+        if (_isDetached)
         {
             if (this.CurrentMaterial is not null)
             {
@@ -425,7 +463,7 @@ public sealed partial class ChromiumSession : IBrowserSession
             return cookies.Count;
         }
 
-        using JsonDocument setDoc = await this._cdp.SendCommandAsync(
+        using JsonDocument setDoc = await _cdp.SendCommandAsync(
             "Network.setCookies",
             new CdpSetCookiesParams(cookies),
             ct).ConfigureAwait(false);
@@ -490,38 +528,38 @@ public sealed partial class ChromiumSession : IBrowserSession
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (this._isDisposed)
+        if (_isDisposed)
         {
             return;
         }
 
-        this._isDisposed = true;
+        _isDisposed = true;
         this.DisposeDetachedHttpClient();
-        await this._cdp.DisposeAsync().ConfigureAwait(false);
-        await this._process.DisposeAsync().ConfigureAwait(false);
+        await _cdp.DisposeAsync().ConfigureAwait(false);
+        await _process.DisposeAsync().ConfigureAwait(false);
 
-        if (this._options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(this._options.UserDataDir))
+        if (_options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(_options.UserDataDir))
         {
-            _ = BrowserLauncherHelpers.CleanProfileDiskCache(this._options.UserDataDir);
+            _ = BrowserLauncherHelpers.CleanProfileDiskCache(_options.UserDataDir);
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        if (this._isDisposed)
+        if (_isDisposed)
         {
             return;
         }
 
-        this._isDisposed = true;
+        _isDisposed = true;
         this.DisposeDetachedHttpClient();
-        this._cdp.Dispose();
-        this._process.Dispose();
+        _cdp.Dispose();
+        _process.Dispose();
 
-        if (this._options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(this._options.UserDataDir))
+        if (_options is { CleanDiskCache: true } && !string.IsNullOrWhiteSpace(_options.UserDataDir))
         {
-            _ = BrowserLauncherHelpers.CleanProfileDiskCache(this._options.UserDataDir);
+            _ = BrowserLauncherHelpers.CleanProfileDiskCache(_options.UserDataDir);
         }
     }
 

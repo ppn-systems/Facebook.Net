@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -28,7 +29,11 @@ public static class LeadPostTableRow
         PostSummary post,
         int intentScore,
         Func<string> formatIntentBadge,
-        bool isCommented)
+        bool isCommented,
+        Action? onQuickReply = null,
+        string? quickReplyLabel = null,
+        Action? onOpenInBrowser = null,
+        string? openBrowserLabel = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(i18n);
@@ -211,6 +216,40 @@ public static class LeadPostTableRow
             HorizontalAlignment = HorizontalAlignment.Left,
             Children = { statusPill, intentPill }
         };
+
+        if (onQuickReply is not null || onOpenInBrowser is not null)
+        {
+            StackPanel actionRow = new()
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+
+            if (onQuickReply is not null)
+            {
+                Button quickReplyBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.SalesComment,
+                    quickReplyLabel ?? "Tư vấn",
+                    onQuickReply,
+                    AuditSeverity.Success);
+                actionRow.Children.Add(quickReplyBtn);
+            }
+
+            if (onOpenInBrowser is not null)
+            {
+                Button openBrowserBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.ExternalLink,
+                    openBrowserLabel ?? "Mở bài",
+                    onOpenInBrowser);
+                actionRow.Children.Add(openBrowserBtn);
+            }
+
+            statusStack.Children.Add(actionRow);
+        }
 
         i18n.LanguageChanged += (_, _) =>
         {

@@ -2,9 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
-using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Globalization;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -123,126 +122,7 @@ public sealed partial class AuditLogsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
-        SearchFilterBar searchFilterBar = null!;
-
-        void UpdateAuditFilterActive()
-        {
-            searchFilterBar?.SetFilterActive(
-                drawerVm.SelectedCategory is not null ||
-                drawerVm.SelectedTimeRange != AuditTimeRange.AllTime ||
-                !string.IsNullOrEmpty(drawerVm.SelectedAccountUid));
-        }
-
-        // Filter Flyout Content inside [ ▽ Bộ lọc ] button: Category, TimeRange, Account
-        ComboBox categoryCombo = FormField.CreateComboBox<object>(
-            this._theme,
-            new object[]
-            {
-                "ALL",
-                AuditCategory.System,
-                AuditCategory.Account,
-                AuditCategory.Group,
-                AuditCategory.Post,
-                AuditCategory.SalesComment,
-                AuditCategory.Scrape
-            },
-            obj =>
-            {
-                AuditCategory? cat = obj is AuditCategory c ? c : null;
-                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
-                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditCategory(cat);
-                return tb;
-            },
-            selectedItem: "ALL");
-        categoryCombo.SelectionChanged += async (_, _) =>
-        {
-            drawerVm.SelectedCategory = categoryCombo.SelectedItem is AuditCategory cat ? cat : null;
-            UpdateAuditFilterActive();
-            await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
-        };
-
-        ComboBox timeRangeCombo = FormField.CreateComboBox<AuditTimeRange>(
-            this._theme,
-            new AuditTimeRange[]
-            {
-                AuditTimeRange.AllTime,
-                AuditTimeRange.LastHour,
-                AuditTimeRange.Today24Hours,
-                AuditTimeRange.Last7Days
-            },
-            r =>
-            {
-                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
-                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditTimeRange(r);
-                return tb;
-            },
-            selectedItem: AuditTimeRange.AllTime);
-        timeRangeCombo.SelectionChanged += async (_, _) =>
-        {
-            if (timeRangeCombo.SelectedItem is AuditTimeRange range)
-            {
-                drawerVm.SelectedTimeRange = range;
-                UpdateAuditFilterActive();
-                await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
-            }
-        };
-
-        ObservableCollection<object> accountFilterItems = new() { "ALL" };
-        for (int i = 0; i < this._vm.Accounts.Count; i++)
-        {
-            accountFilterItems.Add(this._vm.Accounts[i]);
-        }
-
-        ComboBox accountFilterCombo = FormField.CreateComboBox<object>(
-            this._theme,
-            accountFilterItems,
-            obj =>
-            {
-                if (obj is AccountProfile acc)
-                {
-                    return SectionHeader.CreateLabel(this._theme, acc.DisplayName, 12);
-                }
-
-                TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
-                this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Audit.FilterAccountAll"];
-                return allTb;
-            },
-            selectedItem: "ALL",
-            placeholderText: this._i18n["Audit.FilterAccountAll"]);
-
-        this._vm.Accounts.CollectionChanged += (_, _) =>
-        {
-            object? prev = accountFilterCombo.SelectedItem;
-            accountFilterItems.Clear();
-            accountFilterItems.Add("ALL");
-            object? restored = "ALL";
-            for (int i = 0; i < this._vm.Accounts.Count; i++)
-            {
-                AccountProfile item = this._vm.Accounts[i];
-                accountFilterItems.Add(item);
-                if (prev is AccountProfile prevAcc && string.Equals(prevAcc.Uid, item.Uid, StringComparison.Ordinal))
-                {
-                    restored = item;
-                }
-            }
-
-            accountFilterCombo.SelectedItem = restored;
-        };
-
-        accountFilterCombo.SelectionChanged += async (_, _) =>
-        {
-            drawerVm.SelectedAccountUid = accountFilterCombo.SelectedItem is AccountProfile acc ? acc.Uid : null;
-            UpdateAuditFilterActive();
-            await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
-        };
-
-        StackPanel filterFlyoutStack = new() { Spacing = 8, Width = 280 };
-        filterFlyoutStack.Children.Add(categoryCombo);
-        filterFlyoutStack.Children.Add(timeRangeCombo);
-        filterFlyoutStack.Children.Add(accountFilterCombo);
-        Border filterFlyoutCard = SurfaceCard.Create(this._theme, filterFlyoutStack, new Thickness(12));
-
-        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]) + Refresh + Clear
+        // Row 1: Unified 2-Level Search & Filter Bar ([ ▽ Bộ lọc (N) | [Chip ×] Tìm hoặc lọc | 🔍 ]) + Refresh + Clear
         Grid filterBarRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -250,13 +130,86 @@ public sealed partial class AuditLogsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        searchFilterBar = new SearchFilterBar(
+        SearchFilterBar searchFilterBar = new(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Audit.SearchPlaceholder"],
             drawerVm.SearchKeyword,
-            filterFlyoutCard,
-            drawerVm.RefreshFilterCommand);
+            searchCommand: drawerVm.RefreshFilterCommand);
+
+        FilterCategoryDefinition catCategory = new(
+            "category",
+            this._i18n["Audit.FilterCatCategory"],
+            VectorIcons.Filter,
+            () =>
+            [
+                new FilterOptionItem(nameof(AuditCategory.Personal), this._i18n.FormatAuditCategory(AuditCategory.Personal)),
+                new FilterOptionItem(nameof(AuditCategory.System), this._i18n.FormatAuditCategory(AuditCategory.System)),
+                new FilterOptionItem(nameof(AuditCategory.Account), this._i18n.FormatAuditCategory(AuditCategory.Account)),
+                new FilterOptionItem(nameof(AuditCategory.Group), this._i18n.FormatAuditCategory(AuditCategory.Group)),
+                new FilterOptionItem(nameof(AuditCategory.Post), this._i18n.FormatAuditCategory(AuditCategory.Post)),
+                new FilterOptionItem(nameof(AuditCategory.SalesComment), this._i18n.FormatAuditCategory(AuditCategory.SalesComment)),
+                new FilterOptionItem(nameof(AuditCategory.Scrape), this._i18n.FormatAuditCategory(AuditCategory.Scrape))
+            ],
+            selectedIds =>
+            {
+                drawerVm.SelectedCategory = selectedIds.Count > 0 && Enum.TryParse<AuditCategory>(selectedIds[0], out AuditCategory parsedCat)
+                    ? parsedCat
+                    : null;
+                _ = drawerVm.RefreshLogsAsync();
+            },
+            allowMultiple: false,
+            initialSelectedIds: drawerVm.SelectedCategory is { } initCat ? [initCat.ToString()] : null);
+
+        FilterCategoryDefinition timeCategory = new(
+            "time",
+            this._i18n["Audit.FilterCatTimeRange"],
+            VectorIcons.Sync,
+            () =>
+            [
+                new FilterOptionItem(nameof(AuditTimeRange.LastHour), this._i18n["Audit.Time.LastHour"]),
+                new FilterOptionItem(nameof(AuditTimeRange.Today24Hours), this._i18n["Audit.Time.Today24h"]),
+                new FilterOptionItem(nameof(AuditTimeRange.Last7Days), this._i18n["Audit.Time.Last7Days"])
+            ],
+            selectedIds =>
+            {
+                drawerVm.SelectedTimeRange = selectedIds.Count > 0 && Enum.TryParse<AuditTimeRange>(selectedIds[0], out AuditTimeRange parsedTime)
+                    ? parsedTime
+                    : AuditTimeRange.AllTime;
+                _ = drawerVm.RefreshLogsAsync();
+            },
+            allowMultiple: false,
+            initialSelectedIds: drawerVm.SelectedTimeRange != AuditTimeRange.AllTime ? [drawerVm.SelectedTimeRange.ToString()] : null);
+
+        FilterCategoryDefinition accountCategory = new(
+            "account",
+            this._i18n["Audit.FilterCatAccount"],
+            VectorIcons.Accounts,
+            () =>
+            {
+                List<FilterOptionItem> items = new(this._vm.Accounts.Count);
+                for (int i = 0; i < this._vm.Accounts.Count; i++)
+                {
+                    AccountProfile acc = this._vm.Accounts[i];
+                    items.Add(new FilterOptionItem(acc.Uid, acc.DisplayName));
+                }
+
+                return items;
+            },
+            selectedIds =>
+            {
+                drawerVm.SelectedAccountUid = selectedIds.Count > 0 ? selectedIds[0] : null;
+                _ = drawerVm.RefreshLogsAsync();
+            },
+            allowMultiple: false,
+            initialSelectedIds: !string.IsNullOrEmpty(drawerVm.SelectedAccountUid) ? [drawerVm.SelectedAccountUid] : null);
+
+        searchFilterBar.SetFilterCategories(
+            [catCategory, timeCategory, accountCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+
+        this._vm.Accounts.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
 
         searchFilterBar.SearchTextBox.TextChanged += async (_, _) =>
         {
@@ -264,17 +217,43 @@ public sealed partial class AuditLogsPage : UserControl
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
-        Button refreshBtn = AppButton.CreateSecondary(
+        Button refreshBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Sync,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand,
-            VectorIcons.Sync);
+            size: 36,
+            iconSize: 16);
 
-        Button clearBtn = AppButton.CreateDanger(
+        Button clearBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Trash,
             this._i18n["Audit.BtnClear"],
-            drawerVm.ClearLogsCommand,
-            VectorIcons.Trash);
+            command: null,
+            size: 36,
+            iconSize: 16,
+            tone: AuditSeverity.Error);
+        clearBtn.Click += (_, _) =>
+        {
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Confirm.ClearAuditLogsTitle"],
+                this._i18n["Confirm.ClearAuditLogsMessage"],
+                this._i18n["Confirm.BtnConfirmDelete"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    drawerVm.SelectedCategory = null;
+                    drawerVm.SelectedTimeRange = AuditTimeRange.AllTime;
+                    drawerVm.SelectedAccountUid = null;
+                    searchFilterBar.ClearAllFilters(invokeCallbacks: false);
+                    if (drawerVm.ClearLogsCommand.CanExecute(null))
+                    {
+                        await drawerVm.ClearLogsCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
+        };
 
         Grid.SetColumn(searchFilterBar, 0);
         Grid.SetColumn(refreshBtn, 1);
@@ -307,8 +286,14 @@ public sealed partial class AuditLogsPage : UserControl
         {
             titleTb.Text = this._i18n["Audit.TaskbarTitle"];
             infoTb.Text = this._i18n["Audit.SearchPlaceholder"];
-            accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
-            searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Audit.SearchPlaceholder"]);
+            catCategory.Title = this._i18n["Audit.FilterCatCategory"];
+            timeCategory.Title = this._i18n["Audit.FilterCatTimeRange"];
+            accountCategory.Title = this._i18n["Audit.FilterCatAccount"];
+            searchFilterBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Audit.SearchPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             auditTable.UpdateHeadersAndEmptyText(
                 [
                     this._i18n["Table.ColTime"],

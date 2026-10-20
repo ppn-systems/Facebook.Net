@@ -110,7 +110,7 @@ public sealed partial class CometClient
         GraphQlRequest configReq = new(
             FriendlyName: ProtocolConstants.Queries.MediaUploadConfigName,
             DocId: ProtocolConstants.Queries.MediaUploadConfigDocId,
-            VariablesJson: "{\"source_type\":\"composer\"}");
+            VariablesJson: /*lang=json,strict*/ "{\"source_type\":\"composer\"}");
 
         GraphQlResult configRes = await this.ExecuteGraphQlAsync(session, configReq, ct).ConfigureAwait(false);
         string serviceName = ResponseParser.FindFirstStringProperty(configRes, "service_name")

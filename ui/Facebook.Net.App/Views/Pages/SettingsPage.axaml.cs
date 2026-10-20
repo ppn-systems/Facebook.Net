@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
@@ -19,11 +20,12 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Independent System Settings, Activity Logs &amp; Data Analytics Page (<c>SettingsPage.axaml</c>).
+/// Independent System Settings, Browser Profiles Manager, Activity Logs &amp; Storage Usage Monitor Page (<c>SettingsPage.axaml</c>).
 /// Uses a top <see cref="SubTabBar"/> to separate:
-/// 1) System, Browser Engine &amp; Anti-Checkpoint Delay Settings,
-/// 2) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>),
-/// 3) System-Wide Data Analytics Hub with multi-colored <see cref="SvgDonutChart"/> widgets.
+/// 1) System, Installed Browser Scanner &amp; Anti-Checkpoint Delay Settings,
+/// 2) Dedicated Browser Profile Manager (<c>SettingsPage.ProfilesTab.cs</c>),
+/// 3) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>),
+/// 4) Application Disk &amp; Storage Usage Monitor with multi-colored <see cref="SvgDonutChart"/> widgets.
 /// </summary>
 public sealed partial class SettingsPage : UserControl
 {
@@ -63,15 +65,17 @@ public sealed partial class SettingsPage : UserControl
     private Control BuildLayout()
     {
         Control tab1View = this.BuildGeneralSettingsTab(out Action refreshTab1);
-        AuditLogsPage tab2View = new(this._vm);
-        Control tab3View = this.BuildDataAnalyticsTab(out Action refreshTab3);
+        Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
+        AuditLogsPage tab3View = new(this._vm);
+        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
-                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab2View),
-                new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.BrandMark, tab3View)
+                new SubTabItem(this._i18n["Settings.TabProfiles"], VectorIcons.Browser, tab2View),
+                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
+                new SubTabItem(this._i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -79,11 +83,13 @@ public sealed partial class SettingsPage : UserControl
             subTabBar.UpdateTabTitles(
             [
                 this._i18n["Settings.TabGeneral"],
+                this._i18n["Settings.TabProfiles"],
                 this._i18n["Settings.TabAuditLogs"],
-                this._i18n["Settings.TabAnalytics"]
+                this._i18n["Settings.TabStorage"]
             ]);
             refreshTab1();
-            refreshTab3();
+            refreshTab2();
+            refreshTab4();
         };
 
         return subTabBar;
@@ -97,7 +103,7 @@ public sealed partial class SettingsPage : UserControl
             ColumnSpacing = 14
         };
 
-        // Left Card: Appearance & Browser Engine Configuration
+        // Left Card: Appearance & Installed Browser Scanner
         StackPanel leftStack = new()
         {
             Spacing = 14,
@@ -121,7 +127,7 @@ public sealed partial class SettingsPage : UserControl
 
         ComboBox themeCombo = FormField.CreateComboBox<AppThemeMode>(
             this._theme,
-            new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
+            new AppThemeMode[] { AppThemeMode.System, AppThemeMode.Dark, AppThemeMode.Light },
             m =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
@@ -168,16 +174,11 @@ public sealed partial class SettingsPage : UserControl
         appearanceRow.Children.Add(langCol);
         leftStack.Children.Add(appearanceRow);
 
-        // 2. Browser Engine Selector
+        // 2. Installed Browser Auto-Scanner + Selector
+        List<PreferredBrowserKind> installedBrowsers = this._vm.Context.Settings.GetInstalledBrowsers();
         ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
             this._theme,
-            new PreferredBrowserKind[]
-            {
-                PreferredBrowserKind.AutoDetect,
-                PreferredBrowserKind.Edge,
-                PreferredBrowserKind.Chrome,
-                PreferredBrowserKind.Brave
-            },
+            installedBrowsers,
             k =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
@@ -185,18 +186,68 @@ public sealed partial class SettingsPage : UserControl
                 return tb;
             },
             selectedItem: this._vm.SelectedBrowserKind);
+
+        Button rescanBrowsersBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Settings.BtnRescanBrowsers"],
+            null,
+            VectorIcons.Sync);
+
+        Grid browserSelectorRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8
+        };
+        Grid.SetColumn(browserCombo, 0);
+        Grid.SetColumn(rescanBrowsersBtn, 1);
+        browserSelectorRow.Children.Add(browserCombo);
+        browserSelectorRow.Children.Add(rescanBrowsersBtn);
+
+        TextBlock detectedBrowserInfoTb = SectionHeader.CreateLabel(
+            this._theme,
+            string.Empty,
+            11.5,
+            FontWeight.Normal,
+            isSecondary: true);
+        detectedBrowserInfoTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        detectedBrowserInfoTb.MaxLines = 1;
+
+        void UpdateDetectedBrowserStatus()
+        {
+            string? resolvedExe = this._vm.Context.BrowserAdapter.LocateExecutablePath();
+            detectedBrowserInfoTb.Text = !string.IsNullOrWhiteSpace(resolvedExe)
+                ? $"{this._i18n["Settings.BrowserDetectedPrefix"]}: {resolvedExe}"
+                : this._i18n["Settings.BrowserNotDetectedWarning"];
+        }
+
+        void RefreshInstalledBrowsersList()
+        {
+            List<PreferredBrowserKind> currentInstalled = this._vm.Context.Settings.GetInstalledBrowsers();
+            browserCombo.ItemsSource = currentInstalled;
+            browserCombo.SelectedItem = this._vm.SelectedBrowserKind;
+            UpdateDetectedBrowserStatus();
+        }
+
         browserCombo.SelectionChanged += (_, _) =>
         {
             if (browserCombo.SelectedItem is PreferredBrowserKind kind && this._vm.SelectedBrowserKind != kind)
             {
                 this._vm.SelectedBrowserKind = kind;
+                UpdateDetectedBrowserStatus();
             }
         };
+
+        rescanBrowsersBtn.Click += (_, _) => RefreshInstalledBrowsersList();
+        UpdateDetectedBrowserStatus();
+
+        StackPanel browserStack = new() { Spacing = 5 };
+        browserStack.Children.Add(browserSelectorRow);
+        browserStack.Children.Add(detectedBrowserInfoTb);
 
         StackPanel browserField = FormField.CreateLabeled(
             this._theme,
             this._i18n["Settings.BrowserEngineLabel"],
-            browserCombo,
+            browserStack,
             out TextBlock browserLabel);
 
         Grid customExeRow = FilePickerInput.Create(
@@ -212,6 +263,7 @@ public sealed partial class SettingsPage : UserControl
             if (!string.Equals(this._vm.CustomBrowserExecutablePath, next, StringComparison.Ordinal))
             {
                 this._vm.CustomBrowserExecutablePath = next;
+                UpdateDetectedBrowserStatus();
             }
         };
         browseExeBtn.Click += async (_, _) =>
@@ -221,6 +273,7 @@ public sealed partial class SettingsPage : UserControl
             {
                 customExeBox.Text = path;
                 this._vm.CustomBrowserExecutablePath = path;
+                UpdateDetectedBrowserStatus();
             }
         };
 
@@ -361,12 +414,13 @@ public sealed partial class SettingsPage : UserControl
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedBrowserKind), StringComparison.Ordinal))
             {
-                browserCombo.SelectedItem = this._vm.SelectedBrowserKind;
+                RefreshInstalledBrowsersList();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.CustomBrowserExecutablePath), StringComparison.Ordinal) &&
                      !string.Equals(customExeBox.Text, this._vm.CustomBrowserExecutablePath, StringComparison.Ordinal))
             {
                 customExeBox.Text = this._vm.CustomBrowserExecutablePath;
+                UpdateDetectedBrowserStatus();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.RunBrowserHeadless), StringComparison.Ordinal))
             {
@@ -399,6 +453,7 @@ public sealed partial class SettingsPage : UserControl
             themeLabel.Text = this._i18n["Settings.ThemeLabel"];
             langLabel.Text = this._i18n["Settings.LanguageLabel"];
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
+            AppButton.SetText(rescanBrowsersBtn, this._i18n["Settings.BtnRescanBrowsers"]);
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
             AppButton.SetText(browseExeBtn, this._i18n["Common.BrowseFile"]);
             headlessLabelTb.Text = this._i18n["Settings.HeadlessLabel"];
@@ -409,6 +464,7 @@ public sealed partial class SettingsPage : UserControl
             scrapeMinDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             scrapeMaxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
+            UpdateDetectedBrowserStatus();
         };
 
         return splitGrid;
@@ -429,5 +485,22 @@ public sealed partial class SettingsPage : UserControl
         }).ConfigureAwait(true);
 
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
+    private async Task<string?> PickSingleFolderAsync(string title)
+    {
+        IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<IStorageFolder> folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        }).ConfigureAwait(true);
+
+        return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
     }
 }

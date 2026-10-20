@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Theming;
 
 namespace Facebook.Net.UI.Components.Controls;
@@ -218,15 +219,16 @@ public static class AppButton
     }
 
     /// <summary>
-    /// Creates a compact square SVG icon button.
+    /// Creates a compact squircle SVG icon button (soft rounded-square <c>CornerRadius(9)</c>).
     /// </summary>
     public static Button CreateIcon(
         ThemeService theme,
         string iconSvg,
         string tooltipText,
         ICommand? command = null,
-        double size = 32,
-        double iconSize = 16)
+        double size = 30,
+        double iconSize = 15,
+        AuditSeverity? tone = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
@@ -235,9 +237,11 @@ public static class AppButton
         {
             Width = size,
             Height = size,
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(9),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             Command = command,
@@ -250,13 +254,41 @@ public static class AppButton
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            btn.Background = p.SecondarySurface;
-            btn.BorderBrush = p.SubtleBorder;
-            VectorIcons.SetForeground(icon, p.TextSecondary);
+            (IBrush bg, IBrush border, IBrush fg) = tone switch
+            {
+                AuditSeverity.Error => (p.DangerFill, p.DangerBorder, p.DangerText),
+                AuditSeverity.Warning => (p.WarningFill, p.WarningBorder, p.WarningText),
+                AuditSeverity.Success => (p.BrandSubtleFill, p.BrandPrimary, p.BrandPrimary),
+                AuditSeverity.Info => (p.SecondarySurface, p.InteractiveBorder, p.TextPrimary),
+                null => (p.SecondarySurface, p.InteractiveBorder, p.TextPrimary),
+                _ => (p.SecondarySurface, p.InteractiveBorder, p.TextPrimary)
+            };
+
+            btn.Background = bg;
+            btn.BorderBrush = border;
+            VectorIcons.SetForeground(icon, fg);
         }
 
         ApplyColors();
         ThemeLifecycle.Bind(btn, theme, ApplyColors);
+        return btn;
+    }
+
+    /// <summary>
+    /// Creates a compact 28x28 squircle SVG icon button for table/list row actions with an inline click callback.
+    /// </summary>
+    public static Button CreateRowIcon(
+        ThemeService theme,
+        string iconSvg,
+        string tooltipText,
+        Action onClick,
+        AuditSeverity? tone = null,
+        double size = 28,
+        double iconSize = 14)
+    {
+        ArgumentNullException.ThrowIfNull(onClick);
+        Button btn = CreateIcon(theme, iconSvg, tooltipText, command: null, size: size, iconSize: iconSize, tone: tone);
+        btn.Click += (_, _) => onClick();
         return btn;
     }
 
@@ -342,15 +374,15 @@ public static class AppButton
             Content = flyoutCard
         };
 
-        Control infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
+        Control infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 16, margin: new Thickness(0));
 
         Button btn = new()
         {
-            Width = 26,
-            Height = 26,
-            CornerRadius = new CornerRadius(13),
+            Width = 24,
+            Height = 24,
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(0),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -363,8 +395,7 @@ public static class AppButton
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            btn.Background = p.SecondarySurface;
-            btn.BorderBrush = p.SubtleBorder;
+            btn.Background = p.BrandSubtleFill;
             VectorIcons.SetForeground(infoIcon, p.BrandPrimary);
             flyoutCard.Background = p.ElevatedSurface;
             flyoutCard.BorderBrush = p.InteractiveBorder;

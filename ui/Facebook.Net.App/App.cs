@@ -76,7 +76,8 @@ public sealed class App : Application
                 : new WindowsBrowserAdapter();
 
             UiServiceContext context = new(platformAdapter);
-            this.RequestedThemeVariant = context.Theme.CurrentMode == AppThemeMode.Light
+            context.Theme.AttachPlatformSettings(this.PlatformSettings);
+            this.RequestedThemeVariant = context.Theme.EffectiveMode == AppThemeMode.Light
                 ? ThemeVariant.Light
                 : ThemeVariant.Dark;
             ShellViewModel shellViewModel = new(context);

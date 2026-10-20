@@ -250,6 +250,83 @@ public sealed partial class CometClient
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<PostSummary>> GetTimelinePostsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+
+        List<PostSummary> combined = new(Math.Max(count, 16));
+        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        string? nextCursor = cursor;
+        bool hasNext = false;
+
+        try
+        {
+            string profileUrl = ResolveFullUrl($"/profile.php?id={Uri.EscapeDataString(material.Uid)}");
+            string rawScripts = await session.ExecuteInPagePostAsync(
+                profileUrl,
+                new Dictionary<string, string>(0),
+                "__SSR_RELAY_JSON__",
+                ct).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(rawScripts))
+            {
+                GraphQlResult ssrRes = ResponseParser.ParseGraphQlResult(session.AccountUid, rawScripts);
+                PagedResult<PostSummary> parsed = ResponseParser.ParsePosts(ssrRes);
+                for (int i = 0; i < parsed.Items.Count && combined.Count < count; i++)
+                {
+                    PostSummary p = parsed.Items[i];
+                    if ((string.IsNullOrWhiteSpace(p.AuthorUid) || string.Equals(p.AuthorUid, material.Uid, StringComparison.Ordinal)) &&
+                        seenIds.Add(p.PostId))
+                    {
+                        combined.Add(p with
+                        {
+                            AuthorUid = material.Uid,
+                            AuthorName = !string.IsNullOrWhiteSpace(p.AuthorName) ? p.AuthorName : material.DisplayName,
+                            AuthorAvatarUrl = !string.IsNullOrWhiteSpace(p.AuthorAvatarUrl) ? p.AuthorAvatarUrl : material.AvatarUrl
+                        });
+                    }
+                }
+
+                nextCursor = parsed.EndCursor;
+                hasNext = parsed.HasNextPage;
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Fallback below
+        }
+
+        if (combined.Count < count)
+        {
+            try
+            {
+                PagedResult<PostSummary> newsFeed = await this.GetNewsFeedAsync(session, Math.Max(count, 10), cursor, ct).ConfigureAwait(false);
+                for (int i = 0; i < newsFeed.Items.Count && combined.Count < count; i++)
+                {
+                    PostSummary p = newsFeed.Items[i];
+                    if (string.Equals(p.AuthorUid, material.Uid, StringComparison.Ordinal) && seenIds.Add(p.PostId))
+                    {
+                        combined.Add(p with
+                        {
+                            AuthorName = !string.IsNullOrWhiteSpace(p.AuthorName) ? p.AuthorName : material.DisplayName,
+                            AuthorAvatarUrl = !string.IsNullOrWhiteSpace(p.AuthorAvatarUrl) ? p.AuthorAvatarUrl : material.AvatarUrl
+                        });
+                    }
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // Ignore
+            }
+        }
+
+        return new PagedResult<PostSummary>(combined, nextCursor, hasNext);
+    }
+
+    /// <inheritdoc />
     public async Task<PostSummary?> GetSinglePostAsync(IBrowserSession session, string postId, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(session);

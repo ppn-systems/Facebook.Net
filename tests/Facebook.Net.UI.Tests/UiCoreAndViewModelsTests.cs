@@ -137,6 +137,10 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal(AppThemeMode.Dark, theme.CurrentMode);
         theme.ToggleTheme();
         Assert.Equal(AppThemeMode.Light, theme.CurrentMode);
+        theme.SetTheme(AppThemeMode.System);
+        Assert.Equal(AppThemeMode.System, theme.CurrentMode);
+        Assert.True(theme.EffectiveMode == AppThemeMode.Dark || theme.EffectiveMode == AppThemeMode.Light);
+        Assert.Equal("System Default", i18n.FormatThemeMode(AppThemeMode.System));
 
         // Verify zero-jargon localized enum formatters
         Assert.Equal("Ready to connect", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
@@ -303,10 +307,12 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
             Facebook.Net.UI.Components.Icons.VectorIcons.Warning,
             Facebook.Net.UI.Components.Icons.VectorIcons.ErrorCircle,
             Facebook.Net.UI.Components.Icons.VectorIcons.ThumbUp,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Filter
+            Facebook.Net.UI.Components.Icons.VectorIcons.Filter,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Edit,
+            Facebook.Net.UI.Components.Icons.VectorIcons.ExternalLink
         ];
 
-        Assert.Equal(28, allIcons.Length);
+        Assert.Equal(30, allIcons.Length);
         System.Reflection.Assembly compAsm = typeof(Facebook.Net.UI.Components.Icons.VectorIcons).Assembly;
         for (int i = 0; i < allIcons.Length; i++)
         {

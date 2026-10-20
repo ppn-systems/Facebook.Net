@@ -64,6 +64,11 @@ public interface ICometClient
     Task<PagedResult<PostSummary>> GetNewsFeedAsync(IBrowserSession session, int count = 5, string? cursor = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Synchronizes posts published on the active user's personal profile timeline.
+    /// </summary>
+    Task<PagedResult<PostSummary>> GetTimelinePostsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Retrieves the full text content of a single post (<c>CometSinglePostDialogContentQuery</c>).
     /// </summary>
     Task<PostSummary?> GetSinglePostAsync(IBrowserSession session, string postId, CancellationToken ct = default);

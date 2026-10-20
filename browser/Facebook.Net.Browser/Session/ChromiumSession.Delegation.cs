@@ -32,12 +32,12 @@ public sealed partial class ChromiumSession
         string formUrlEncodedBody,
         CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(formUrlEncodedBody);
 
-        if (this._isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached)
         {
             return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
         }
@@ -50,7 +50,7 @@ public sealed partial class ChromiumSession
                     const lines = [];
                     for (const s of scripts) {
                         const t = s.textContent;
-                        if (t && (t.includes('"post_id"') || t.includes('"Story"') || t.includes('"comet_sections"') || t.includes('"page_info"'))) {
+                        if (t && (t.includes('"post_id"') || t.includes('"Story"') || t.includes('"comet_sections"') || t.includes('"page_info"') || t.includes('"Group"') || t.includes('"viewer_join_state"') || t.includes('"timeline_list_feed_units"'))) {
                             lines.push(t.trim());
                         }
                     }
@@ -110,7 +110,7 @@ public sealed partial class ChromiumSession
         IReadOnlyDictionary<string, string>? additionalFields = null,
         CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadUrl);
         ArgumentException.ThrowIfNullOrWhiteSpace(localFilePath);
 
@@ -119,7 +119,7 @@ public sealed partial class ChromiumSession
             throw new FileNotFoundException("Local file for DOM bridge upload was not found.", localFilePath);
         }
 
-        if (this._isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached)
         {
             return await this.ExecuteDetachedMultipartUploadAsync(uploadUrl, localFilePath, fileFieldName, additionalFields, ct).ConfigureAwait(false);
         }
@@ -137,7 +137,7 @@ public sealed partial class ChromiumSession
             })()
             """;
 
-        _ = await this._cdp.SendCommandAsync(
+        _ = await _cdp.SendCommandAsync(
             "Runtime.evaluate",
             new CdpEvaluateParams(createInputJs, AwaitPromise: false, ReturnByValue: true),
             ct).ConfigureAwait(false);
@@ -148,7 +148,7 @@ public sealed partial class ChromiumSession
             int inputNodeId = await this.QuerySelectorNodeIdAsync(rootNodeId, string.Concat("#", bridgeId), ct).ConfigureAwait(false);
 
             List<string> fileList = new(1) { Path.GetFullPath(localFilePath) };
-            using JsonDocument setFilesDoc = await this._cdp.SendCommandAsync(
+            using JsonDocument setFilesDoc = await _cdp.SendCommandAsync(
                 "DOM.setFileInputFiles",
                 new CdpSetFileInputFilesParams(fileList, inputNodeId),
                 ct).ConfigureAwait(false);
@@ -190,7 +190,7 @@ public sealed partial class ChromiumSession
             string cleanupJs = $"(() => {{ const el = document.getElementById('{bridgeId}'); if (el) el.remove(); return true; }})()";
             try
             {
-                using JsonDocument cleanupDoc = await this._cdp.SendCommandAsync(
+                using JsonDocument cleanupDoc = await _cdp.SendCommandAsync(
                     "Runtime.evaluate",
                     new CdpEvaluateParams(cleanupJs, AwaitPromise: false, ReturnByValue: true),
                     CancellationToken.None).ConfigureAwait(false);
@@ -204,7 +204,7 @@ public sealed partial class ChromiumSession
 
     private async Task<string> EvaluateStringAsync(string expression, bool awaitPromise, CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "Runtime.evaluate",
             new CdpEvaluateParams(expression, awaitPromise, ReturnByValue: true),
             ct).ConfigureAwait(false);
@@ -240,7 +240,7 @@ public sealed partial class ChromiumSession
 
     private async Task<int> GetDocumentRootNodeIdAsync(CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "DOM.getDocument",
             new CdpGetDocumentParams(Depth: 1),
             ct).ConfigureAwait(false);
@@ -258,7 +258,7 @@ public sealed partial class ChromiumSession
 
     private async Task<int> QuerySelectorNodeIdAsync(int rootNodeId, string selector, CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "DOM.querySelector",
             new CdpQuerySelectorParams(rootNodeId, selector),
             ct).ConfigureAwait(false);
@@ -276,9 +276,9 @@ public sealed partial class ChromiumSession
 
     private HttpClient GetOrCreateDetachedHttpClient()
     {
-        if (this._detachedHttpClient is not null)
+        if (_detachedHttpClient is not null)
         {
-            return this._detachedHttpClient;
+            return _detachedHttpClient;
         }
 
         SocketsHttpHandler handler = new()
@@ -288,7 +288,7 @@ public sealed partial class ChromiumSession
             PooledConnectionLifetime = TimeSpan.FromMinutes(10)
         };
 
-        if (this._options?.Proxy is { } proxy)
+        if (_options?.Proxy is { } proxy)
         {
             string scheme = proxy.Protocol == ProxyProtocol.Socks5 ? "socks5" : "http";
             Uri proxyUri = new(string.Create(CultureInfo.InvariantCulture, $"{scheme}://{proxy.Host}:{proxy.Port}"));
@@ -302,17 +302,17 @@ public sealed partial class ChromiumSession
             handler.UseProxy = true;
         }
 
-        this._detachedHttpClient = new HttpClient(handler, disposeHandler: true)
+        _detachedHttpClient = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = TimeSpan.FromSeconds(30)
         };
-        return this._detachedHttpClient;
+        return _detachedHttpClient;
     }
 
     private void DisposeDetachedHttpClient()
     {
-        this._detachedHttpClient?.Dispose();
-        this._detachedHttpClient = null;
+        _detachedHttpClient?.Dispose();
+        _detachedHttpClient = null;
     }
 
     private async Task<string> ExecuteDetachedHttpPostAsync(
@@ -463,21 +463,75 @@ public sealed partial class ChromiumSession
             Match revMatch = ClientRevisionRegex().Match(html);
             Match hsMatch = HasteSessionRegex().Match(html);
             Match uidMatch = UserIdRegex().Match(html);
+            string resolvedUid = uidMatch.Success ? uidMatch.Groups[1].Value : this.AccountUid;
+
+            Match nameMatch = CurrentUserNameRegex().Match(html);
+            if (!nameMatch.Success)
+            {
+                nameMatch = FallbackNamePropertyRegex().Match(html);
+            }
+
+            string? displayName = null;
+            if (nameMatch.Success && !string.IsNullOrWhiteSpace(nameMatch.Groups[1].Value))
+            {
+                displayName = UnescapeJsonString(nameMatch.Groups[1].Value);
+            }
+
+            string? avatarUrl = null;
+            if (!string.IsNullOrWhiteSpace(resolvedUid))
+            {
+                Match picMatch = Regex.Match(
+                    html,
+                    @"""" + Regex.Escape(resolvedUid) + @"""[^}]{0,400}""profile_picture""\s*:\s*\{\s*""uri""\s*:\s*""([^""]+)""",
+                    RegexOptions.CultureInvariant);
+                if (!picMatch.Success)
+                {
+                    picMatch = ViewerProfilePictureRegex().Match(html);
+                }
+
+                if (picMatch.Success && !string.IsNullOrWhiteSpace(picMatch.Groups[1].Value))
+                {
+                    avatarUrl = UnescapeJsonString(picMatch.Groups[1].Value);
+                }
+            }
 
             return new DomMaterialSnapshot(
-                Uid: uidMatch.Success ? uidMatch.Groups[1].Value : this.AccountUid,
+                Uid: resolvedUid,
                 FbDtsg: dtsgMatch.Groups[1].Value,
                 Lsd: lsdMatch.Success ? lsdMatch.Groups[1].Value : string.Empty,
                 ClientRevision: revMatch.Success ? revMatch.Groups[1].Value : "1020000000",
                 HasteSession: hsMatch.Success ? hsMatch.Groups[1].Value : "20745.HYP:comet_pkg.2.1...1",
                 WebSessionId: string.Concat(Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6]),
-                UserAgent: resolvedUa);
+                UserAgent: resolvedUa,
+                DisplayName: displayName,
+                AvatarUrl: avatarUrl);
         }
         catch
         {
             return null;
         }
     }
+
+    private static string UnescapeJsonString(string rawEscaped)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(string.Concat("\"", rawEscaped, "\""), ContractsJsonContext.Default.String) ?? rawEscaped;
+        }
+        catch
+        {
+            return rawEscaped.Replace("\\/", "/", StringComparison.Ordinal);
+        }
+    }
+
+    [GeneratedRegex(@"""CurrentUserInitialData""\s*,\s*\[\]\s*,\s*\{[^}]*""NAME""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex CurrentUserNameRegex();
+
+    [GeneratedRegex(@"""NAME""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex FallbackNamePropertyRegex();
+
+    [GeneratedRegex(@"""viewer""\s*:\s*\{[^}]{0,400}""profile_picture""\s*:\s*\{\s*""uri""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex ViewerProfilePictureRegex();
 
     [GeneratedRegex(@"DTSGInit(?:ial)?Data[""\]]*\s*,\s*\[\]\s*,\s*\{[^}]*""token""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
     private static partial Regex DtsgInitialDataRegex();
@@ -516,7 +570,10 @@ public sealed partial class ChromiumSession
                 (json.Contains("\"post_id\"", StringComparison.Ordinal) ||
                  json.Contains("\"Story\"", StringComparison.Ordinal) ||
                  json.Contains("\"comet_sections\"", StringComparison.Ordinal) ||
-                 json.Contains("\"page_info\"", StringComparison.Ordinal)))
+                 json.Contains("\"page_info\"", StringComparison.Ordinal) ||
+                 json.Contains("\"Group\"", StringComparison.Ordinal) ||
+                 json.Contains("\"viewer_join_state\"", StringComparison.Ordinal) ||
+                 json.Contains("\"timeline_list_feed_units\"", StringComparison.Ordinal)))
             {
                 if (sb.Length > 0)
                 {

@@ -371,8 +371,8 @@ public sealed class ManagedBrowserProcess : IBrowserProcess
     {
         ArgumentNullException.ThrowIfNull(debuggerWebSocketUri);
 
-        this._process = process;
-        this._killOnDispose = killOnDispose;
+        _process = process;
+        _killOnDispose = killOnDispose;
         this.ProcessId = process is not null ? process.Id : Environment.ProcessId;
         this.DebuggerWebSocketUri = debuggerWebSocketUri;
     }
@@ -384,7 +384,7 @@ public sealed class ManagedBrowserProcess : IBrowserProcess
     public Uri DebuggerWebSocketUri { get; }
 
     /// <inheritdoc />
-    public bool HasExited => this._isDisposed || (this._process is not null && this._process.HasExited);
+    public bool HasExited => _isDisposed || (_process is not null && _process.HasExited);
 
     /// <inheritdoc />
     public Task TerminateAsync(CancellationToken ct = default)
@@ -403,27 +403,27 @@ public sealed class ManagedBrowserProcess : IBrowserProcess
     /// <inheritdoc />
     public void Dispose()
     {
-        if (this._isDisposed)
+        if (_isDisposed)
         {
             return;
         }
 
-        this._isDisposed = true;
-        if (this._killOnDispose)
+        _isDisposed = true;
+        if (_killOnDispose)
         {
             this.KillSafe();
         }
 
-        this._process?.Dispose();
+        _process?.Dispose();
     }
 
     private void KillSafe()
     {
         try
         {
-            if (this._process is not null && !this._process.HasExited)
+            if (_process is not null && !_process.HasExited)
             {
-                this._process.Kill(entireProcessTree: true);
+                _process.Kill(entireProcessTree: true);
             }
         }
         catch

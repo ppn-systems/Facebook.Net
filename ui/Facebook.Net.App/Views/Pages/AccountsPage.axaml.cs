@@ -92,7 +92,7 @@ public sealed partial class AccountsPage : UserControl
     {
         Grid tabGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
             RowSpacing = 12
         };
 
@@ -144,49 +144,96 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetRow(topBar, 0);
         tabGrid.Children.Add(topBar);
 
-        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc... | 🔍 ]) with Flyout Popover
+        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc... | 🔍 ]) with 2-Level Drill-Down Popover
         AccountStatus? currentStatusFilter = null;
+        bool? currentProxyFilter = null;
         SearchFilterBar accountSearchBar = null!;
 
-        SegmentedFilterPill statusPill = new(
-            this._theme,
+        FilterCategoryDefinition statusCategory = new(
+            "status",
+            this._i18n["Accounts.FilterCatStatus"],
+            VectorIcons.CheckCircle,
+            optionsProvider: () =>
             [
-                this._i18n["Accounts.FilterSegActive"],
-                this._i18n["Accounts.FilterSegAttention"],
-                this._i18n["Accounts.FilterSegAll"]
+                new FilterOptionItem("active", this._i18n["Status.Account.Active"]),
+                new FilterOptionItem("attention", this._i18n["Accounts.FilterSegAttention"])
             ],
-            initialIndex: 2,
-            onSelected: idx =>
+            onApplied: selectedIds =>
             {
-                currentStatusFilter = idx switch
+                string? selected = selectedIds.Count > 0 ? selectedIds[0] : null;
+                currentStatusFilter = selected switch
                 {
-                    0 => AccountStatus.Active,
-                    1 => AccountStatus.CookieExpired,
+                    "active" => AccountStatus.Active,
+                    "attention" => AccountStatus.CookieExpired,
                     _ => null
                 };
-                accountSearchBar?.SetFilterActive(currentStatusFilter is not null);
-                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter);
-            });
+                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+            },
+            allowMultiple: false);
+
+        FilterCategoryDefinition proxyCategory = new(
+            "proxy",
+            this._i18n["Accounts.FilterCatProxy"],
+            VectorIcons.Shield,
+            optionsProvider: () =>
+            [
+                new FilterOptionItem("configured", this._i18n["Accounts.FilterProxyConfigured"]),
+                new FilterOptionItem("direct", this._i18n["Accounts.FilterProxyDirect"])
+            ],
+            onApplied: selectedIds =>
+            {
+                string? selected = selectedIds.Count > 0 ? selectedIds[0] : null;
+                currentProxyFilter = selected switch
+                {
+                    "configured" => true,
+                    "direct" => false,
+                    _ => null
+                };
+                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+            },
+            allowMultiple: false);
 
         accountSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Accounts.SearchPlaceholder"],
-            this._vm.AccountFilterText,
-            filterFlyoutContent: statusPill);
+            this._vm.AccountFilterText);
+        accountSearchBar.SetFilterCategories(
+            [statusCategory, proxyCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
         accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
         accountSearchBar.SearchButton.Click += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
 
         Grid.SetRow(accountSearchBar, 1);
         tabGrid.Children.Add(accountSearchBar);
 
-        // Row 2: Visual Account List
+        // Row 2: Visual Account List with Per-Row Contextual Actions
         ListBox accountList = FormField.CreateListBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            item => AccountRowCard.Create(this._theme, this._i18n, item),
+            item => AccountRowCard.Create(
+                this._theme,
+                this._i18n,
+                item,
+                onWarmUpOrLogin: () => _ = this._vm.WarmUpOrLoginAccountItemAsync(item),
+                warmUpOrLoginLabel: item.Status == AccountStatus.Active ? this._i18n["Accounts.BtnRowWarmUp"] : this._i18n["Accounts.BtnRowRelogin"],
+                onCheckHealth: () => _ = this._vm.CheckAccountItemHealthAsync(item),
+                checkHealthLabel: this._i18n["Accounts.BtnRowCheck"],
+                onDelete: () =>
+                {
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeleteAccountTitle"],
+                        this._i18n.Format("Confirm.DeleteAccountMessage", item.DisplayName),
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        () => this._vm.DeleteAccountItemAsync(item));
+                },
+                deleteLabel: this._i18n["Accounts.BtnRowDelete"]),
             selectedItem: this._vm.SelectedAccount,
             isVisible: this._vm.Accounts.Count > 0);
 
@@ -215,40 +262,6 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetRow(accountListHost, 2);
         tabGrid.Children.Add(accountListHost);
 
-        // Row 3: Selected Account Actions
-        Grid selectedAccBar = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 10
-        };
-
-        Button checkHealthBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Accounts.BtnCheckHealth"],
-            this._vm.CheckAccountHealthCommand,
-            VectorIcons.CheckCircle);
-
-        Button warmUpBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Accounts.BtnWarmUp"],
-            this._vm.WarmUpAccountCommand,
-            VectorIcons.Sync);
-
-        Button deleteBtn = AppButton.CreateDanger(
-            this._theme,
-            this._i18n["Accounts.BtnDelete"],
-            this._vm.DeleteSelectedAccountCommand,
-            VectorIcons.Trash);
-
-        Grid.SetColumn(checkHealthBtn, 0);
-        Grid.SetColumn(warmUpBtn, 1);
-        Grid.SetColumn(deleteBtn, 2);
-        selectedAccBar.Children.Add(checkHealthBtn);
-        selectedAccBar.Children.Add(warmUpBtn);
-        selectedAccBar.Children.Add(deleteBtn);
-        Grid.SetRow(selectedAccBar, 3);
-        tabGrid.Children.Add(selectedAccBar);
-
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal) &&
@@ -262,19 +275,17 @@ public sealed partial class AccountsPage : UserControl
         {
             titleTb.Text = this._i18n["Accounts.Header"];
             descTb.Text = this._i18n["Accounts.Desc"];
-            statusPill.UpdateLabels(
-            [
-                this._i18n["Accounts.FilterSegActive"],
-                this._i18n["Accounts.FilterSegAttention"],
-                this._i18n["Accounts.FilterSegAll"]
-            ]);
             emptyAccTb.Text = this._i18n["Empty.Accounts"];
-            accountSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Accounts.SearchPlaceholder"]);
+            statusCategory.Title = this._i18n["Accounts.FilterCatStatus"];
+            proxyCategory.Title = this._i18n["Accounts.FilterCatProxy"];
+            accountSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Accounts.SearchPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             AppButton.SetText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
             AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            AppButton.SetText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
-            AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
-            AppButton.SetText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
         };
 
         return tabGrid;

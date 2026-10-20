@@ -22,7 +22,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.StoriesTrayName,
             DocId: ProtocolConstants.Queries.StoriesTrayDocId,
-            VariablesJson: "{\"scale\":2}",
+            VariablesJson: /*lang=json,strict*/ "{\"scale\":2}",
             PreNavigateUrl: "/");
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
@@ -159,7 +159,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.NotificationsListName,
             DocId: ProtocolConstants.Queries.NotificationsListDocId,
-            VariablesJson: "{\"count\":10,\"scale\":2}",
+            VariablesJson: /*lang=json,strict*/ "{\"count\":10,\"scale\":2}",
             PreNavigateUrl: "/notifications");
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
@@ -221,7 +221,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.ManagedPagesName,
             DocId: ProtocolConstants.Queries.ManagedPagesDocId,
-            VariablesJson: "{\"scale\":2}",
+            VariablesJson: /*lang=json,strict*/ "{\"scale\":2}",
             PreNavigateUrl: "/friends/suggestions");
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);

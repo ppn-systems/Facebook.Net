@@ -32,6 +32,7 @@ public static partial class ResponseParser
         bool hasNextPage = false;
         string? errorMsg = null;
         int? errorCode = null;
+        bool hasData = false;
 
         foreach (string line in lines)
         {
@@ -39,6 +40,12 @@ public static partial class ResponseParser
             {
                 using JsonDocument doc = JsonDocument.Parse(line);
                 JsonElement root = doc.RootElement;
+
+                if (root.TryGetProperty("data"u8, out JsonElement dataEl) &&
+                    dataEl.ValueKind == JsonValueKind.Object)
+                {
+                    hasData = true;
+                }
 
                 if (root.TryGetProperty("error"u8, out JsonElement topError) &&
                     topError.ValueKind == JsonValueKind.Number &&
@@ -80,7 +87,7 @@ public static partial class ResponseParser
             }
         }
 
-        bool isSuccess = errorCode is null && (errorMsg is null || lines.Count > 1);
+        bool isSuccess = errorCode is null && (errorMsg is null || lines.Count > 1 || hasData);
         return new GraphQlResult(
             IsSuccess: isSuccess,
             JsonPayloads: lines,

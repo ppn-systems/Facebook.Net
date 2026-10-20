@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
@@ -14,14 +13,16 @@ using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
+using Avalonia.Markup.Xaml;
 
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Independent Groups Catalog &amp; Target Campaign Groups Page (<c>GroupsPage.axaml</c>).
+/// Independent Groups Catalog, Color-Coded Tag Manager &amp; Target Campaign Groups Page (<c>GroupsPage.axaml</c>).
 /// Uses a top <see cref="SubTabBar"/> to separate:
-/// 1) Target Campaign Groups Management with quick search &amp; Enabled/Disabled filter,
-/// 2) Group Discovery, Keyword Search &amp; Auto-Join with Unjoined/Joined filter.
+/// 1) Target Campaign Groups Management with 2-level <see cref="SearchFilterBar"/> and contextual row actions,
+/// 2) Group Discovery, Keyword Search on Facebook &amp; Auto-Join with 2-level <see cref="SearchFilterBar"/>,
+/// 3) Dedicated Color-Coded Tag Manager &amp; Batch Tag Assignment tab.
 /// </summary>
 public sealed partial class GroupsPage : UserControl
 {
@@ -62,12 +63,14 @@ public sealed partial class GroupsPage : UserControl
     {
         Control tab1View = this.BuildTargetsTab(out Action refreshTab1);
         Control tab2View = this.BuildDiscoverTab(out Action refreshTab2);
+        Control tab3View = this.BuildTagManagerTab(out Action refreshTab3);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Groups.TabTargets"], VectorIcons.CheckCircle, tab1View),
-                new SubTabItem(this._i18n["Groups.TabDiscover"], VectorIcons.Groups, tab2View)
+                new SubTabItem(this._i18n["Groups.TabDiscover"], VectorIcons.Groups, tab2View),
+                new SubTabItem(this._i18n["Groups.TabTagManager"], VectorIcons.Bookmark, tab3View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -75,10 +78,12 @@ public sealed partial class GroupsPage : UserControl
             subTabBar.UpdateTabTitles(
             [
                 this._i18n["Groups.TabTargets"],
-                this._i18n["Groups.TabDiscover"]
+                this._i18n["Groups.TabDiscover"],
+                this._i18n["Groups.TabTagManager"]
             ]);
             refreshTab1();
             refreshTab2();
+            refreshTab3();
         };
 
         return subTabBar;
@@ -88,13 +93,13 @@ public sealed partial class GroupsPage : UserControl
     {
         Grid targetsPane = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
-            RowSpacing = 12
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
+            RowSpacing = 10
         };
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -105,6 +110,12 @@ public sealed partial class GroupsPage : UserControl
             this._i18n["Groups.Desc"],
             out TextBlock targetListTitle,
             out TextBlock targetListDesc);
+
+        Button syncAllJoinedBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Groups.BtnSyncJoined"],
+            this._vm.SyncJoinedGroupsCommand,
+            VectorIcons.Sync);
 
         Button selectAllTargetsBtn = AppButton.CreateSecondary(
             this._theme,
@@ -119,34 +130,66 @@ public sealed partial class GroupsPage : UserControl
             VectorIcons.StopCircle);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(selectAllTargetsBtn, 1);
-        Grid.SetColumn(deselectAllTargetsBtn, 2);
+        Grid.SetColumn(syncAllJoinedBtn, 1);
+        Grid.SetColumn(selectAllTargetsBtn, 2);
+        Grid.SetColumn(deselectAllTargetsBtn, 3);
         topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(syncAllJoinedBtn);
         topHeaderRow.Children.Add(selectAllTargetsBtn);
         topHeaderRow.Children.Add(deselectAllTargetsBtn);
         Grid.SetRow(topHeaderRow, 0);
         targetsPane.Children.Add(topHeaderRow);
 
-        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Lọc nhanh tên nhóm... | 🔍 ]) with Flyout Popover
         BulkObservableCollection<SavedTargetGroup> filteredTargets = new();
-        int targetStateFilter = 2; // 0 = Enabled, 1 = Disabled, 2 = All
+        string? targetStateFilter = null; // "enabled", "disabled", or null
+        string? selectedTagFilterId = null; // tag.Id, "__untagged__", or null
         SearchFilterBar targetSearchBar = null!;
+
+        void UpdateHeaderStats()
+        {
+            int enabledCount = 0;
+            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+            {
+                if (this._vm.TargetGroups[i].IsEnabled)
+                {
+                    enabledCount++;
+                }
+            }
+
+            targetListTitle.Text = $"{this._i18n["Groups.TargetListTitle"]} — {enabledCount} / {this._vm.TargetGroups.Count}";
+        }
 
         void RefreshFilteredTargets()
         {
+            UpdateHeaderStats();
             string q = (targetSearchBar?.SearchTextBox.Text ?? string.Empty).Trim();
             List<SavedTargetGroup> matches = new(this._vm.TargetGroups.Count);
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
                 SavedTargetGroup tg = this._vm.TargetGroups[i];
-                if (targetStateFilter == 0 && !tg.IsEnabled)
+                if (string.Equals(targetStateFilter, "enabled", StringComparison.OrdinalIgnoreCase) && !tg.IsEnabled)
                 {
                     continue;
                 }
 
-                if (targetStateFilter == 1 && tg.IsEnabled)
+                if (string.Equals(targetStateFilter, "disabled", StringComparison.OrdinalIgnoreCase) && tg.IsEnabled)
                 {
                     continue;
+                }
+
+                if (!string.IsNullOrEmpty(selectedTagFilterId))
+                {
+                    if (string.Equals(selectedTagFilterId, "__untagged__", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (tg.GetTagIds().Count > 0)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (!tg.HasTag(selectedTagFilterId))
+                    {
+                        continue;
+                    }
                 }
 
                 if (!string.IsNullOrEmpty(q) &&
@@ -161,26 +204,54 @@ public sealed partial class GroupsPage : UserControl
             filteredTargets.ReplaceAll(matches);
         }
 
-        SegmentedFilterPill targetStatePill = new(
-            this._theme,
-            [
-                this._i18n["Groups.FilterSegEnabled"],
-                this._i18n["Groups.FilterSegDisabled"],
-                this._i18n["Groups.FilterSegAll"]
-            ],
-            initialIndex: 2,
-            onSelected: idx =>
-            {
-                targetStateFilter = idx;
-                targetSearchBar?.SetFilterActive(idx != 2);
-                RefreshFilteredTargets();
-            });
-
         targetSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
-            this._i18n["Groups.FilterPlaceholder"],
-            filterFlyoutContent: targetStatePill);
+            this._i18n["Groups.FilterPlaceholder"]);
+
+        FilterCategoryDefinition stateCategory = new(
+            key: "state",
+            title: this._i18n["Groups.FilterCatTargetState"],
+            iconSvg: VectorIcons.CheckCircle,
+            optionsProvider: () =>
+            [
+                new FilterOptionItem("enabled", this._i18n["Groups.FilterSegEnabled"]),
+                new FilterOptionItem("disabled", this._i18n["Groups.FilterSegDisabled"])
+            ],
+            onApplied: selectedIds =>
+            {
+                targetStateFilter = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshFilteredTargets();
+            },
+            allowMultiple: false);
+
+        FilterCategoryDefinition tagCategory = new(
+            key: "tag",
+            title: this._i18n["Groups.FilterCatColorTag"],
+            iconSvg: VectorIcons.Bookmark,
+            optionsProvider: () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.GroupTags.Count + 1);
+                for (int i = 0; i < this._vm.GroupTags.Count; i++)
+                {
+                    GroupTag tag = this._vm.GroupTags[i];
+                    options.Add(new FilterOptionItem(tag.Id, tag.Name, ColorHex: tag.ColorHex));
+                }
+
+                options.Add(new FilterOptionItem("__untagged__", this._i18n["Groups.FilterUntagged"]));
+                return options;
+            },
+            onApplied: selectedIds =>
+            {
+                selectedTagFilterId = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshFilteredTargets();
+            },
+            allowMultiple: false);
+
+        targetSearchBar.SetFilterCategories(
+            [stateCategory, tagCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
 
         targetSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredTargets();
         targetSearchBar.SearchButton.Click += (_, _) => RefreshFilteredTargets();
@@ -195,7 +266,31 @@ public sealed partial class GroupsPage : UserControl
             tg => GroupRowCard.CreateTargetRow(
                 this._theme,
                 tg,
-                nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)),
+                nextState =>
+                {
+                    _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState);
+                    UpdateHeaderStats();
+                },
+                assignedTags: this._vm.GetGroupTagsForGroup(tg.GroupId),
+                allTags: this._vm.GroupTags,
+                onToggleTag: async tagId =>
+                {
+                    await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, tagId).ConfigureAwait(true);
+                    RefreshFilteredTargets();
+                },
+                addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
+                onRemove: () =>
+                {
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.RemoveTargetGroupTitle"],
+                        this._i18n.Format("Confirm.RemoveTargetGroupMessage", tg.GroupName),
+                        this._i18n["Groups.BtnRemoveTargetShort"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        () => this._vm.RemoveTargetGroupAsync(tg));
+                },
+                removeLabel: this._i18n["Groups.BtnRemoveTargetShort"]),
             selectedItem: this._vm.SelectedTargetGroup,
             isVisible: filteredTargets.Count > 0);
 
@@ -221,6 +316,11 @@ public sealed partial class GroupsPage : UserControl
             emptyTargetsBanner.IsVisible = isEmpty;
             targetList.IsVisible = !isEmpty;
         };
+        this._vm.GroupTags.CollectionChanged += (_, _) =>
+        {
+            RefreshFilteredTargets();
+            targetSearchBar.RefreshFilterChips();
+        };
         filteredTargets.CollectionChanged += (_, _) =>
         {
             bool isEmpty = filteredTargets.Count == 0;
@@ -231,14 +331,6 @@ public sealed partial class GroupsPage : UserControl
         Grid targetListHost = EmptyStateBanner.CreateHost(targetList, emptyTargetsBanner);
         Grid.SetRow(targetListHost, 2);
         targetsPane.Children.Add(targetListHost);
-
-        Button removeTargetBtn = AppButton.CreateDanger(
-            this._theme,
-            this._i18n["Groups.BtnRemoveTarget"],
-            this._vm.RemoveSelectedTargetGroupCommand,
-            VectorIcons.Trash);
-        Grid.SetRow(removeTargetBtn, 3);
-        targetsPane.Children.Add(removeTargetBtn);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -251,19 +343,19 @@ public sealed partial class GroupsPage : UserControl
 
         refreshI18n = () =>
         {
-            targetListTitle.Text = this._i18n["Groups.TargetListTitle"];
+            stateCategory.Title = this._i18n["Groups.FilterCatTargetState"];
+            tagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
+            targetSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Groups.FilterPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
+            RefreshFilteredTargets();
             targetListDesc.Text = this._i18n["Groups.Desc"];
-            targetSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.FilterPlaceholder"]);
-            targetStatePill.UpdateLabels(
-            [
-                this._i18n["Groups.FilterSegEnabled"],
-                this._i18n["Groups.FilterSegDisabled"],
-                this._i18n["Groups.FilterSegAll"]
-            ]);
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
+            AppButton.SetText(syncAllJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
             AppButton.SetText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
             AppButton.SetText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
-            AppButton.SetText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
         return targetsPane;
@@ -273,13 +365,13 @@ public sealed partial class GroupsPage : UserControl
     {
         Grid catalogPane = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
-            RowSpacing = 12
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
+            RowSpacing = 10
         };
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
             ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -291,35 +383,87 @@ public sealed partial class GroupsPage : UserControl
             out TextBlock titleTb,
             out TextBlock descTb);
 
-        Button syncJoinedBtn = AppButton.CreatePrimary(
+        Button autoJoinHeaderBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Groups.BtnAutoJoinDiscovered"],
+            this._vm.AutoJoinDiscoveredGroupsCommand,
+            VectorIcons.Groups);
+        autoJoinHeaderBtn.IsVisible = false;
+
+        Button searchFbBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Groups.BtnSearchOnFacebook"],
+            this._vm.SearchGroupsByKeywordCommand,
+            VectorIcons.Search);
+
+        Button syncJoinedBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnSyncJoined"],
             this._vm.SyncJoinedGroupsCommand,
             VectorIcons.Sync);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(syncJoinedBtn, 1);
+        Grid.SetColumn(autoJoinHeaderBtn, 1);
+        Grid.SetColumn(searchFbBtn, 2);
+        Grid.SetColumn(syncJoinedBtn, 3);
         topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(autoJoinHeaderBtn);
+        topHeaderRow.Children.Add(searchFbBtn);
         topHeaderRow.Children.Add(syncJoinedBtn);
         Grid.SetRow(topHeaderRow, 0);
         catalogPane.Children.Add(topHeaderRow);
 
         BulkObservableCollection<GroupSummary> filteredCatalog = new();
-        int membershipFilter = 2; // 0 = Unjoined, 1 = Joined, 2 = All
+        string? membershipFilter = null; // "unjoined", "joined", or null
+        string? selectedTagFilterId = null; // tag.Id, "__untagged__", or null
+        SearchFilterBar searchFilterBar = null!;
 
         void RefreshCatalogFilter()
         {
+            int unjoinedCount = 0;
+            int joinedCount = 0;
+            string kw = (searchFilterBar?.SearchTextBox.Text ?? string.Empty).Trim();
             List<GroupSummary> list = new(this._vm.JoinedGroups.Count);
             for (int i = 0; i < this._vm.JoinedGroups.Count; i++)
             {
                 GroupSummary g = this._vm.JoinedGroups[i];
                 bool isJoined = g.MembershipState == GroupMembershipState.Member;
-                if (membershipFilter == 0 && isJoined)
+                if (isJoined)
+                {
+                    joinedCount++;
+                }
+                else
+                {
+                    unjoinedCount++;
+                }
+
+                if (string.Equals(membershipFilter, "unjoined", StringComparison.OrdinalIgnoreCase) && isJoined)
                 {
                     continue;
                 }
 
-                if (membershipFilter == 1 && !isJoined)
+                if (string.Equals(membershipFilter, "joined", StringComparison.OrdinalIgnoreCase) && !isJoined)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(selectedTagFilterId))
+                {
+                    SavedTargetGroup? tg = this._vm.FindTargetGroupById(g.GroupId);
+                    if (string.Equals(selectedTagFilterId, "__untagged__", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (tg is not null && tg.GetTagIds().Count > 0)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (tg is null || !tg.HasTag(selectedTagFilterId))
+                    {
+                        continue;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(kw) && !g.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -327,39 +471,66 @@ public sealed partial class GroupsPage : UserControl
                 list.Add(g);
             }
 
+            autoJoinHeaderBtn.IsVisible = unjoinedCount > 0;
+            titleTb.Text = $"{this._i18n["Groups.Header"]} — {joinedCount} {this._i18n["Groups.FilterSegJoined"]} • {unjoinedCount} {this._i18n["Groups.FilterSegUnjoined"]}";
             filteredCatalog.ReplaceAll(list);
         }
-
-        SearchFilterBar searchFilterBar = null!;
-
-        SegmentedFilterPill membershipPill = new(
-            this._theme,
-            [
-                this._i18n["Groups.FilterSegUnjoined"],
-                this._i18n["Groups.FilterSegJoined"],
-                this._i18n["Groups.FilterSegAll"]
-            ],
-            initialIndex: 2,
-            onSelected: idx =>
-            {
-                membershipFilter = idx;
-                searchFilterBar?.SetFilterActive(idx != 2);
-                RefreshCatalogFilter();
-            });
 
         searchFilterBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.SearchKeywordPlaceholder"],
             this._vm.GroupSearchKeyword,
-            membershipPill,
-            this._vm.SearchGroupsByKeywordCommand);
+            searchCommand: this._vm.SearchGroupsByKeywordCommand);
+
+        FilterCategoryDefinition membershipCategory = new(
+            key: "membership",
+            title: this._i18n["Groups.FilterCatMembership"],
+            iconSvg: VectorIcons.Groups,
+            optionsProvider: () =>
+            [
+                new FilterOptionItem("unjoined", this._i18n["Groups.FilterSegUnjoined"]),
+                new FilterOptionItem("joined", this._i18n["Groups.FilterSegJoined"])
+            ],
+            onApplied: selectedIds =>
+            {
+                membershipFilter = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshCatalogFilter();
+            },
+            allowMultiple: false);
+
+        FilterCategoryDefinition discoverTagCategory = new(
+            key: "tag",
+            title: this._i18n["Groups.FilterCatColorTag"],
+            iconSvg: VectorIcons.Bookmark,
+            optionsProvider: () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.GroupTags.Count + 1);
+                for (int i = 0; i < this._vm.GroupTags.Count; i++)
+                {
+                    GroupTag tag = this._vm.GroupTags[i];
+                    options.Add(new FilterOptionItem(tag.Id, tag.Name, ColorHex: tag.ColorHex));
+                }
+
+                options.Add(new FilterOptionItem("__untagged__", this._i18n["Groups.FilterUntagged"]));
+                return options;
+            },
+            onApplied: selectedIds =>
+            {
+                selectedTagFilterId = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshCatalogFilter();
+            },
+            allowMultiple: false);
+
+        searchFilterBar.SetFilterCategories(
+            [membershipCategory, discoverTagCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
 
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
         {
-            string text = searchFilterBar.SearchTextBox.Text ?? string.Empty;
-            this._vm.GroupSearchKeyword = text;
-            this._vm.ApplyLocalGroupFilter(text);
+            this._vm.GroupSearchKeyword = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+            RefreshCatalogFilter();
         };
 
         Grid.SetRow(searchFilterBar, 1);
@@ -370,7 +541,23 @@ public sealed partial class GroupsPage : UserControl
         ListBox groupsList = FormField.CreateListBox<GroupSummary>(
             this._theme,
             filteredCatalog,
-            grp => GroupRowCard.CreateCatalogRow(this._theme, this._i18n, grp),
+            grp => GroupRowCard.CreateCatalogRow(
+                this._theme,
+                this._i18n,
+                grp,
+                assignedTags: this._vm.GetGroupTagsForGroup(grp.GroupId),
+                allTags: this._vm.GroupTags,
+                onToggleTag: async tagId =>
+                {
+                    await this._vm.ToggleGroupTagAsync(grp.GroupId, grp.Name, grp.AvatarUrl, tagId).ConfigureAwait(true);
+                    RefreshCatalogFilter();
+                },
+                addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
+                isAlreadyInTargets: this._vm.FindTargetGroupById(grp.GroupId) is not null,
+                onAddToTarget: () => _ = this._vm.AddGroupToTargetsAsync(grp),
+                onJoinGroup: () => _ = this._vm.JoinGroupItemAsync(grp),
+                addToTargetLabel: this._i18n["Groups.BtnAddTargetShort"],
+                joinLabel: this._i18n["Groups.BtnJoinSelected"]),
             selectedItem: this._vm.SelectedGroup,
             isVisible: filteredCatalog.Count > 0);
 
@@ -396,6 +583,12 @@ public sealed partial class GroupsPage : UserControl
             emptyGroupsBanner.IsVisible = isEmpty;
             groupsList.IsVisible = !isEmpty;
         };
+        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshCatalogFilter();
+        this._vm.GroupTags.CollectionChanged += (_, _) =>
+        {
+            RefreshCatalogFilter();
+            searchFilterBar.RefreshFilterChips();
+        };
         filteredCatalog.CollectionChanged += (_, _) =>
         {
             bool isEmpty = filteredCatalog.Count == 0;
@@ -406,39 +599,6 @@ public sealed partial class GroupsPage : UserControl
         Grid groupsListHost = EmptyStateBanner.CreateHost(groupsList, emptyGroupsBanner);
         Grid.SetRow(groupsListHost, 2);
         catalogPane.Children.Add(groupsListHost);
-
-        Grid actionRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 10
-        };
-
-        Button saveTargetBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Groups.BtnSaveTarget"],
-            this._vm.AddSelectedGroupToTargetsCommand,
-            VectorIcons.Plus);
-
-        Button joinBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Groups.BtnJoinSelected"],
-            this._vm.JoinSelectedGroupCommand,
-            VectorIcons.CheckCircle);
-
-        Button autoJoinAllBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Groups.BtnAutoJoinDiscovered"],
-            this._vm.AutoJoinDiscoveredGroupsCommand,
-            VectorIcons.Groups);
-
-        Grid.SetColumn(saveTargetBtn, 0);
-        Grid.SetColumn(joinBtn, 1);
-        Grid.SetColumn(autoJoinAllBtn, 2);
-        actionRow.Children.Add(saveTargetBtn);
-        actionRow.Children.Add(joinBtn);
-        actionRow.Children.Add(autoJoinAllBtn);
-        Grid.SetRow(actionRow, 3);
-        catalogPane.Children.Add(actionRow);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -456,20 +616,19 @@ public sealed partial class GroupsPage : UserControl
 
         refreshI18n = () =>
         {
-            titleTb.Text = this._i18n["Groups.Header"];
+            membershipCategory.Title = this._i18n["Groups.FilterCatMembership"];
+            discoverTagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
+            searchFilterBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Groups.SearchKeywordPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
+            RefreshCatalogFilter();
             descTb.Text = this._i18n["Groups.Desc"];
             emptyGroupsTb.Text = this._i18n["Empty.Groups"];
-            searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.SearchKeywordPlaceholder"]);
-            membershipPill.UpdateLabels(
-            [
-                this._i18n["Groups.FilterSegUnjoined"],
-                this._i18n["Groups.FilterSegJoined"],
-                this._i18n["Groups.FilterSegAll"]
-            ]);
+            AppButton.SetText(autoJoinHeaderBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
+            AppButton.SetText(searchFbBtn, this._i18n["Groups.BtnSearchOnFacebook"]);
             AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
-            AppButton.SetText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
-            AppButton.SetText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
-            AppButton.SetText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
         };
 
         return catalogPane;
