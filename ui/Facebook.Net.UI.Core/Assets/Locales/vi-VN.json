@@ -188,6 +188,7 @@
   "Settings.SafetyTitle": "Tốc độ Thao tác & Bảo vệ Tài khoản",
   "Settings.SafetyDesc": "Thiết lập thời gian giãn cách tự nhiên giữa các thao tác để tài khoản hoạt động ổn định và an toàn lâu dài.",
   "Settings.ThemeLabel": "Chế độ giao diện",
+  "Settings.ThemeSystem": "Theo hệ thống",
   "Settings.ThemeDark": "Giao diện tối",
   "Settings.ThemeLight": "Giao diện sáng",
   "Settings.LanguageLabel": "Ngôn ngữ hiển thị",

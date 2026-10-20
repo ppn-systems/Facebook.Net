@@ -188,6 +188,7 @@
   "Settings.SafetyTitle": "Action Pacing & Account Safety",
   "Settings.SafetyDesc": "Configure natural pacing intervals between actions to keep your accounts stable and protected long-term.",
   "Settings.ThemeLabel": "Appearance Theme",
+  "Settings.ThemeSystem": "System Default",
   "Settings.ThemeDark": "Dark Theme",
   "Settings.ThemeLight": "Light Theme",
   "Settings.LanguageLabel": "Display Language",

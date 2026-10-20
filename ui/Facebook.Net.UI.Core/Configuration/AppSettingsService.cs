@@ -47,7 +47,7 @@ public enum PreferredBrowserKind
 /// Strongly-typed application configuration persisted to <c>appsettings.json</c>.
 /// </summary>
 public sealed record AppConfig(
-    AppThemeMode Theme = AppThemeMode.Dark,
+    AppThemeMode Theme = AppThemeMode.System,
     AppLanguage Language = AppLanguage.ViVn,
     PreferredBrowserKind PreferredBrowser = PreferredBrowserKind.AutoDetect,
     string? CustomBrowserExecutablePath = null,

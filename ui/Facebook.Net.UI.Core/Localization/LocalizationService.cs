@@ -204,7 +204,13 @@ public sealed class LocalizationService : INotifyPropertyChanged
     /// Formats an <see cref="AppThemeMode"/> into a friendly, localized label.
     /// </summary>
     public string FormatThemeMode(AppThemeMode mode) =>
-        mode == AppThemeMode.Light ? this["Settings.ThemeLight"] : this["Settings.ThemeDark"];
+        mode switch
+        {
+            AppThemeMode.System => this["Settings.ThemeSystem"],
+            AppThemeMode.Light => this["Settings.ThemeLight"],
+            AppThemeMode.Dark => this["Settings.ThemeDark"],
+            _ => this["Settings.ThemeSystem"]
+        };
 
     /// <summary>
     /// Formats an <see cref="AppLanguage"/> into a friendly display label without locale code parentheses.

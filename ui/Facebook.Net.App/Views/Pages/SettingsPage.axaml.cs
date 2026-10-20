@@ -127,7 +127,7 @@ public sealed partial class SettingsPage : UserControl
 
         ComboBox themeCombo = FormField.CreateComboBox<AppThemeMode>(
             this._theme,
-            new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
+            new AppThemeMode[] { AppThemeMode.System, AppThemeMode.Dark, AppThemeMode.Light },
             m =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatThemeMode(m), 12);

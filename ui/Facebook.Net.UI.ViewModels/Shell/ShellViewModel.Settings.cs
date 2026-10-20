@@ -44,7 +44,7 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the selected theme mode in Settings.</summary>
     [ObservableProperty]
-    public partial AppThemeMode SelectedThemeMode { get; set; } = AppThemeMode.Dark;
+    public partial AppThemeMode SelectedThemeMode { get; set; } = AppThemeMode.System;
 
     /// <summary>Gets or sets the selected UI language in Settings.</summary>
     [ObservableProperty]
