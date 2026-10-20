@@ -20,8 +20,7 @@ namespace Facebook.Net.App;
 public sealed class App : Application
 {
     /// <inheritdoc />
-    public override void Initialize() =>
-        this.Styles.Add(new FluentTheme());
+    public override void Initialize() => this.Styles.Add(new FluentTheme());
 
     /// <inheritdoc />
     public override void OnFrameworkInitializationCompleted()

@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Facebook.Net.UI.ViewModels.Shell"
+        x:Class="Facebook.Net.App.Views.MainWindow"
+        x:DataType="vm:ShellViewModel"
+        Width="980"
+        Height="640"
+        MinWidth="980"
+        MaxWidth="980"
+        MinHeight="640"
+        MaxHeight="640"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Icon="avares://Facebook.Net.App/Assets/app.ico">
+    <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*">
+        <Border x:Name="SidebarContainer" Grid.Column="0" />
+        <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="18,12,18,10">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <Border x:Name="TopContextContainer" Grid.Row="0" />
+                <TransitioningContentControl x:Name="PageNavigationHost"
+                                             Grid.Row="1"
+                                             HorizontalAlignment="Stretch"
+                                             VerticalAlignment="Stretch" />
+                <Border x:Name="FooterContainer" Grid.Row="2" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

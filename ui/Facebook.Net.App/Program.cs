@@ -17,16 +17,11 @@ internal static class Program
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     [STAThread]
-    public static void Main(string[] args) =>
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 
     /// <summary>
     /// Avalonia configuration, also used by visual designer.
     /// </summary>
     /// <returns>Configured <see cref="AppBuilder"/>.</returns>
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .WithInterFont()
-            .LogToTrace();
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace();
 }

@@ -482,6 +482,32 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         Assert.Equal(5, col.Count);
     }
 
+    [Fact]
+    public void NavigationService_ShouldNavigateBetweenPagesAndSupportBackStackFromAuditLogsToSettings()
+    {
+        using UiServiceContext ctx = new(
+            new StubBrowserAdapter(),
+            Path.Combine(this._tempDir, "nav_test"),
+            new ImmediateDispatcher());
+        using ShellViewModel vm = new(ctx);
+
+        Assert.Equal(NavigationSection.Accounts, vm.CurrentSection);
+        Assert.Equal(NavigationSection.Accounts, vm.Navigation.CurrentSection);
+        Assert.False(vm.Navigation.CanGoBack);
+
+        // Navigate to Settings -> then click Open Audit Logs at bottom of Settings
+        vm.NavigateSettingsCommand.Execute(null);
+        Assert.Equal(NavigationSection.Settings, vm.CurrentSection);
+        Assert.True(vm.Navigation.CanGoBack);
+
+        vm.NavigateAuditLogsCommand.Execute(null);
+        Assert.Equal(NavigationSection.AuditLogs, vm.CurrentSection);
+
+        // Navigate back returns to Settings
+        vm.NavigateBackCommand.Execute(null);
+        Assert.Equal(NavigationSection.Settings, vm.CurrentSection);
+    }
+
     public void Dispose()
     {
         try

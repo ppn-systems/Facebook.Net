@@ -2,21 +2,60 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Buyer Lead Scanner &amp; Sales Commenting screen (`MainWindow.SalesLeads.cs`).
+/// Independent Buyer Lead Scanner &amp; Sales Commenting Page (<c>SalesLeadsPage.axaml</c>).
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class SalesLeadsPage : UserControl
 {
-    private Control BuildSalesLeadsScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SalesLeadsPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public SalesLeadsPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SalesLeadsPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public SalesLeadsPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         Grid pageGrid = new()
         {
@@ -217,5 +256,22 @@ public sealed partial class MainWindow
         };
 
         return UiControls.CreateCard(this._theme, pageGrid);
+    }
+
+    private async Task<string?> PickSingleFileAsync(string title)
+    {
+        IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        }).ConfigureAwait(true);
+
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 }

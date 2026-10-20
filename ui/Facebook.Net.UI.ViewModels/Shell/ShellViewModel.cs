@@ -12,6 +12,7 @@ using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.ViewModels.Audit;
+using Facebook.Net.UI.ViewModels.Navigation;
 using Facebook.Net.UI.ViewModels.Services;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
@@ -65,6 +66,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(context);
         this._context = context;
+        this.Navigation = new NavigationService(NavigationSection.Accounts);
+        this.Navigation.Navigated += (_, section) =>
+        {
+            if (this.CurrentSection != section)
+            {
+                this.CurrentSection = section;
+            }
+        };
         this.AuditDrawer = new AuditLogDrawerViewModel(context);
 
         this.Accounts = new BulkObservableCollection<AccountProfile>();
@@ -77,13 +86,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.LoadSettingsIntoProperties();
 
         // Navigation & global commands
-        this.NavigateOverviewCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Overview);
-        this.NavigateAccountsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Accounts);
-        this.NavigateGroupsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Groups);
-        this.NavigatePublisherCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Publisher);
-        this.NavigateSalesLeadsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.SalesLeads);
-        this.NavigateSettingsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Settings);
-        this.NavigateAuditLogsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.AuditLogs);
+        this.NavigateOverviewCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Overview));
+        this.NavigateAccountsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Accounts));
+        this.NavigateGroupsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Groups));
+        this.NavigatePublisherCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Publisher));
+        this.NavigateSalesLeadsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.SalesLeads));
+        this.NavigateSettingsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Settings));
+        this.NavigateAuditLogsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.AuditLogs));
+        this.NavigateBackCommand = new RelayCommand(() => _ = this.Navigation.GoBack());
         this.ToggleSidebarCommand = new RelayCommand(() => this.IsSidebarCollapsed = !this.IsSidebarCollapsed);
         this.ToggleThemeQuickCommand = new RelayCommand(this.ToggleThemeQuick);
         this.ToggleLanguageQuickCommand = new RelayCommand(this.ToggleLanguageQuick);
@@ -131,12 +141,23 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the shared UI service context.</summary>
     public UiServiceContext Context => this._context;
 
+    /// <summary>Gets the page navigation service managing view transitions and back stack.</summary>
+    public NavigationService Navigation { get; }
+
     /// <summary>Gets the collapsible bottom Audit Log drawer ViewModel.</summary>
     public AuditLogDrawerViewModel AuditDrawer { get; }
 
     /// <summary>Gets or sets the currently active navigation screen.</summary>
     [ObservableProperty]
     public partial NavigationSection CurrentSection { get; set; } = NavigationSection.Accounts;
+
+    partial void OnCurrentSectionChanged(NavigationSection value)
+    {
+        if (this.Navigation.CurrentSection != value)
+        {
+            this.Navigation.NavigateTo(value);
+        }
+    }
 
     /// <summary>Gets or sets a value indicating whether an automation task is currently running.</summary>
     [ObservableProperty]
@@ -177,6 +198,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to navigate to Activity / Audit Logs screen.</summary>
     public IRelayCommand NavigateAuditLogsCommand { get; }
+
+    /// <summary>Gets the command to navigate back to the previous screen in the navigation stack.</summary>
+    public IRelayCommand NavigateBackCommand { get; }
 
     /// <summary>Gets the command to collapse or expand the left navigation sidebar.</summary>
     public IRelayCommand ToggleSidebarCommand { get; }

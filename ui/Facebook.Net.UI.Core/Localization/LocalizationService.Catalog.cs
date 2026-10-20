@@ -195,6 +195,8 @@ public sealed partial class LocalizationService
             ["Settings.MinDelayPrefix"] = "Tối thiểu (s):",
             ["Settings.MaxDelayPrefix"] = "Tối đa (s):",
             ["Settings.BtnSaveSettings"] = "Lưu Cấu hình",
+            ["Settings.BtnOpenAuditLogs"] = "Xem Nhật ký Hoạt động (Audit Logs)",
+            ["Audit.BtnBackToSettings"] = "Quay lại Cài đặt",
             ["Settings.GuideTitle"] = "Hướng dẫn Sử dụng Nhanh",
             ["Settings.GuideBody"] = "1. Kết nối Tài khoản: Vào mục 'Tài khoản' -> Bấm 'Mở Trình duyệt Đăng nhập & Đồng bộ' -> Đăng nhập Facebook như bình thường. Phần mềm tự động lưu phiên và đồng bộ Nhóm.\n\n2. Nhập nhanh Cookie: Sao chép từ J2Team Cookies rồi bấm 'Dán từ Clipboard'.\n\n3. Đăng bài & Săn khách: Chọn nhóm trực quan, phần mềm tự giãn cách an toàn và chống bình luận trùng lặp.",
 
@@ -363,6 +365,8 @@ public sealed partial class LocalizationService
             ["Settings.MinDelayPrefix"] = "Min (s):",
             ["Settings.MaxDelayPrefix"] = "Max (s):",
             ["Settings.BtnSaveSettings"] = "Save Settings",
+            ["Settings.BtnOpenAuditLogs"] = "Open Activity & Audit Logs",
+            ["Audit.BtnBackToSettings"] = "Back to Settings",
             ["Settings.GuideTitle"] = "Quick Start Guide",
             ["Settings.GuideBody"] = "1. Connect Account: Go to 'Accounts' -> Click 'Open Browser to Log In & Sync' -> Sign in to Facebook normally. The app automatically saves your session and syncs your Groups.\n\n2. 1-Click Cookie Import: Copy cookies from J2Team Cookies and click 'Paste Clipboard'.\n\n3. Publish & Close Sales Leads: Pick groups visually from your catalog; the app automatically enforces human-like delays and prevents duplicate comments.",
 

@@ -1,25 +1,63 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
+using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Overview / Home Dashboard screen (`MainWindow.Overview.cs`).
+/// Independent Overview / Home Dashboard Page (<c>OverviewPage.axaml</c>).
+/// Displays live account connection status, quick actions, and 4 KPI summary cards.
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class OverviewPage : UserControl
 {
-    private Control BuildOverviewScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OverviewPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public OverviewPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OverviewPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public OverviewPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         StackPanel centerHero = new()
         {

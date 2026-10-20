@@ -5,41 +5,60 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Groups Discovery &amp; Campaign Targets screen (`MainWindow.Groups.cs`).
+/// Independent Groups Catalog &amp; Target Campaign Groups Page (<c>GroupsPage.axaml</c>).
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class GroupsPage : UserControl
 {
-    private Control BuildGroupsScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GroupsPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public GroupsPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GroupsPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public GroupsPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         Grid pageGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            RowSpacing = 10
-        };
-
-        Grid header = UiControls.CreateSectionHeader(
-            this._theme,
-            this._i18n["Groups.Header"],
-            this._i18n["Groups.Desc"],
-            out TextBlock titleTb,
-            out TextBlock descTb);
-        Grid.SetRow(header, 0);
-        pageGrid.Children.Add(header);
-
-        // Balanced 2-Column Layout (`1.15*,1*`) for Facebook Group Catalog (Left) & Campaign Target Groups (Right)
-        Grid mainSplit = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("1.15*,1*"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Stretch
+            ColumnDefinitions = new ColumnDefinitions("1.25*,1*"),
+            ColumnSpacing = 12
         };
 
         // Left Column: Facebook Group Catalog & Discovery
@@ -49,13 +68,21 @@ public sealed partial class MainWindow
             RowSpacing = 8
         };
 
+        Grid header = UiControls.CreateSectionHeader(
+            this._theme,
+            this._i18n["Groups.Header"],
+            this._i18n["Groups.Desc"],
+            out TextBlock titleTb,
+            out TextBlock descTb);
+
         Grid searchAndSyncRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 6
+            ColumnSpacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        Button syncJoinedBtn = UiControls.CreatePrimaryButton(
+        Button syncJoinedBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnSyncJoined"],
             this._vm.SyncJoinedGroupsCommand,
@@ -78,8 +105,12 @@ public sealed partial class MainWindow
         searchAndSyncRow.Children.Add(syncJoinedBtn);
         searchAndSyncRow.Children.Add(searchKeywordBox);
         searchAndSyncRow.Children.Add(searchBtn);
-        Grid.SetRow(searchAndSyncRow, 0);
-        catalogPane.Children.Add(searchAndSyncRow);
+
+        StackPanel leftTopHeader = new() { Spacing = 8 };
+        leftTopHeader.Children.Add(header);
+        leftTopHeader.Children.Add(searchAndSyncRow);
+        Grid.SetRow(leftTopHeader, 0);
+        catalogPane.Children.Add(leftTopHeader);
 
         TextBox localFilterBox = UiControls.CreateTextBox(
             this._theme,
@@ -240,13 +271,6 @@ public sealed partial class MainWindow
 
         Border rightCard = UiControls.CreateCard(this._theme, targetsPane, new Thickness(12));
 
-        Grid.SetColumn(leftCard, 0);
-        Grid.SetColumn(rightCard, 1);
-        mainSplit.Children.Add(leftCard);
-        mainSplit.Children.Add(rightCard);
-        Grid.SetRow(mainSplit, 1);
-        pageGrid.Children.Add(mainSplit);
-
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedGroup), StringComparison.Ordinal) &&
@@ -259,17 +283,22 @@ public sealed partial class MainWindow
             {
                 targetList.SelectedItem = this._vm.SelectedTargetGroup;
             }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.GroupSearchKeyword), StringComparison.Ordinal) &&
+                     !string.Equals(searchKeywordBox.Text, this._vm.GroupSearchKeyword, StringComparison.Ordinal))
+            {
+                searchKeywordBox.Text = this._vm.GroupSearchKeyword;
+            }
         };
 
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Groups.Header"];
             descTb.Text = this._i18n["Groups.Desc"];
-            targetListTitle.Text = this._i18n["Groups.TargetListTitle"];
             emptyGroupsTb.Text = this._i18n["Empty.Groups"];
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
             searchKeywordBox.PlaceholderText = this._i18n["Groups.SearchKeywordPlaceholder"];
             localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
+            targetListTitle.Text = this._i18n["Groups.TargetListTitle"];
             UiControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
             UiControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
             UiControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
@@ -280,6 +309,10 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
+        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(rightCard, 1);
+        pageGrid.Children.Add(leftCard);
+        pageGrid.Children.Add(rightCard);
         return pageGrid;
     }
 }

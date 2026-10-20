@@ -3,14 +3,13 @@
 
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Media;
-using Avalonia.Platform.Storage;
+using Facebook.Net.App.Views.Pages;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
@@ -21,29 +20,33 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App.Views;
 
 /// <summary>
-/// Minimalist desktop Shell Window featuring:
-/// <list type="bullet">
-///   <item><description>Fixed standard window geometry (<c>980 × 640</c>, <c>CanResize = false</c>).</description></item>
-///   <item><description>Collapsible Left Navigation Sidebar with SVG icons loaded from <c>Assets/Icons/*.svg</c>.</description></item>
-///   <item><description>Dedicated partial class per screen (<c>Overview</c>, <c>Accounts</c>, <c>Groups</c>, <c>Publisher</c>, <c>SalesLeads</c>, <c>Settings</c>, <c>Audit</c>).</description></item>
-/// </list>
+/// Root Shell Window (<c>MainWindow.axaml</c>) hosting the collapsible left navigation sidebar,
+/// top active account context bar, and <see cref="TransitioningContentControl"/> navigating between
+/// independent <see cref="UserControl"/> Pages (<see cref="OverviewPage"/>, <see cref="AccountsPage"/>,
+/// <see cref="GroupsPage"/>, <see cref="PublisherPage"/>, <see cref="SalesLeadsPage"/>,
+/// <see cref="SettingsPage"/>, and <see cref="AuditLogsPage"/>).
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     private readonly ShellViewModel _vm;
     private readonly ThemeService _theme;
     private readonly LocalizationService _i18n;
-
-    private Control? _overviewScreen;
-    private Control? _accountsScreen;
-    private Control? _groupsScreen;
-    private Control? _publisherScreen;
-    private Control? _leadsScreen;
-    private Control? _settingsScreen;
-    private Control? _auditLogsScreen;
+    private readonly Dictionary<NavigationSection, UserControl> _pageCache = new();
+    private readonly TransitioningContentControl _pageNavigationHost = null!;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="MainWindow"/> class.
+    /// Initializes a new instance of the <see cref="MainWindow"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public MainWindow()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MainWindow"/> class bound to <see cref="ShellViewModel"/>.
     /// </summary>
     public MainWindow(ShellViewModel viewModel)
     {
@@ -53,71 +56,70 @@ public sealed partial class MainWindow : Window
         this._i18n = viewModel.Context.Localization;
         this.DataContext = viewModel;
 
-        this.Title = this._i18n["App.Title"];
-        this.Width = 980;
-        this.Height = 640;
-        this.MinWidth = 980;
-        this.MaxWidth = 980;
-        this.MinHeight = 640;
-        this.MaxHeight = 640;
-        this.CanResize = false;
-        this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        this.InitializeComponent();
 
+        this.Title = this._i18n["App.Title"];
         this._i18n.LanguageChanged += (_, _) => this.Title = this._i18n["App.Title"];
-        this.Content = this.BuildShellLayout();
+
+        Grid rootGrid = this.FindControl<Grid>("ShellRootGrid")!;
+        Border sidebarContainer = this.FindControl<Border>("SidebarContainer")!;
+        Border topContextContainer = this.FindControl<Border>("TopContextContainer")!;
+        this._pageNavigationHost = this.FindControl<TransitioningContentControl>("PageNavigationHost")!;
+        Border footerContainer = this.FindControl<Border>("FooterContainer")!;
+
+        void ApplyRootTheme() => rootGrid.Background = this._theme.Palette.AppCanvasBackground;
+        ApplyRootTheme();
+        this._theme.ThemeChanged += (_, _) => ApplyRootTheme();
+
+        sidebarContainer.Child = this.BuildSidebar();
+        topContextContainer.Child = this.BuildTopContextStrip();
+        footerContainer.Child = this.BuildFooterRow();
+
+        // Subscribe to INavigationService to swap independent UserControl pages
+        this._vm.Navigation.Navigated += (_, section) => this.NavigateToPage(section);
+        this.NavigateToPage(this._vm.Navigation.CurrentSection);
     }
 
     /// <inheritdoc />
     protected override void OnClosed(EventArgs e)
     {
-        this._vm.FlushSettingsToDisk();
-        this._vm.Dispose();
+        if (this._vm is not null)
+        {
+            this._vm.FlushSettingsToDisk();
+            this._vm.Dispose();
+        }
+
         base.OnClosed(e);
     }
 
-    private async Task<string?> PickSingleFileAsync(string title)
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private void NavigateToPage(NavigationSection section)
     {
-        if (this.StorageProvider is null)
+        if (!this._pageCache.TryGetValue(section, out UserControl? page))
         {
-            return null;
+            page = section switch
+            {
+                NavigationSection.Overview => new OverviewPage(this._vm),
+                NavigationSection.Accounts => new AccountsPage(this._vm),
+                NavigationSection.Groups => new GroupsPage(this._vm),
+                NavigationSection.Publisher => new PublisherPage(this._vm),
+                NavigationSection.SalesLeads => new SalesLeadsPage(this._vm),
+                NavigationSection.Settings => new SettingsPage(this._vm),
+                NavigationSection.AuditLogs => new AuditLogsPage(this._vm),
+                _ => new AccountsPage(this._vm)
+            };
+            this._pageCache[section] = page;
         }
 
-        IReadOnlyList<IStorageFile> files = await this.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = false
-        }).ConfigureAwait(true);
-
-        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
-    }
-
-    private Grid BuildShellLayout()
-    {
-        Grid root = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*")
-        };
-
-        void ApplyRootTheme() => root.Background = this._theme.Palette.AppCanvasBackground;
-        ApplyRootTheme();
-        this._theme.ThemeChanged += (_, _) => ApplyRootTheme();
-
-        Border sidebar = this.BuildSidebar();
-        Grid.SetColumn(sidebar, 0);
-        root.Children.Add(sidebar);
-
-        Border screenHost = this.BuildScreenHost();
-        Grid.SetColumn(screenHost, 1);
-        root.Children.Add(screenHost);
-
-        return root;
+        this._pageNavigationHost.Content = page;
     }
 
     private Border BuildSidebar()
     {
         Grid sidebarGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,*"),
             Margin = new Thickness(10, 14)
         };
 
@@ -153,7 +155,7 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(topHeader, 0);
         sidebarGrid.Children.Add(topHeader);
 
-        // 2. Navigation Items (Single-page sections)
+        // 2. Navigation Items (6 primary pages; AuditLogs is accessed from the bottom of SettingsPage)
         StackPanel navStack = new()
         {
             Spacing = 6,
@@ -184,20 +186,6 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(navStack, 1);
         sidebarGrid.Children.Add(navStack);
 
-        // 3. Bottom-left Activity / Audit Log Icon Button
-        Button bottomAuditBtn = UiControls.CreateSidebarNavButton(
-            this._i18n["Nav.AuditLogs"],
-            VectorIcons.AuditLog,
-            this._vm.NavigateAuditLogsCommand,
-            out TextBlock auditLabel,
-            out Control auditIcon);
-        bottomAuditBtn.CornerRadius = new CornerRadius(18);
-        bottomAuditBtn.Padding = new Thickness(10, 7);
-        bottomAuditBtn.HorizontalAlignment = HorizontalAlignment.Left;
-
-        Grid.SetRow(bottomAuditBtn, 2);
-        sidebarGrid.Children.Add(bottomAuditBtn);
-
         Border sidebar = new()
         {
             BorderThickness = new Thickness(0, 0, 1, 0),
@@ -227,7 +215,8 @@ public sealed partial class MainWindow : Window
             for (int i = 0; i < navEntries.Count; i++)
             {
                 (Button btn, TextBlock lbl, Control icn, string key, NavigationSection sec) = navEntries[i];
-                bool isActive = this._vm.CurrentSection == sec;
+                bool isActive = this._vm.CurrentSection == sec ||
+                                (sec == NavigationSection.Settings && this._vm.CurrentSection == NavigationSection.AuditLogs);
 
                 lbl.Text = this._i18n[key];
                 lbl.IsVisible = !collapsed;
@@ -247,22 +236,6 @@ public sealed partial class MainWindow : Window
                 AutomationProperties.SetName(btn, this._i18n[key]);
                 ToolTip.SetTip(btn, this._i18n[key]);
             }
-
-            bool isAuditActive = this._vm.CurrentSection == NavigationSection.AuditLogs;
-            auditLabel.Text = this._i18n["Nav.AuditLogs"];
-            auditLabel.IsVisible = !collapsed;
-            if (bottomAuditBtn.Content is StackPanel bottomRow)
-            {
-                bottomRow.Spacing = collapsed ? 0 : 10;
-            }
-
-            auditLabel.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
-            VectorIcons.SetForeground(auditIcon, isAuditActive ? p.BrandPrimary : p.TextSecondary);
-            bottomAuditBtn.Background = isAuditActive ? p.BrandSubtleFill : p.SecondarySurface;
-            bottomAuditBtn.BorderBrush = isAuditActive ? p.BrandPrimary : p.SubtleBorder;
-            bottomAuditBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
-            AutomationProperties.SetName(bottomAuditBtn, this._i18n["Nav.AuditLogs"]);
-            ToolTip.SetTip(bottomAuditBtn, $"{this._i18n["Nav.AuditLogs"]} ({this._vm.AuditDrawer.LatestTickerText})");
         }
 
         UpdateSidebarLayoutAndColors();
@@ -276,32 +249,12 @@ public sealed partial class MainWindow : Window
                 UpdateSidebarLayoutAndColors();
             }
         };
-        this._vm.AuditDrawer.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Audit.AuditLogDrawerViewModel.LatestTickerText), StringComparison.Ordinal))
-            {
-                ToolTip.SetTip(bottomAuditBtn, $"{this._i18n["Nav.AuditLogs"]} ({this._vm.AuditDrawer.LatestTickerText})");
-            }
-        };
 
         return sidebar;
     }
 
-    private Border BuildScreenHost()
+    private Grid BuildTopContextStrip()
     {
-        this._overviewScreen = this.BuildOverviewScreen();
-        this._accountsScreen = this.BuildAccountsScreen();
-        this._groupsScreen = this.BuildGroupsScreen();
-        this._publisherScreen = this.BuildPublisherScreen();
-        this._leadsScreen = this.BuildSalesLeadsScreen();
-        this._settingsScreen = this.BuildSettingsScreen();
-        this._auditLogsScreen = this.BuildAuditLogsScreen();
-
-        Grid workspaceGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto")
-        };
-
         Grid topContextStrip = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -342,27 +295,17 @@ public sealed partial class MainWindow : Window
             FontWeight.Medium,
             isSecondary: true);
 
-        ComboBox activeAccCombo = new()
-        {
-            MinWidth = 200,
-            PlaceholderText = this._i18n["TopBar.NoAccount"],
-            ItemsSource = this._vm.Accounts,
-            SelectedItem = this._vm.SelectedAccount,
-            ItemTemplate = new FuncDataTemplate<AccountProfile>((acc, _) =>
-            {
-                if (acc is null)
-                {
-                    return new TextBlock { Text = this._i18n["TopBar.NoAccount"] };
-                }
-
-                return new TextBlock
-                {
-                    Text = $"{acc.DisplayName} ({this._i18n.FormatAccountStatus(acc.Status)})",
-                    FontSize = 12,
-                    FontWeight = FontWeight.Medium
-                };
-            })
-        };
+        ComboBox activeAccCombo = UiControls.CreateComboBox<AccountProfile>(
+            this._theme,
+            this._vm.Accounts,
+            acc => UiControls.CreateThemedLabel(
+                this._theme,
+                $"{acc.DisplayName} ({this._i18n.FormatAccountStatus(acc.Status)})",
+                12,
+                FontWeight.Medium),
+            selectedItem: this._vm.SelectedAccount,
+            placeholderText: this._i18n["TopBar.NoAccount"]);
+        activeAccCombo.MinWidth = 200;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         activeAccCombo.SelectionChanged += (_, _) =>
         {
@@ -383,29 +326,38 @@ public sealed partial class MainWindow : Window
         topContextStrip.Children.Add(stopTaskBtn);
         topContextStrip.Children.Add(modeRow);
 
-        Grid.SetRow(topContextStrip, 0);
-        workspaceGrid.Children.Add(topContextStrip);
+        void ApplyColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
+        ApplyColors();
+        this._theme.ThemeChanged += (_, _) => ApplyColors();
 
-        Control? ResolveCurrentScreen() =>
-            this._vm.CurrentSection switch
-            {
-                NavigationSection.Overview => this._overviewScreen,
-                NavigationSection.Accounts => this._accountsScreen,
-                NavigationSection.Groups => this._groupsScreen,
-                NavigationSection.Publisher => this._publisherScreen,
-                NavigationSection.SalesLeads => this._leadsScreen,
-                NavigationSection.Settings => this._settingsScreen,
-                NavigationSection.AuditLogs => this._auditLogsScreen,
-                _ => this._accountsScreen
-            };
-
-        Border activeScreenContainer = new()
+        this._i18n.LanguageChanged += (_, _) =>
         {
-            Child = ResolveCurrentScreen()
+            modeLbl.Text = this._i18n["Overview.ModeLabel"];
+            activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
+            UiControls.SetButtonText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
         };
-        Grid.SetRow(activeScreenContainer, 1);
-        workspaceGrid.Children.Add(activeScreenContainer);
 
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
+            {
+                if (!ReferenceEquals(activeAccCombo.SelectedItem, this._vm.SelectedAccount))
+                {
+                    activeAccCombo.SelectedItem = this._vm.SelectedAccount;
+                }
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
+            {
+                busyStrip.IsVisible = this._vm.IsBusy;
+                stopTaskBtn.IsVisible = this._vm.IsBusy;
+            }
+        };
+
+        return topContextStrip;
+    }
+
+    private Grid BuildFooterRow()
+    {
         Grid footerRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
@@ -433,47 +385,6 @@ public sealed partial class MainWindow : Window
         footerRow.Children.Add(footerTicker);
         footerRow.Children.Add(versionLabel);
 
-        Grid.SetRow(footerRow, 2);
-        workspaceGrid.Children.Add(footerRow);
-
-        Border host = new()
-        {
-            Padding = new Thickness(18, 12, 18, 10),
-            Child = workspaceGrid
-        };
-
-        void ApplyHostColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
-
-        ApplyHostColors();
-        this._theme.ThemeChanged += (_, _) => ApplyHostColors();
-
-        this._i18n.LanguageChanged += (_, _) =>
-        {
-            modeLbl.Text = this._i18n["Overview.ModeLabel"];
-            activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
-            UiControls.SetButtonText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
-        };
-
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentSection), StringComparison.Ordinal))
-            {
-                activeScreenContainer.Child = ResolveCurrentScreen();
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
-            {
-                if (!ReferenceEquals(activeAccCombo.SelectedItem, this._vm.SelectedAccount))
-                {
-                    activeAccCombo.SelectedItem = this._vm.SelectedAccount;
-                }
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
-            {
-                busyStrip.IsVisible = this._vm.IsBusy;
-                stopTaskBtn.IsVisible = this._vm.IsBusy;
-            }
-        };
-
         this._vm.AuditDrawer.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Audit.AuditLogDrawerViewModel.LatestTickerText), StringComparison.Ordinal))
@@ -482,6 +393,6 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        return host;
+        return footerRow;
     }
 }

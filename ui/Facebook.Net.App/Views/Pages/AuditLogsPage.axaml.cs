@@ -6,21 +6,58 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Audit;
+using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Activity &amp; Audit Logs screen (`MainWindow.Audit.cs`).
-/// Uses SVG counter pills (`check-circle.svg`, `warning.svg`, `error-circle.svg`) and 4-dimensional filtering without CSV export.
+/// Independent Activity &amp; Audit Logs Page (<c>AuditLogsPage.axaml</c>).
+/// Navigated to from the bottom of <see cref="SettingsPage"/> or the footer status ticker.
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class AuditLogsPage : UserControl
 {
-    private Control BuildAuditLogsScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuditLogsPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public AuditLogsPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuditLogsPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public AuditLogsPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         AuditLogDrawerViewModel drawerVm = this._vm.AuditDrawer;
 
@@ -32,7 +69,8 @@ public sealed partial class MainWindow
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -43,7 +81,7 @@ public sealed partial class MainWindow
             out TextBlock titleTb,
             out TextBlock infoTb);
 
-        // SVG Icon Metric Pills for Success / Warning / Error counters (zero Unicode symbol dependency)
+        // SVG Icon Metric Pills for Success / Warning / Error counters
         StackPanel countersRow = new()
         {
             Orientation = Orientation.Horizontal,
@@ -76,10 +114,18 @@ public sealed partial class MainWindow
         countersRow.Children.Add(warnPill);
         countersRow.Children.Add(errPill);
 
+        Button backToSettingsBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Audit.BtnBackToSettings"],
+            this._vm.NavigateSettingsCommand,
+            VectorIcons.Settings);
+
         Grid.SetColumn(header, 0);
         Grid.SetColumn(countersRow, 1);
+        Grid.SetColumn(backToSettingsBtn, 2);
         topHeaderRow.Children.Add(header);
         topHeaderRow.Children.Add(countersRow);
+        topHeaderRow.Children.Add(backToSettingsBtn);
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
@@ -255,6 +301,7 @@ public sealed partial class MainWindow
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
             searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
             emptyLogsMsg.Text = this._i18n["Empty.AuditLogs"];
+            UiControls.SetButtonText(backToSettingsBtn, this._i18n["Audit.BtnBackToSettings"]);
             UiControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
             UiControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
         };

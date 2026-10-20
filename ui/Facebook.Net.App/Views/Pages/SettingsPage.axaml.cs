@@ -2,23 +2,64 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the System Settings screen (`MainWindow.Settings.cs`).
+/// Independent System Settings Page (<c>SettingsPage.axaml</c>).
+/// Includes Theme, Language, Browser Engine, Anti-Checkpoint Delay, and the bottom entry point to navigate to <see cref="AuditLogsPage"/>.
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class SettingsPage : UserControl
 {
-    private Control BuildSettingsScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SettingsPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public SettingsPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SettingsPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public SettingsPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         StackPanel formStack = new()
         {
@@ -206,6 +247,66 @@ public sealed partial class MainWindow
             this._vm.SaveSettingsCommand,
             VectorIcons.Settings);
 
+        // 4. Bottom Section: Compact Activity & Audit Logs Entry Card (tucked at the bottom of Settings)
+        Grid auditEntryRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel auditCounters = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Border okPill = UiControls.CreateIconMetricPill(
+            this._theme,
+            VectorIcons.CheckCircle,
+            this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture),
+            AuditSeverity.Success,
+            out TextBlock okCountTb);
+
+        Border warnPill = UiControls.CreateIconMetricPill(
+            this._theme,
+            VectorIcons.Warning,
+            this._vm.AuditDrawer.WarningCount.ToString(CultureInfo.InvariantCulture),
+            AuditSeverity.Warning,
+            out TextBlock warnCountTb);
+
+        Border errPill = UiControls.CreateIconMetricPill(
+            this._theme,
+            VectorIcons.ErrorCircle,
+            this._vm.AuditDrawer.ErrorCount.ToString(CultureInfo.InvariantCulture),
+            AuditSeverity.Error,
+            out TextBlock errCountTb);
+
+        auditCounters.Children.Add(okPill);
+        auditCounters.Children.Add(warnPill);
+        auditCounters.Children.Add(errPill);
+
+        Button openAuditLogsBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Settings.BtnOpenAuditLogs"],
+            this._vm.NavigateAuditLogsCommand,
+            VectorIcons.AuditLog);
+
+        Grid.SetColumn(auditCounters, 0);
+        Grid.SetColumn(openAuditLogsBtn, 2);
+        auditEntryRow.Children.Add(auditCounters);
+        auditEntryRow.Children.Add(openAuditLogsBtn);
+
+        Border auditEntryWell = UiControls.CreateInsetWell(this._theme, auditEntryRow, new Thickness(12, 8));
+
+        this._vm.AuditDrawer.PropertyChanged += (_, _) =>
+        {
+            okCountTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
+            warnCountTb.Text = this._vm.AuditDrawer.WarningCount.ToString(CultureInfo.InvariantCulture);
+            errCountTb.Text = this._vm.AuditDrawer.ErrorCount.ToString(CultureInfo.InvariantCulture);
+        };
+
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedThemeMode), StringComparison.Ordinal))
@@ -244,6 +345,7 @@ public sealed partial class MainWindow
         formStack.Children.Add(headlessCheck);
         formStack.Children.Add(delayField);
         formStack.Children.Add(saveBtn);
+        formStack.Children.Add(auditEntryWell);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -259,8 +361,26 @@ public sealed partial class MainWindow
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             UiControls.SetButtonText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
+            UiControls.SetButtonText(openAuditLogsBtn, this._i18n["Settings.BtnOpenAuditLogs"]);
         };
 
         return UiControls.CreateCard(this._theme, new ScrollViewer { Content = formStack });
+    }
+
+    private async Task<string?> PickSingleFileAsync(string title)
+    {
+        IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        }).ConfigureAwait(true);
+
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 }

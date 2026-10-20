@@ -5,19 +5,56 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using Avalonia.Markup.Xaml;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
 
-namespace Facebook.Net.App.Views;
+namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Accounts Management screen (`MainWindow.Accounts.cs`).
+/// Independent Accounts Management Page (<c>AccountsPage.axaml</c>).
+/// Supports 1-click browser login, clipboard cookie import, proxy assignment, and session health checks.
 /// </summary>
-public sealed partial class MainWindow
+public sealed partial class AccountsPage : UserControl
 {
-    private Control BuildAccountsScreen()
+    private readonly ShellViewModel _vm;
+    private readonly ThemeService _theme;
+    private readonly LocalizationService _i18n;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AccountsPage"/> class for XAML designer/runtime loader.
+    /// </summary>
+    public AccountsPage()
+    {
+        this._vm = null!;
+        this._theme = null!;
+        this._i18n = null!;
+        this.InitializeComponent();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AccountsPage"/> class bound to <see cref="ShellViewModel"/>.
+    /// </summary>
+    public AccountsPage(ShellViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        this._vm = viewModel;
+        this._theme = viewModel.Context.Theme;
+        this._i18n = viewModel.Context.Localization;
+        this.DataContext = viewModel;
+
+        this.InitializeComponent();
+        ContentControl root = this.FindControl<ContentControl>("PageRoot")!;
+        root.Content = this.BuildLayout();
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private Control BuildLayout()
     {
         Grid pageGrid = new()
         {
@@ -85,9 +122,10 @@ public sealed partial class MainWindow
             iconSvg: VectorIcons.Clipboard);
         pasteClipboardBtn.Click += async (_, _) =>
         {
-            if (this.Clipboard is not null)
+            IClipboard? clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard is not null)
             {
-                string? clipText = await this.Clipboard.TryGetTextAsync().ConfigureAwait(true);
+                string? clipText = await clipboard.TryGetTextAsync().ConfigureAwait(true);
                 if (!string.IsNullOrWhiteSpace(clipText))
                 {
                     cookieBox.Text = clipText;
@@ -172,7 +210,7 @@ public sealed partial class MainWindow
         Grid.SetRow(proxyRow, 3);
         pageGrid.Children.Add(proxyRow);
 
-        // Row 4: Selected Account Action Buttons (all with SVG icons)
+        // Row 4: Selected Account Action Buttons
         Grid selectedAccBar = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
