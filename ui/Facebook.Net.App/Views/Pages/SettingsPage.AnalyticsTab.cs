@@ -2,289 +2,229 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
-using System.Globalization;
+using System.Collections.Generic;
 using Avalonia.Controls;
-using Facebook.Net.Contracts.Models;
-using Facebook.Net.Contracts.Primitives;
+using Avalonia.Layout;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
-using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Tab 3 of <see cref="SettingsPage"/>: System-Wide Data Analytics Hub with 3 <see cref="SvgDonutChart"/> cards.
+/// Tab 3 of <see cref="SettingsPage"/>: Application Disk &amp; Storage Usage Monitor with <see cref="SvgDonutChart"/> breakdowns.
 /// </summary>
 public sealed partial class SettingsPage
 {
-    private Control BuildDataAnalyticsTab(out Action refreshI18n)
+    private static readonly string[] s_profileSlicePalette =
+    [
+        "#F6821F",
+        "#3B82F6",
+        "#10B981",
+        "#8B5CF6",
+        "#06B6D4",
+        "#EC4899",
+        "#F59E0B"
+    ];
+
+    private Control BuildStorageMonitorTab(out Action refreshI18n)
     {
-        Grid analyticsGrid = new()
+        Grid storageGrid = new()
         {
             RowDefinitions = new RowDefinitions("Auto,Auto,*"),
             RowSpacing = 12
         };
 
+        Grid topBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         Grid headerRow = SectionHeader.Create(
             this._theme,
-            this._i18n["Analytics.Header"],
-            this._i18n["Analytics.Desc"],
+            this._i18n["Storage.Header"],
+            this._i18n["Storage.Desc"],
             out TextBlock headerTitleTb,
             out TextBlock headerDescTb);
-        Grid.SetRow(headerRow, 0);
-        analyticsGrid.Children.Add(headerRow);
 
-        // Top KPI Row: 4 Aggregated System Metrics
+        Button rescanBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Storage.BtnRefresh"],
+            null,
+            VectorIcons.Sync);
+
+        Button cleanCacheBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Storage.BtnCleanCache"],
+            null,
+            VectorIcons.Trash);
+
+        Grid.SetColumn(headerRow, 0);
+        Grid.SetColumn(rescanBtn, 1);
+        Grid.SetColumn(cleanCacheBtn, 2);
+        topBar.Children.Add(headerRow);
+        topBar.Children.Add(rescanBtn);
+        topBar.Children.Add(cleanCacheBtn);
+        Grid.SetRow(topBar, 0);
+        storageGrid.Children.Add(topBar);
+
+        // Row 1: 4 Storage & Memory KPI Stat Cards
         Grid kpiRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*,*"),
             ColumnSpacing = 10
         };
 
-        Border kpiAcc = KpiStatCard.Create(
+        Border kpiTotal = KpiStatCard.Create(
             this._theme,
-            this._i18n["Kpi.AccountsTitle"],
-            "0",
-            VectorIcons.Accounts,
-            out TextBlock kpiAccTitleTb,
-            out TextBlock kpiAccValTb,
-            this._vm.NavigateAccountsCommand);
+            this._i18n["Storage.KpiTotalAppTitle"],
+            "0 KB",
+            VectorIcons.Folder,
+            out TextBlock kpiTotalTitleTb,
+            out TextBlock kpiTotalValTb);
 
-        Border kpiGrp = KpiStatCard.Create(
+        Border kpiDb = KpiStatCard.Create(
             this._theme,
-            this._i18n["Kpi.GroupsTitle"],
-            "0",
-            VectorIcons.Groups,
-            out TextBlock kpiGrpTitleTb,
-            out TextBlock kpiGrpValTb,
-            this._vm.NavigateGroupsCommand);
+            this._i18n["Storage.KpiDatabaseTitle"],
+            "0 KB",
+            VectorIcons.Shield,
+            out TextBlock kpiDbTitleTb,
+            out TextBlock kpiDbValTb);
 
-        Border kpiLeads = KpiStatCard.Create(
+        Border kpiProfiles = KpiStatCard.Create(
             this._theme,
-            this._i18n["Kpi.LeadsTitle"],
-            "0",
-            VectorIcons.Search,
-            out TextBlock kpiLeadsTitleTb,
-            out TextBlock kpiLeadsValTb,
-            this._vm.NavigateSalesLeadsCommand);
+            this._i18n["Storage.KpiProfilesTitle"],
+            "0 KB",
+            VectorIcons.Browser,
+            out TextBlock kpiProfilesTitleTb,
+            out TextBlock kpiProfilesValTb);
 
-        Border kpiActions = KpiStatCard.Create(
+        Border kpiMemory = KpiStatCard.Create(
             this._theme,
-            this._i18n["Kpi.TelemetryTitle"],
-            "0",
+            this._i18n["Storage.KpiMemoryDiskTitle"],
+            "0 MB",
             VectorIcons.CheckCircle,
-            out TextBlock kpiActionsTitleTb,
-            out TextBlock kpiActionsValTb);
+            out TextBlock kpiMemoryTitleTb,
+            out TextBlock kpiMemoryValTb);
 
-        Grid.SetColumn(kpiAcc, 0);
-        Grid.SetColumn(kpiGrp, 1);
-        Grid.SetColumn(kpiLeads, 2);
-        Grid.SetColumn(kpiActions, 3);
-        kpiRow.Children.Add(kpiAcc);
-        kpiRow.Children.Add(kpiGrp);
-        kpiRow.Children.Add(kpiLeads);
-        kpiRow.Children.Add(kpiActions);
+        Grid.SetColumn(kpiTotal, 0);
+        Grid.SetColumn(kpiDb, 1);
+        Grid.SetColumn(kpiProfiles, 2);
+        Grid.SetColumn(kpiMemory, 3);
+        kpiRow.Children.Add(kpiTotal);
+        kpiRow.Children.Add(kpiDb);
+        kpiRow.Children.Add(kpiProfiles);
+        kpiRow.Children.Add(kpiMemory);
         Grid.SetRow(kpiRow, 1);
-        analyticsGrid.Children.Add(kpiRow);
+        storageGrid.Children.Add(kpiRow);
 
-        // 3 Multi-Color Vector SVG Donut Charts Row
+        // Row 2: 2 Vector SVG Donut Charts (Component Breakdown + Per-Profile Breakdown)
         Grid chartsGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
             ColumnSpacing = 12
         };
 
-        SvgDonutChart accountsChart = new(
+        SvgDonutChart componentsChart = new(
             this._theme,
-            this._i18n["Analytics.ChartAccountsTitle"],
-            VectorIcons.Accounts,
-            this._i18n["Analytics.TotalLabel"],
-            size: 148,
+            this._i18n["Storage.ChartComponentsTitle"],
+            VectorIcons.Folder,
+            this._i18n["Storage.TotalUsedLabel"],
+            size: 156,
             strokeThickness: 22);
 
-        SvgDonutChart leadsChart = new(
+        SvgDonutChart profilesChart = new(
             this._theme,
-            this._i18n["Analytics.ChartLeadsTitle"],
-            VectorIcons.Search,
-            this._i18n["Analytics.TotalLabel"],
-            size: 148,
+            this._i18n["Storage.ChartProfilesTitle"],
+            VectorIcons.Browser,
+            this._i18n["Storage.TotalProfilesLabel"],
+            size: 156,
             strokeThickness: 22);
 
-        SvgDonutChart activityChart = new(
-            this._theme,
-            this._i18n["Analytics.ChartActivityTitle"],
-            VectorIcons.BrandMark,
-            this._i18n["Analytics.TotalLabel"],
-            size: 148,
-            strokeThickness: 22);
-
-        Grid.SetColumn(accountsChart, 0);
-        Grid.SetColumn(leadsChart, 1);
-        Grid.SetColumn(activityChart, 2);
-        chartsGrid.Children.Add(accountsChart);
-        chartsGrid.Children.Add(leadsChart);
-        chartsGrid.Children.Add(activityChart);
+        Grid.SetColumn(componentsChart, 0);
+        Grid.SetColumn(profilesChart, 1);
+        chartsGrid.Children.Add(componentsChart);
+        chartsGrid.Children.Add(profilesChart);
 
         ScrollViewer chartsScroll = new()
         {
             Content = chartsGrid
         };
         Grid.SetRow(chartsScroll, 2);
-        analyticsGrid.Children.Add(chartsScroll);
+        storageGrid.Children.Add(chartsScroll);
 
-        void RefreshCharts()
+        static int ToKilobytesSliceValue(long bytes) =>
+            bytes <= 0 ? 0 : (int)Math.Clamp((bytes + 1023L) / 1024L, 1L, int.MaxValue / 8);
+
+        static string FormatKbSlice(int kb) =>
+            ShellViewModel.FormatByteSize(kb * 1024L);
+
+        void RefreshStorageStats()
         {
-            // 1. Account Status Breakdown
-            int activeAcc = 0;
-            int idleAcc = 0;
-            int expiredAcc = 0;
-            int attentionAcc = 0;
+            StorageUsageSnapshot snap = this._vm.CalculateStorageUsageSnapshot();
 
-            for (int i = 0; i < this._vm.Accounts.Count; i++)
+            kpiTotalValTb.Text = ShellViewModel.FormatByteSize(snap.TotalUsedBytes);
+            kpiDbValTb.Text = ShellViewModel.FormatByteSize(snap.MainDatabaseBytes + snap.AuditDatabaseBytes);
+            kpiProfilesValTb.Text = ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes);
+            kpiMemoryValTb.Text = $"{ShellViewModel.FormatByteSize(snap.ProcessRamBytes)} / {ShellViewModel.FormatByteSize(snap.DriveFreeBytes)}";
+
+            componentsChart.SetSlices(
+                [
+                    new SvgDonutSlice(this._i18n["Storage.SliceProfiles"], ToKilobytesSliceValue(snap.BrowserProfilesBytes), "#3B82F6"),
+                    new SvgDonutSlice(this._i18n["Storage.SliceMainDb"], ToKilobytesSliceValue(snap.MainDatabaseBytes), "#10B981"),
+                    new SvgDonutSlice(this._i18n["Storage.SliceAuditDb"], ToKilobytesSliceValue(snap.AuditDatabaseBytes), "#F6821F"),
+                    new SvgDonutSlice(this._i18n["Storage.SliceConfig"], ToKilobytesSliceValue(snap.ConfigAndOtherBytes), "#8B5CF6")
+                ],
+                customTotalText: ShellViewModel.FormatByteSize(snap.TotalUsedBytes),
+                valueFormatter: FormatKbSlice);
+
+            List<SvgDonutSlice> profileSlices = new();
+            for (int i = 0; i < snap.ProfileBreakdown.Count; i++)
             {
-                AccountStatus st = this._vm.Accounts[i].Status;
-                if (st is AccountStatus.Active or AccountStatus.Running)
-                {
-                    activeAcc++;
-                }
-                else if (st == AccountStatus.Idle)
-                {
-                    idleAcc++;
-                }
-                else if (st == AccountStatus.CookieExpired)
-                {
-                    expiredAcc++;
-                }
-                else
-                {
-                    attentionAcc++;
-                }
+                (string profileName, long sizeBytes) = snap.ProfileBreakdown[i];
+                string colorHex = s_profileSlicePalette[i % s_profileSlicePalette.Length];
+                profileSlices.Add(new SvgDonutSlice(profileName, ToKilobytesSliceValue(sizeBytes), colorHex));
             }
 
-            accountsChart.SetSlices(
-            [
-                new SvgDonutSlice(this._i18n["Analytics.LegendActive"], activeAcc, "#10B981"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendIdle"], idleAcc, "#3B82F6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendExpired"], expiredAcc, "#F59E0B"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendAttention"], attentionAcc, "#EF4444")
-            ]);
-
-            // 2. Buyer Leads Care Breakdown
-            int highIntentPending = 0;
-            int warmPending = 0;
-            int commentedLeads = 0;
-
-            for (int i = 0; i < this._vm.ScrapedPosts.Count; i++)
+            if (profileSlices.Count == 0)
             {
-                PostSummary post = this._vm.ScrapedPosts[i];
-                if (this._vm.IsPostCommented(post.PostId))
-                {
-                    commentedLeads++;
-                }
-                else
-                {
-                    int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
-                    if (score >= 70)
-                    {
-                        highIntentPending++;
-                    }
-                    else
-                    {
-                        warmPending++;
-                    }
-                }
+                profileSlices.Add(new SvgDonutSlice(this._i18n["Storage.SliceNoProfiles"], 0, "#64748B"));
             }
 
-            leadsChart.SetSlices(
-            [
-                new SvgDonutSlice(this._i18n["Analytics.LegendHighIntentPending"], highIntentPending, "#F6821F"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendWarmPending"], warmPending, "#8B5CF6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendCommented"], commentedLeads, "#10B981")
-            ]);
-
-            // 3. System Activity Breakdown
-            int publishOps = 0;
-            int commentOps = 0;
-            int scrapeOps = 0;
-            int syncOps = 0;
-            int alertOps = 0;
-
-            for (int i = 0; i < this._vm.AuditDrawer.FilteredLogs.Count; i++)
-            {
-                AuditLogRecord rec = this._vm.AuditDrawer.FilteredLogs[i];
-                if (rec.Severity is AuditSeverity.Warning or AuditSeverity.Error)
-                {
-                    alertOps++;
-                }
-
-                switch (rec.Category)
-                {
-                    case AuditCategory.Post:
-                        publishOps++;
-                        break;
-                    case AuditCategory.SalesComment:
-                        commentOps++;
-                        break;
-                    case AuditCategory.Scrape:
-                        scrapeOps++;
-                        break;
-                    case AuditCategory.Account:
-                    case AuditCategory.Group:
-                    case AuditCategory.System:
-                    default:
-                        syncOps++;
-                        break;
-                }
-            }
-
-            activityChart.SetSlices(
-            [
-                new SvgDonutSlice(this._i18n["Analytics.LegendPublish"], publishOps, "#3B82F6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendSalesComment"], commentOps, "#10B981"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendScrape"], scrapeOps, "#F6821F"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendSync"], syncOps, "#06B6D4"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendAlerts"], alertOps, "#EF4444")
-            ]);
-
-            int enabledTargets = 0;
-            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
-            {
-                if (this._vm.TargetGroups[i].IsEnabled)
-                {
-                    enabledTargets++;
-                }
-            }
-
-            kpiAccValTb.Text = this._vm.Accounts.Count.ToString(CultureInfo.InvariantCulture);
-            kpiGrpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
-            kpiLeadsValTb.Text = this._vm.ScrapedPosts.Count.ToString(CultureInfo.InvariantCulture);
-            kpiActionsValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
+            profilesChart.SetSlices(
+                profileSlices,
+                customTotalText: ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes),
+                valueFormatter: FormatKbSlice);
         }
 
-        RefreshCharts();
-        this._theme.ThemeChanged += (_, _) => RefreshCharts();
-        this._vm.PropertyChanged += (_, _) => RefreshCharts();
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshCharts();
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshCharts();
-        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshCharts();
-        this._vm.AuditDrawer.FilteredLogs.CollectionChanged += (_, _) => RefreshCharts();
-        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshCharts();
+        rescanBtn.Click += (_, _) => RefreshStorageStats();
+        cleanCacheBtn.Click += async (_, _) =>
+        {
+            _ = await this._vm.CleanBrowserProfilesCacheAsync().ConfigureAwait(true);
+            RefreshStorageStats();
+        };
+
+        RefreshStorageStats();
+        this._theme.ThemeChanged += (_, _) => RefreshStorageStats();
+        this._vm.Accounts.CollectionChanged += (_, _) => RefreshStorageStats();
 
         refreshI18n = () =>
         {
-            headerTitleTb.Text = this._i18n["Analytics.Header"];
-            headerDescTb.Text = this._i18n["Analytics.Desc"];
-            kpiAccTitleTb.Text = this._i18n["Kpi.AccountsTitle"];
-            kpiGrpTitleTb.Text = this._i18n["Kpi.GroupsTitle"];
-            kpiLeadsTitleTb.Text = this._i18n["Kpi.LeadsTitle"];
-            kpiActionsTitleTb.Text = this._i18n["Kpi.TelemetryTitle"];
-            accountsChart.UpdateLabels(this._i18n["Analytics.ChartAccountsTitle"], this._i18n["Analytics.TotalLabel"]);
-            leadsChart.UpdateLabels(this._i18n["Analytics.ChartLeadsTitle"], this._i18n["Analytics.TotalLabel"]);
-            activityChart.UpdateLabels(this._i18n["Analytics.ChartActivityTitle"], this._i18n["Analytics.TotalLabel"]);
-            RefreshCharts();
+            headerTitleTb.Text = this._i18n["Storage.Header"];
+            headerDescTb.Text = this._i18n["Storage.Desc"];
+            AppButton.SetText(rescanBtn, this._i18n["Storage.BtnRefresh"]);
+            AppButton.SetText(cleanCacheBtn, this._i18n["Storage.BtnCleanCache"]);
+            kpiTotalTitleTb.Text = this._i18n["Storage.KpiTotalAppTitle"];
+            kpiDbTitleTb.Text = this._i18n["Storage.KpiDatabaseTitle"];
+            kpiProfilesTitleTb.Text = this._i18n["Storage.KpiProfilesTitle"];
+            kpiMemoryTitleTb.Text = this._i18n["Storage.KpiMemoryDiskTitle"];
+            componentsChart.UpdateLabels(this._i18n["Storage.ChartComponentsTitle"], this._i18n["Storage.TotalUsedLabel"]);
+            profilesChart.UpdateLabels(this._i18n["Storage.ChartProfilesTitle"], this._i18n["Storage.TotalProfilesLabel"]);
+            RefreshStorageStats();
         };
 
-        return analyticsGrid;
+        return storageGrid;
     }
 }

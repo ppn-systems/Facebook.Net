@@ -447,5 +447,36 @@
 
   "Audit.FilterCatCategory": "Event Category",
   "Audit.FilterCatTimeRange": "Time Range",
-  "Audit.FilterCatAccount": "Account"
+  "Audit.FilterCatAccount": "Account",
+
+  "Settings.TabStorage": "Storage & Disk Usage",
+  "Settings.BtnRescanBrowsers": "Rescan",
+  "Settings.BrowserDetectedPrefix": "Detected browser executable",
+  "Settings.BrowserNotDetectedWarning": "No compatible browser detected in default system paths",
+  "Settings.ProfileManagerLabel": "Browser Profile — Select Existing or Create New",
+  "Settings.BtnBrowseProfileFolder": "Browse Profile Folder",
+  "Settings.ActiveProfilePathPrefix": "Active profile folder",
+  "Settings.ActiveProfileNoneHint": "Select an existing profile or create a new isolated profile below",
+  "Settings.NewProfileNamePlaceholder": "Enter new profile name, e.g. Sales Profile 01...",
+  "Settings.BtnCreateProfile": "+ Create New Profile",
+  "Settings.LogProfileAssigned": "Assigned browser profile '{0}' to account '{1}'.",
+
+  "Storage.Header": "Application Disk Storage & Memory Monitor",
+  "Storage.Desc": "Inspect real-time disk usage across SQLite databases, isolated browser profiles, and system caches with interactive donut charts.",
+  "Storage.BtnRefresh": "Rescan Storage",
+  "Storage.BtnCleanCache": "Clean Browser Cache",
+  "Storage.KpiTotalAppTitle": "Total App Storage Used",
+  "Storage.KpiDatabaseTitle": "SQLite Databases",
+  "Storage.KpiProfilesTitle": "Browser Profiles",
+  "Storage.KpiMemoryDiskTitle": "Process RAM / Free Disk",
+  "Storage.ChartComponentsTitle": "Storage Breakdown by Component",
+  "Storage.ChartProfilesTitle": "Storage Breakdown by Browser Profile",
+  "Storage.TotalUsedLabel": "Total Used",
+  "Storage.TotalProfilesLabel": "Profiles Total",
+  "Storage.SliceProfiles": "Browser Profiles",
+  "Storage.SliceMainDb": "Accounts & Groups DB",
+  "Storage.SliceAuditDb": "Activity Audit DB",
+  "Storage.SliceConfig": "Config & System Files",
+  "Storage.SliceNoProfiles": "No browser profile data yet",
+  "Storage.LogCacheCleaned": "Cleaned browser profile caches, freed {0}. Current total storage: {1}."
 }

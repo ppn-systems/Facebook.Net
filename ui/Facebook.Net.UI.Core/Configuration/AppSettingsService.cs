@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +13,17 @@ using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 
 namespace Facebook.Net.UI.Core.Configuration;
+
+/// <summary>
+/// Represents a discovered or managed Chromium browser profile folder on the local machine.
+/// </summary>
+/// <param name="DisplayName">Human-readable label for the profile.</param>
+/// <param name="DirectoryPath">Full directory path on disk.</param>
+/// <param name="IsManagedByApp">Whether the profile lives inside the application's isolated <c>Profiles</c> root.</param>
+public sealed record BrowserProfileOption(
+    string DisplayName,
+    string DirectoryPath,
+    bool IsManagedByApp);
 
 /// <summary>
 /// Preferred Chromium browser family for launching isolated account sessions.
@@ -178,13 +190,21 @@ public sealed class AppSettingsService
             return this.Current.CustomBrowserExecutablePath;
         }
 
+        return ResolveExecutableForKind(this.Current.PreferredBrowser);
+    }
+
+    /// <summary>
+    /// Resolves the executable path on disk for a specific <see cref="PreferredBrowserKind"/>, or <see langword="null"/> if not installed.
+    /// </summary>
+    public static string? ResolveExecutableForKind(PreferredBrowserKind kind)
+    {
         if (OperatingSystem.IsWindows())
         {
             string progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string progFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-            switch (this.Current.PreferredBrowser)
+            switch (kind)
             {
                 case PreferredBrowserKind.Edge:
                     return FirstExisting(
@@ -212,7 +232,7 @@ public sealed class AppSettingsService
         else if (OperatingSystem.IsMacOS())
         {
             string userApps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Applications");
-            switch (this.Current.PreferredBrowser)
+            switch (kind)
             {
                 case PreferredBrowserKind.Edge:
                     return FirstExisting(
@@ -231,8 +251,190 @@ public sealed class AppSettingsService
                     break;
             }
         }
+        else if (OperatingSystem.IsLinux())
+        {
+            switch (kind)
+            {
+                case PreferredBrowserKind.Edge:
+                    return FirstExisting("/usr/bin/microsoft-edge", "/usr/bin/microsoft-edge-stable");
+                case PreferredBrowserKind.Chrome:
+                    return FirstExisting("/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser");
+                case PreferredBrowserKind.Brave:
+                    return FirstExisting("/usr/bin/brave-browser", "/usr/bin/brave");
+                case PreferredBrowserKind.AutoDetect:
+                default:
+                    break;
+            }
+        }
 
         return null;
+    }
+
+    /// <summary>
+    /// Scans the machine for installed Chromium browsers and returns <see cref="PreferredBrowserKind.AutoDetect"/>
+    /// followed only by the browsers actually installed on disk (plus the currently configured kind if set).
+    /// </summary>
+    public List<PreferredBrowserKind> GetInstalledBrowsers()
+    {
+        List<PreferredBrowserKind> installed = [PreferredBrowserKind.AutoDetect];
+        PreferredBrowserKind[] candidates =
+        [
+            PreferredBrowserKind.Edge,
+            PreferredBrowserKind.Chrome,
+            PreferredBrowserKind.Brave
+        ];
+
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            PreferredBrowserKind candidate = candidates[i];
+            if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(candidate)))
+            {
+                installed.Add(candidate);
+            }
+        }
+
+        if (!installed.Contains(this.Current.PreferredBrowser))
+        {
+            installed.Add(this.Current.PreferredBrowser);
+        }
+
+        return installed;
+    }
+
+    /// <summary>
+    /// Determines the effective <see cref="PreferredBrowserKind"/> currently in use (resolving <see cref="PreferredBrowserKind.AutoDetect"/>
+    /// or custom executable paths to the concrete browser family: <see cref="PreferredBrowserKind.Edge"/>, <see cref="PreferredBrowserKind.Chrome"/>, or <see cref="PreferredBrowserKind.Brave"/>).
+    /// </summary>
+    public PreferredBrowserKind ResolveEffectiveBrowserKind()
+    {
+        if (!string.IsNullOrWhiteSpace(this.Current.CustomBrowserExecutablePath))
+        {
+            string exeName = Path.GetFileName(this.Current.CustomBrowserExecutablePath);
+            if (exeName.Contains("brave", StringComparison.OrdinalIgnoreCase))
+            {
+                return PreferredBrowserKind.Brave;
+            }
+
+            if (exeName.Contains("chrome", StringComparison.OrdinalIgnoreCase))
+            {
+                return PreferredBrowserKind.Chrome;
+            }
+
+            if (exeName.Contains("msedge", StringComparison.OrdinalIgnoreCase) ||
+                exeName.Contains("edge", StringComparison.OrdinalIgnoreCase))
+            {
+                return PreferredBrowserKind.Edge;
+            }
+        }
+
+        if (this.Current.PreferredBrowser != PreferredBrowserKind.AutoDetect)
+        {
+            return this.Current.PreferredBrowser;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Edge)))
+        {
+            return PreferredBrowserKind.Edge;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Chrome)))
+        {
+            return PreferredBrowserKind.Chrome;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Brave)))
+        {
+            return PreferredBrowserKind.Brave;
+        }
+
+        return PreferredBrowserKind.Edge;
+    }
+
+    /// <summary>
+    /// Discovers all isolated browser profiles inside <paramref name="appProfilesRootDir"/> as well as
+    /// existing local user profile folders strictly matching <paramref name="effectiveBrowserKind"/>.
+    /// </summary>
+    public static List<BrowserProfileOption> DiscoverBrowserProfiles(
+        string appProfilesRootDir,
+        PreferredBrowserKind effectiveBrowserKind = PreferredBrowserKind.AutoDetect)
+    {
+        List<BrowserProfileOption> results = new();
+        HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(appProfilesRootDir) && Directory.Exists(appProfilesRootDir))
+        {
+            try
+            {
+                string[] appDirs = Directory.GetDirectories(appProfilesRootDir);
+                Array.Sort(appDirs, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < appDirs.Length; i++)
+                {
+                    string dir = appDirs[i];
+                    string folderName = Path.GetFileName(dir);
+                    if (!string.IsNullOrWhiteSpace(folderName) && seenPaths.Add(dir))
+                    {
+                        results.Add(new BrowserProfileOption($"One Client — {folderName}", dir, IsManagedByApp: true));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Ignore inaccessible directories
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] systemRoots =
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
+            ];
+
+            for (int r = 0; r < systemRoots.Length; r++)
+            {
+                if (effectiveBrowserKind != PreferredBrowserKind.AutoDetect &&
+                    systemRoots[r].Kind != effectiveBrowserKind)
+                {
+                    continue;
+                }
+
+                string rootPath = systemRoots[r].UserDataRoot;
+                if (!Directory.Exists(rootPath))
+                {
+                    continue;
+                }
+
+                string defaultProfileDir = Path.Combine(rootPath, "Default");
+                if (Directory.Exists(defaultProfileDir) && seenPaths.Add(defaultProfileDir))
+                {
+                    results.Add(new BrowserProfileOption($"{systemRoots[r].BrowserLabel} — Default", defaultProfileDir, IsManagedByApp: false));
+                }
+
+                try
+                {
+                    string[] profileDirs = Directory.GetDirectories(rootPath, "Profile *");
+                    Array.Sort(profileDirs, StringComparer.OrdinalIgnoreCase);
+                    for (int p = 0; p < profileDirs.Length; p++)
+                    {
+                        string pDir = profileDirs[p];
+                        string pName = Path.GetFileName(pDir);
+                        if (!string.IsNullOrWhiteSpace(pName) && seenPaths.Add(pDir))
+                        {
+                            results.Add(new BrowserProfileOption($"{systemRoots[r].BrowserLabel} — {pName}", pDir, IsManagedByApp: false));
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Ignore inaccessible system profile folders
+                }
+            }
+        }
+
+        return results;
     }
 
     private AppConfig LoadOrDefault()

@@ -447,5 +447,36 @@
 
   "Audit.FilterCatCategory": "Danh mục sự kiện",
   "Audit.FilterCatTimeRange": "Khoảng thời gian",
-  "Audit.FilterCatAccount": "Tài khoản"
+  "Audit.FilterCatAccount": "Tài khoản",
+
+  "Settings.TabStorage": "Dung lượng & Bộ nhớ",
+  "Settings.BtnRescanBrowsers": "Quét lại",
+  "Settings.BrowserDetectedPrefix": "Trình duyệt phát hiện trên máy",
+  "Settings.BrowserNotDetectedWarning": "Chưa phát hiện trình duyệt tương thích tại đường dẫn mặc định",
+  "Settings.ProfileManagerLabel": "Hồ sơ Trình duyệt — Chọn sẵn có hoặc Tạo mới",
+  "Settings.BtnBrowseProfileFolder": "Chọn thư mục Profile",
+  "Settings.ActiveProfilePathPrefix": "Thư mục Profile đang gắn",
+  "Settings.ActiveProfileNoneHint": "Chọn một hồ sơ có sẵn hoặc tạo hồ sơ mới bên dưới để gắn cho tài khoản",
+  "Settings.NewProfileNamePlaceholder": "Nhập tên Profile mới, ví dụ Profile Bán Hàng 01...",
+  "Settings.BtnCreateProfile": "+ Tạo Profile mới",
+  "Settings.LogProfileAssigned": "Đã gắn hồ sơ trình duyệt '{0}' cho tài khoản '{1}'.",
+
+  "Storage.Header": "Theo dõi Dung lượng Lưu trữ & Bộ nhớ Hệ thống",
+  "Storage.Desc": "Thống kê chi tiết dung lượng đĩa đang sử dụng bởi cơ sở dữ liệu SQLite, các hồ sơ trình duyệt và bộ nhớ đệm với biểu đồ tròn trực quan.",
+  "Storage.BtnRefresh": "Quét lại dung lượng",
+  "Storage.BtnCleanCache": "Dọn bộ nhớ đệm trình duyệt",
+  "Storage.KpiTotalAppTitle": "Tổng dung lượng đã dùng",
+  "Storage.KpiDatabaseTitle": "Cơ sở dữ liệu SQLite",
+  "Storage.KpiProfilesTitle": "Hồ sơ trình duyệt",
+  "Storage.KpiMemoryDiskTitle": "RAM đang dùng / Trống ổ đĩa",
+  "Storage.ChartComponentsTitle": "Phân bổ Dung lượng theo Thành phần",
+  "Storage.ChartProfilesTitle": "Dung lượng theo từng Hồ sơ Trình duyệt",
+  "Storage.TotalUsedLabel": "Đã dùng",
+  "Storage.TotalProfilesLabel": "Tổng Profile",
+  "Storage.SliceProfiles": "Hồ sơ trình duyệt",
+  "Storage.SliceMainDb": "CSDL Tài khoản & Nhóm",
+  "Storage.SliceAuditDb": "CSDL Nhật ký hoạt động",
+  "Storage.SliceConfig": "Cấu hình & tệp hệ thống",
+  "Storage.SliceNoProfiles": "Chưa có dữ liệu hồ sơ trình duyệt",
+  "Storage.LogCacheCleaned": "Đã dọn bộ nhớ đệm trình duyệt, giải phóng {0}. Tổng dung lượng hiện tại: {1}."
 }
