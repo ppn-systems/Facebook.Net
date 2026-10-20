@@ -61,13 +61,13 @@ public sealed class DataTableView<T> : Border where T : class
             RowDefinitions = new RowDefinitions("Auto,Auto,*")
         };
 
-        // 0. Optional Table Card Title Bar (e.g., "Số bài viết đã thu thập (12)")
+        // 0. Optional Table Card Title Bar
         Border? titleBarBorder = null;
         if (!string.IsNullOrWhiteSpace(tableTitlePrefix))
         {
             TextBlock titleTb = SectionHeader.CreateLabel(
                 theme,
-                $"{tableTitlePrefix} ({CountItems(itemsSource)})",
+                $"{tableTitlePrefix}: {CountItems(itemsSource)}",
                 14,
                 FontWeight.Bold);
             this._tableTitleLabel = titleTb;
@@ -156,7 +156,7 @@ public sealed class DataTableView<T> : Border where T : class
                 emptyBanner.IsVisible = !any;
                 if (this._tableTitleLabel is not null && !string.IsNullOrWhiteSpace(this._tableTitlePrefix))
                 {
-                    this._tableTitleLabel.Text = $"{this._tableTitlePrefix} ({CountItems(itemsSource)})";
+                    this._tableTitleLabel.Text = $"{this._tableTitlePrefix}: {CountItems(itemsSource)}";
                 }
             };
         }
@@ -206,7 +206,7 @@ public sealed class DataTableView<T> : Border where T : class
         if (!string.IsNullOrWhiteSpace(tableTitlePrefix))
         {
             this._tableTitlePrefix = tableTitlePrefix;
-            this._tableTitleLabel?.Text = $"{tableTitlePrefix} ({CountItems(this._itemsSource)})";
+            this._tableTitleLabel?.Text = $"{tableTitlePrefix}: {CountItems(this._itemsSource)}";
         }
     }
 

@@ -205,7 +205,15 @@ public sealed partial class SalesLeadsPage : UserControl
             {
                 if (obj is SavedTargetGroup grp)
                 {
-                    return SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium);
+                    StackPanel grpItemRow = new()
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    grpItemRow.Children.Add(AvatarBadge.Create(this._theme, grp.GroupName, 22, grp.AvatarUrl));
+                    grpItemRow.Children.Add(SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium));
+                    return grpItemRow;
                 }
 
                 TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Leads.FilterAllGroups"], 12.5, FontWeight.Medium);
@@ -699,7 +707,27 @@ public sealed partial class SalesLeadsPage : UserControl
         Grid.SetRow(header, 0);
         commentTabGrid.Children.Add(header);
 
-        // Selected Post Banner
+        // Selected Post Banner + Optional Photo/Video Preview
+        Image selectedMediaImg = new()
+        {
+            Width = 110,
+            Height = 76,
+            Stretch = Stretch.UniformToFill,
+            IsVisible = false
+        };
+        Border selectedMediaBorder = new()
+        {
+            Width = 110,
+            Height = 76,
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            BorderBrush = this._theme.Palette.SubtleBorder,
+            ClipToBounds = true,
+            Child = selectedMediaImg,
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         TextBlock selectedPostTb = SectionHeader.CreateLabel(
             this._theme,
             this._vm.SelectedScrapedPost is not null
@@ -707,9 +735,21 @@ public sealed partial class SalesLeadsPage : UserControl
                 : this._i18n["Leads.NoPostSelected"],
             12.5,
             FontWeight.SemiBold);
-        selectedPostTb.MaxLines = 2;
+        selectedPostTb.MaxLines = 3;
+        selectedPostTb.TextWrapping = TextWrapping.Wrap;
         selectedPostTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        Border selectedPostWell = SurfaceCard.CreateInset(this._theme, selectedPostTb, new Thickness(14, 10));
+        selectedPostTb.VerticalAlignment = VerticalAlignment.Center;
+
+        Grid selectedPostGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 12,
+            Children = { selectedMediaBorder, selectedPostTb }
+        };
+        Grid.SetColumn(selectedMediaBorder, 0);
+        Grid.SetColumn(selectedPostTb, 1);
+
+        Border selectedPostWell = SurfaceCard.CreateInset(this._theme, selectedPostGrid, new Thickness(14, 10));
         Grid.SetRow(selectedPostWell, 1);
         commentTabGrid.Children.Add(selectedPostWell);
 
@@ -802,7 +842,13 @@ public sealed partial class SalesLeadsPage : UserControl
             selectedPostTb.Text = this._vm.SelectedScrapedPost is not null
                 ? $"{this._i18n["Leads.SelectedPostBanner"]} {this._vm.SelectedScrapedPost.AuthorName} — {this._vm.SelectedScrapedPost.MessageText}"
                 : this._i18n["Leads.NoPostSelected"];
+            RemoteImageLoader.Attach(
+                selectedMediaImg,
+                this._vm.SelectedScrapedPost?.MediaPreviewUrl,
+                selectedMediaBorder);
         }
+
+        UpdateSelectedPostBanner();
 
         this._vm.PropertyChanged += (_, e) =>
         {

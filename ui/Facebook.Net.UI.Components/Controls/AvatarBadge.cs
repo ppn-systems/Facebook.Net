@@ -16,9 +16,9 @@ namespace Facebook.Net.UI.Components.Controls;
 public static class AvatarBadge
 {
     /// <summary>
-    /// Creates a circular avatar badge displaying the 1–2 letter initials of an Account or Group name.
+    /// Creates a circular avatar badge displaying the remote avatar image if available, or 1–2 letter initials of an Account or Group name.
     /// </summary>
-    public static Border Create(ThemeService theme, string displayName, double size = 34)
+    public static Border Create(ThemeService theme, string displayName, double size = 34, string? imageUrl = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
@@ -32,13 +32,43 @@ public static class AvatarBadge
             VerticalAlignment = VerticalAlignment.Center
         };
 
+        Panel rootPanel = new()
+        {
+            Width = size,
+            Height = size
+        };
+        rootPanel.Children.Add(text);
+
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+        {
+            Image avatarImg = new()
+            {
+                Width = size,
+                Height = size,
+                Stretch = Stretch.UniformToFill,
+                IsVisible = false
+            };
+            Border imgClip = new()
+            {
+                Width = size,
+                Height = size,
+                CornerRadius = new CornerRadius(size / 2),
+                ClipToBounds = true,
+                Child = avatarImg,
+                IsVisible = false
+            };
+            rootPanel.Children.Add(imgClip);
+            RemoteImageLoader.Attach(avatarImg, imageUrl, imgClip, text);
+        }
+
         Border badge = new()
         {
             Width = size,
             Height = size,
             CornerRadius = new CornerRadius(size / 2),
             BorderThickness = new Thickness(1),
-            Child = text,
+            ClipToBounds = true,
+            Child = rootPanel,
             VerticalAlignment = VerticalAlignment.Center
         };
 

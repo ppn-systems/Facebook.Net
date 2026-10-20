@@ -157,7 +157,7 @@ public sealed partial class ShellViewModel
             this.JoinedGroups.Add(group);
 
             // Auto-save into SQLite TargetGroups so they persist across app restarts
-            SavedTargetGroup target = new(group.GroupId, group.Name, IsEnabled: true);
+            SavedTargetGroup target = new(group.GroupId, group.Name, IsEnabled: true, Notes: null, AvatarUrl: group.AvatarUrl);
             await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
         }
 
@@ -186,7 +186,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.Group"],
                 this.Msg(
-                    "Vui lòng nhập từ khóa tìm nhóm (VD: Chợ cư dân, Mua bán nhà đất...).",
+                    "Vui lòng nhập từ khóa tìm nhóm, ví dụ Chợ cư dân hoặc Mua bán nhà đất.",
                     "Please enter a group search keyword (e.g., Real Estate Deals, Laptop Market...).")).ConfigureAwait(true);
             return;
         }
@@ -263,7 +263,7 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        SavedTargetGroup target = new(this.SelectedGroup.GroupId, this.SelectedGroup.Name, IsEnabled: true);
+        SavedTargetGroup target = new(this.SelectedGroup.GroupId, this.SelectedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: this.SelectedGroup.AvatarUrl);
         await this._context.AccountStore.UpsertTargetGroupAsync(target).ConfigureAwait(true);
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
 
@@ -323,7 +323,7 @@ public sealed partial class ShellViewModel
 
             if (state == GroupMembershipState.Member)
             {
-                SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true);
+                SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: updatedGroup.AvatarUrl);
                 await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
                 await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
             }
@@ -334,7 +334,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Success,
                 group.Name,
                 this.Msg(
-                    $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' ({friendlyState}).",
+                    $"Đã gửi yêu cầu tham gia nhóm '{group.Name}' — trạng thái: {friendlyState}.",
                     $"Sent request to join group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -416,7 +416,7 @@ public sealed partial class ShellViewModel
 
                 if (state == GroupMembershipState.Member)
                 {
-                    SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true);
+                    SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: updatedGroup.AvatarUrl);
                     await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
                 }
 
@@ -426,7 +426,7 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Success,
                     group.Name,
                     this.Msg(
-                        $"[{joinedOrRequested}/{candidates.Count}] Đã tham gia nhóm '{group.Name}' ({friendlyState}).",
+                        $"[{joinedOrRequested}/{candidates.Count}] Đã tham gia nhóm '{group.Name}' — trạng thái: {friendlyState}.",
                         $"[{joinedOrRequested}/{candidates.Count}] Joined group '{group.Name}' ({friendlyState}).")).ConfigureAwait(true);
             }
 

@@ -176,10 +176,10 @@ public static class UniversalSessionImporter
         string extractedUid = ExtractCookieValue(trimmed.AsSpan(), "c_user".AsSpan())
             ?? ComputeDeterministicId("acc_", trimmed);
 
-        string prefix = defaultImportedPrefix ?? "FB Account";
+        string prefix = defaultImportedPrefix ?? "Tài khoản";
         string display = !string.IsNullOrWhiteSpace(friendlyName)
             ? friendlyName.Trim()
-            : $"{prefix} ({MaskIdentifier(extractedUid)})";
+            : $"{prefix} {MaskIdentifier(extractedUid)}";
 
         return new ImportedSessionBundle(
             AccountUid: extractedUid,
@@ -242,7 +242,7 @@ public static class UniversalSessionImporter
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
-                        : $"J2Team ({MaskIdentifier(resolvedUid)})";
+                        : $"Facebook {MaskIdentifier(resolvedUid)}";
 
                     result = new ImportedSessionBundle(resolvedUid, label, cookieStr, userAgent, null);
                     return true;
@@ -256,7 +256,7 @@ public static class UniversalSessionImporter
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
-                        : $"Facebook ({MaskIdentifier(resolvedUid)})";
+                        : $"Facebook {MaskIdentifier(resolvedUid)}";
 
                     result = new ImportedSessionBundle(resolvedUid, label, explicitCookieHeader, userAgent, null);
                     return true;
@@ -274,7 +274,7 @@ public static class UniversalSessionImporter
 
                     string label = !string.IsNullOrWhiteSpace(friendlyName)
                         ? friendlyName.Trim()
-                        : $"Cookie JSON ({MaskIdentifier(resolvedUid)})";
+                        : $"Facebook {MaskIdentifier(resolvedUid)}";
 
                     result = new ImportedSessionBundle(resolvedUid, label, cookieStr, null, null);
                     return true;
@@ -355,10 +355,10 @@ public static class UniversalSessionImporter
         }
 
         string resolvedUid = uid ?? ComputeDeterministicId("acc_", input);
-        string prefix = defaultImportedPrefix ?? "FB Account";
+        string prefix = defaultImportedPrefix ?? "Tài khoản";
         string label = !string.IsNullOrWhiteSpace(friendlyName)
             ? friendlyName.Trim()
-            : $"{prefix} ({MaskIdentifier(resolvedUid)})";
+            : $"{prefix} {MaskIdentifier(resolvedUid)}";
 
         return new ImportedSessionBundle(
             AccountUid: resolvedUid,

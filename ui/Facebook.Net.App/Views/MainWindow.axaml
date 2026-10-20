@@ -12,14 +12,18 @@
         Icon="avares://Facebook.Net.App/Assets/app.ico">
     <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*">
         <Border x:Name="SidebarContainer" Grid.Column="0" />
-        <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="22,14,22,12">
-            <Grid RowDefinitions="Auto,*,Auto">
-                <Border x:Name="TopContextContainer" Grid.Row="0" />
+        <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="22,12,22,10">
+            <Grid RowDefinitions="*,Auto">
                 <TransitioningContentControl x:Name="PageNavigationHost"
-                                             Grid.Row="1"
+                                             Grid.Row="0"
                                              HorizontalAlignment="Stretch"
                                              VerticalAlignment="Stretch" />
-                <Border x:Name="FooterContainer" Grid.Row="2" />
+                <Border x:Name="TopContextContainer"
+                        Grid.Row="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        ZIndex="10" />
+                <Border x:Name="FooterContainer" Grid.Row="1" />
             </Grid>
         </Border>
     </Grid>

@@ -53,7 +53,8 @@ public sealed class SubTabBar : Grid
         {
             Orientation = Orientation.Horizontal,
             Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 310, 0)
         };
 
         for (int i = 0; i < items.Count; i++)

@@ -73,7 +73,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 group_id TEXT PRIMARY KEY NOT NULL,
                 group_name TEXT NOT NULL,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
-                notes TEXT NULL
+                notes TEXT NULL,
+                avatar_url TEXT NULL
             );
 
             CREATE TABLE IF NOT EXISTS campaign_templates (
@@ -104,7 +105,11 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 reaction_count INTEGER NOT NULL DEFAULT 0,
                 comment_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NULL,
-                scraped_at TEXT NOT NULL
+                scraped_at TEXT NOT NULL,
+                media_preview_url TEXT NULL,
+                is_video INTEGER NOT NULL DEFAULT 0,
+                author_avatar_url TEXT NULL,
+                group_avatar_url TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_group_id ON scraped_posts(group_id);
@@ -116,6 +121,31 @@ public sealed partial class SqliteAccountStore : IAccountStore
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        await EnsureColumnExistsAsync(conn, "target_groups", "avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "media_preview_url", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "is_video", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "author_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "group_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureColumnExistsAsync(
+        SqliteConnection conn,
+        string tableName,
+        string columnName,
+        string columnTypeDef,
+        CancellationToken ct)
+    {
+        try
+        {
+            using SqliteCommand alterCmd = conn.CreateCommand();
+            alterCmd.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnTypeDef};";
+            _ = await alterCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+            // Column already exists in existing database.
+        }
     }
 
     /// <inheritdoc />

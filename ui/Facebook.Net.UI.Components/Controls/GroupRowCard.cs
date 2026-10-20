@@ -38,7 +38,7 @@ public static class GroupRowCard
             Margin = new Thickness(4)
         };
 
-        Border badge = AvatarBadge.Create(theme, grp.Name, 30);
+        Border badge = AvatarBadge.Create(theme, grp.Name, 30, grp.AvatarUrl);
         Grid.SetColumn(badge, 0);
 
         TextBlock nameTb = SectionHeader.CreateLabel(theme, grp.Name, 13, FontWeight.Medium);
@@ -94,7 +94,7 @@ public static class GroupRowCard
             }
         };
 
-        Border avatar = AvatarBadge.Create(theme, tg.GroupName, 28);
+        Border avatar = AvatarBadge.Create(theme, tg.GroupName, 28, tg.AvatarUrl);
         TextBlock nameTb = SectionHeader.CreateLabel(theme, tg.GroupName, 13, FontWeight.SemiBold);
         nameTb.TextWrapping = TextWrapping.NoWrap;
         nameTb.TextTrimming = TextTrimming.CharacterEllipsis;

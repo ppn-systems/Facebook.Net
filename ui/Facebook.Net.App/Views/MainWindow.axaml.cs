@@ -253,20 +253,23 @@ public sealed partial class MainWindow : Window
         return sidebar;
     }
 
-    private Grid BuildTopContextStrip()
+    private StackPanel BuildTopContextStrip()
     {
-        Grid topContextStrip = new()
+        StackPanel topContextStrip = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
-            ColumnSpacing = 10,
-            Margin = new Thickness(0, 0, 0, 12)
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Top,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 1, 0, 0)
         };
 
         ProgressBar busyStrip = new()
         {
             IsIndeterminate = true,
-            Height = 3,
-            MinHeight = 3,
+            Width = 80,
+            Height = 4,
+            MinHeight = 4,
             CornerRadius = new CornerRadius(2),
             BorderThickness = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
@@ -305,7 +308,8 @@ public sealed partial class MainWindow : Window
                 FontWeight.Medium),
             selectedItem: this._vm.SelectedAccount,
             placeholderText: this._i18n["TopBar.NoAccount"]);
-        activeAccCombo.MinWidth = 200;
+        activeAccCombo.MinWidth = 190;
+        activeAccCombo.Height = 32;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         activeAccCombo.SelectionChanged += (_, _) =>
         {
@@ -319,9 +323,6 @@ public sealed partial class MainWindow : Window
         modeRow.Children.Add(modeLbl);
         modeRow.Children.Add(activeAccCombo);
 
-        Grid.SetColumn(busyStrip, 0);
-        Grid.SetColumn(stopTaskBtn, 1);
-        Grid.SetColumn(modeRow, 2);
         topContextStrip.Children.Add(busyStrip);
         topContextStrip.Children.Add(stopTaskBtn);
         topContextStrip.Children.Add(modeRow);

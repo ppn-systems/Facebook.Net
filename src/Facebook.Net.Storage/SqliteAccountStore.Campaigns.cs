@@ -21,7 +21,7 @@ public sealed partial class SqliteAccountStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<SavedTargetGroup>> GetAllTargetGroupsAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT group_id, group_name, is_enabled, notes FROM target_groups ORDER BY group_name ASC;";
+        const string sql = "SELECT group_id, group_name, is_enabled, notes, avatar_url FROM target_groups ORDER BY group_name ASC;";
 
         using SqliteConnection conn = new(this._connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -44,12 +44,13 @@ public sealed partial class SqliteAccountStore
         ArgumentNullException.ThrowIfNull(group);
 
         const string sql = """
-            INSERT INTO target_groups (group_id, group_name, is_enabled, notes)
-            VALUES ($group_id, $group_name, $is_enabled, $notes)
+            INSERT INTO target_groups (group_id, group_name, is_enabled, notes, avatar_url)
+            VALUES ($group_id, $group_name, $is_enabled, $notes, $avatar_url)
             ON CONFLICT(group_id) DO UPDATE SET
                 group_name = excluded.group_name,
                 is_enabled = excluded.is_enabled,
-                notes = excluded.notes;
+                notes = excluded.notes,
+                avatar_url = COALESCE(excluded.avatar_url, target_groups.avatar_url);
             """;
 
         using SqliteConnection conn = new(this._connectionString);
@@ -60,6 +61,7 @@ public sealed partial class SqliteAccountStore
         _ = cmd.Parameters.AddWithValue("$group_name", group.GroupName);
         _ = cmd.Parameters.AddWithValue("$is_enabled", group.IsEnabled ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("$notes", (object?)group.Notes ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("$avatar_url", (object?)group.AvatarUrl ?? DBNull.Value);
 
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -239,12 +241,12 @@ public sealed partial class SqliteAccountStore
             INSERT INTO scraped_posts (
                 post_id, group_id, group_name, author_uid, author_name,
                 message_text, permalink_url, reaction_count, comment_count,
-                created_at, scraped_at
+                created_at, scraped_at, media_preview_url, is_video, author_avatar_url, group_avatar_url
             )
             VALUES (
                 $post_id, $group_id, $group_name, $author_uid, $author_name,
                 $message_text, $permalink_url, $reaction_count, $comment_count,
-                $created_at, $scraped_at
+                $created_at, $scraped_at, $media_preview_url, $is_video, $author_avatar_url, $group_avatar_url
             )
             ON CONFLICT(post_id) DO UPDATE SET
                 group_id = CASE WHEN excluded.group_id <> '' THEN excluded.group_id ELSE scraped_posts.group_id END,
@@ -256,7 +258,11 @@ public sealed partial class SqliteAccountStore
                 reaction_count = MAX(scraped_posts.reaction_count, excluded.reaction_count),
                 comment_count = MAX(scraped_posts.comment_count, excluded.comment_count),
                 created_at = COALESCE(excluded.created_at, scraped_posts.created_at),
-                scraped_at = excluded.scraped_at;
+                scraped_at = excluded.scraped_at,
+                media_preview_url = COALESCE(excluded.media_preview_url, scraped_posts.media_preview_url),
+                is_video = CASE WHEN excluded.is_video <> 0 THEN 1 ELSE scraped_posts.is_video END,
+                author_avatar_url = COALESCE(excluded.author_avatar_url, scraped_posts.author_avatar_url),
+                group_avatar_url = COALESCE(excluded.group_avatar_url, scraped_posts.group_avatar_url);
             """;
 
         string nowIso = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
@@ -291,6 +297,10 @@ public sealed partial class SqliteAccountStore
                     ? p.CreatedAt.Value.ToString("O", CultureInfo.InvariantCulture)
                     : DBNull.Value);
             _ = cmd.Parameters.AddWithValue("$scraped_at", nowIso);
+            _ = cmd.Parameters.AddWithValue("$media_preview_url", (object?)p.MediaPreviewUrl ?? DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$is_video", p.IsVideo ? 1 : 0);
+            _ = cmd.Parameters.AddWithValue("$author_avatar_url", (object?)p.AuthorAvatarUrl ?? DBNull.Value);
+            _ = cmd.Parameters.AddWithValue("$group_avatar_url", (object?)p.GroupAvatarUrl ?? DBNull.Value);
 
             _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -307,7 +317,8 @@ public sealed partial class SqliteAccountStore
     {
         const string sql = """
             SELECT post_id, group_id, group_name, author_uid, author_name,
-                   message_text, permalink_url, reaction_count, comment_count, created_at
+                   message_text, permalink_url, reaction_count, comment_count, created_at,
+                   media_preview_url, is_video, author_avatar_url, group_avatar_url
             FROM scraped_posts
             WHERE ($group_id IS NULL OR group_id = $group_id)
               AND ($keyword IS NULL
@@ -365,7 +376,8 @@ public sealed partial class SqliteAccountStore
             GroupId: reader.GetString(0),
             GroupName: reader.GetString(1),
             IsEnabled: reader.GetInt32(2) != 0,
-            Notes: reader.IsDBNull(3) ? null : reader.GetString(3));
+            Notes: reader.IsDBNull(3) ? null : reader.GetString(3),
+            AvatarUrl: reader.FieldCount > 4 && !reader.IsDBNull(4) ? reader.GetString(4) : null);
 
     private static CampaignTemplate MapCampaignTemplate(SqliteDataReader reader) =>
         new(
@@ -415,6 +427,10 @@ public sealed partial class SqliteAccountStore
             CommentCount: reader.GetInt32(8),
             CreatedAt: createdAt,
             GroupId: string.IsNullOrWhiteSpace(groupId) ? null : groupId,
-            GroupName: string.IsNullOrWhiteSpace(groupName) ? null : groupName);
+            GroupName: string.IsNullOrWhiteSpace(groupName) ? null : groupName,
+            MediaPreviewUrl: reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : null,
+            IsVideo: reader.FieldCount > 11 && !reader.IsDBNull(11) && reader.GetInt32(11) != 0,
+            AuthorAvatarUrl: reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : null,
+            GroupAvatarUrl: reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : null);
     }
 }

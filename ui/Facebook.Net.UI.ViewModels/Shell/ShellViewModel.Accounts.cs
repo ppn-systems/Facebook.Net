@@ -127,10 +127,29 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < storedAccounts.Count; i++)
         {
             AccountProfile acc = storedAccounts[i];
+            bool modified = false;
+
+            if (acc.DisplayName.Contains('(', StringComparison.Ordinal) || acc.DisplayName.Contains(')', StringComparison.Ordinal))
+            {
+                string cleanedName = acc.DisplayName.Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal).Trim();
+                if (cleanedName.StartsWith("Facebook ", StringComparison.OrdinalIgnoreCase))
+                {
+                    cleanedName = $"Tài khoản {cleanedName["Facebook ".Length..].Trim()}";
+                }
+
+                acc = acc with { DisplayName = cleanedName };
+                modified = true;
+            }
+
             if ((acc.Status == AccountStatus.CookieExpired || acc.Status == AccountStatus.Idle) &&
                 (!string.IsNullOrWhiteSpace(acc.CookieHeader) || HasProfileAuthenticatedCookieStore(acc.ProfileDirectory)))
             {
                 acc = acc with { Status = AccountStatus.Active };
+                modified = true;
+            }
+
+            if (modified)
+            {
                 await this._context.AccountStore.UpsertAccountAsync(acc).ConfigureAwait(true);
             }
 
@@ -178,7 +197,7 @@ public sealed partial class ShellViewModel
         {
             for (int i = 0; i < storedGroups.Count; i++)
             {
-                GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member);
+                GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member, storedGroups[i].AvatarUrl);
                 this._allCatalogGroups.Add(summary);
             }
 
@@ -346,7 +365,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Info,
                 cleared.DisplayName,
                 this.Msg(
-                    $"Đã gỡ Proxy và chuyển tài khoản '{cleared.DisplayName}' về kết nối mạng trực tiếp.",
+                    $"Đã gỡ máy chủ trung gian và chuyển tài khoản '{cleared.DisplayName}' về kết nối mạng trực tiếp.",
                     $"Removed proxy and switched account '{cleared.DisplayName}' to direct connection.")).ConfigureAwait(true);
             return;
         }
@@ -359,7 +378,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 current.DisplayName,
                 this.Msg(
-                    "Định dạng Proxy chưa hợp lệ (VD đúng: 103.1.2.3:8080 hoặc socks5://103.1.2.3:1080:user:pass).",
+                    "Định dạng địa chỉ mạng chưa hợp lệ, vui lòng nhập theo mẫu 103.1.2.3:8080.",
                     "Invalid proxy format (valid examples: 103.1.2.3:8080 or socks5://103.1.2.3:1080:user:pass).")).ConfigureAwait(true);
             return;
         }
@@ -375,7 +394,7 @@ public sealed partial class ShellViewModel
             AuditSeverity.Success,
             updated.DisplayName,
             this.Msg(
-                $"Đã lưu cấu hình Proxy ({parsed.Protocol.ToString().ToUpperInvariant()} {parsed.Host}:{parsed.Port}) cho '{updated.DisplayName}'.",
+                $"Đã lưu cấu hình kết nối mạng {parsed.Host}:{parsed.Port} cho tài khoản '{updated.DisplayName}'.",
                 $"Saved proxy ({parsed.Protocol.ToString().ToUpperInvariant()} {parsed.Host}:{parsed.Port}) for '{updated.DisplayName}'.")).ConfigureAwait(true);
     }
 
@@ -426,7 +445,7 @@ public sealed partial class ShellViewModel
                 current.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
 
             string displayName = isDefaultPlaceholder && isHealthy
-                ? $"Facebook {suffix}"
+                ? $"Tài khoản {suffix}"
                 : current.DisplayName;
 
             AccountProfile checkedProfile = current with
@@ -453,7 +472,7 @@ public sealed partial class ShellViewModel
                 checkedProfile.DisplayName,
                 isHealthy
                     ? this.Msg(
-                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đang HOẠT ĐỘNG TỐT (Live).",
+                        $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đang hoạt động bình thường.",
                         $"Session for '{checkedProfile.DisplayName}' is HEALTHY and ACTIVE (Live).")
                     : this.Msg(
                         $"Phiên đăng nhập của '{checkedProfile.DisplayName}' đã hết hạn, cần đăng nhập lại.",
@@ -487,7 +506,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 updated.DisplayName,
                 this.Msg(
-                    $"Kiểm tra trạng thái '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} ({this.SanitizeErrorMessage(ex)}).",
+                    $"Kiểm tra trạng thái '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} — {this.SanitizeErrorMessage(ex)}.",
                     $"Health check for '{updated.DisplayName}': {this._context.Localization.FormatAccountStatus(faultStatus)} ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
         }
         finally
@@ -578,7 +597,7 @@ public sealed partial class ShellViewModel
                 account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
 
             string displayName = isDefaultPlaceholder
-                ? $"Facebook {suffix}"
+                ? $"Tài khoản {suffix}"
                 : account.DisplayName;
 
             AccountProfile updated = account with
@@ -604,7 +623,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Success,
                 updated.DisplayName,
                 this.Msg(
-                    "Đã đồng bộ phiên trình duyệt thành công! Đang tự động tải danh sách Nhóm đã tham gia...",
+                    "Đã đồng bộ phiên trình duyệt thành công! Đang tự động tải danh sách nhóm đã tham gia...",
                     "Browser session synced! Automatically loading joined Groups...")).ConfigureAwait(true);
 
             // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
@@ -625,7 +644,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.Account"],
                 this.Msg(
-                    $"Trình duyệt đã mở — vui lòng đăng nhập Facebook trên cửa sổ trình duyệt rồi bấm lại để đồng bộ ({this.SanitizeErrorMessage(ex)}).",
+                    $"Trình duyệt đã mở — vui lòng đăng nhập trên cửa sổ trình duyệt rồi bấm lại để đồng bộ: {this.SanitizeErrorMessage(ex)}.",
                     $"Browser opened — please sign in to Facebook in the browser window and click again to sync ({this.SanitizeErrorMessage(ex)}).")).ConfigureAwait(true);
         }
         finally
@@ -691,7 +710,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Info,
                 account.DisplayName,
                 this.Msg(
-                    $"Đang khởi động tương tác tự nhiên (Nuôi tài khoản) cho '{account.DisplayName}': lướt Bảng tin & thả cảm xúc...",
+                    $"Đang khởi động tương tác tự nhiên cho '{account.DisplayName}': lướt bảng tin và bày tỏ cảm xúc...",
                     $"Running organic session warm-up for '{account.DisplayName}': scrolling Newsfeed & reacting...")).ConfigureAwait(true);
 
             await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
@@ -734,7 +753,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Success,
                 updated.DisplayName,
                 this.Msg(
-                    $"Đã hoàn tất tương tác nuôi tài khoản '{updated.DisplayName}' (đã lướt Bảng tin & thả cảm xúc {reactedCount} bài viết)!",
+                    $"Đã hoàn tất tương tác tự nhiên cho '{updated.DisplayName}', đã lướt bảng tin và bày tỏ cảm xúc {reactedCount} bài viết!",
                     $"Completed organic warm-up for '{updated.DisplayName}' (scrolled Newsfeed & reacted to {reactedCount} posts)!")).ConfigureAwait(true);
         }
         catch (OperationCanceledException)

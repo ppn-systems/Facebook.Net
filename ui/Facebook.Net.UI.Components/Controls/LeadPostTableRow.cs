@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
-using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -49,7 +48,7 @@ public static class LeadPostTableRow
             ? i18n["Leads.DefaultAuthor"]
             : post.AuthorName;
 
-        Border avatarBadge = AvatarBadge.Create(theme, authorDisplay, size: 30);
+        Border avatarBadge = AvatarBadge.Create(theme, authorDisplay, size: 30, imageUrl: post.AuthorAvatarUrl);
         TextBlock authorTb = SectionHeader.CreateLabel(theme, authorDisplay, 12.5, FontWeight.SemiBold);
         authorTb.MaxLines = 2;
         authorTb.TextWrapping = TextWrapping.Wrap;
@@ -67,20 +66,29 @@ public static class LeadPostTableRow
         authorCell.Children.Add(avatarBadge);
         authorCell.Children.Add(authorTb);
 
-        // Col 1: Group Name Badge
+        // Col 1: Group Avatar + Group Name
         string groupText = string.IsNullOrWhiteSpace(post.GroupName)
             ? i18n["Audit.Cat.Group"]
             : post.GroupName;
-        Border groupPill = IconMetricPill.Create(
-            theme,
-            VectorIcons.Groups,
-            groupText,
-            AuditSeverity.Info,
-            out _);
-        groupPill.VerticalAlignment = VerticalAlignment.Center;
-        groupPill.HorizontalAlignment = HorizontalAlignment.Left;
+        Border groupAvatar = AvatarBadge.Create(theme, groupText, size: 26, imageUrl: post.GroupAvatarUrl);
+        TextBlock groupNameTb = SectionHeader.CreateLabel(theme, groupText, 12, FontWeight.Medium);
+        groupNameTb.MaxLines = 2;
+        groupNameTb.TextWrapping = TextWrapping.Wrap;
+        groupNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        groupNameTb.VerticalAlignment = VerticalAlignment.Center;
 
-        // Col 2: Post Message Preview + Engagement Counters
+        Grid groupCell = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 7,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(groupAvatar, 0);
+        Grid.SetColumn(groupNameTb, 1);
+        groupCell.Children.Add(groupAvatar);
+        groupCell.Children.Add(groupNameTb);
+
+        // Col 2: Optional Media Thumbnail + Post Message Preview + Engagement Counters
         string rawBody = string.IsNullOrWhiteSpace(post.MessageText)
             ? i18n["Leads.EmptyPostText"]
             : post.MessageText.Replace("\r\n", " ", StringComparison.Ordinal).Replace('\n', ' ');
@@ -90,19 +98,88 @@ public static class LeadPostTableRow
         bodyTb.TextWrapping = TextWrapping.Wrap;
         bodyTb.TextTrimming = TextTrimming.CharacterEllipsis;
 
+        string mediaBadgeSuffix = !string.IsNullOrWhiteSpace(post.MediaPreviewUrl)
+            ? (post.IsVideo ? $"   •   🎬 {i18n["Leads.MediaVideoBadge"]}" : $"   •   🖼 {i18n["Leads.MediaPhotoBadge"]}")
+            : string.Empty;
+
         TextBlock engagementTb = SectionHeader.CreateLabel(
             theme,
-            $"👍 {post.ReactionCount}   •   💬 {post.CommentCount}",
+            $"👍 {post.ReactionCount}   •   💬 {post.CommentCount}{mediaBadgeSuffix}",
             11,
             FontWeight.Medium,
             isSecondary: true);
 
-        StackPanel messageCell = new()
+        StackPanel messageTextStack = new()
         {
             Spacing = 3,
             VerticalAlignment = VerticalAlignment.Center,
             Children = { bodyTb, engagementTb }
         };
+
+        Grid messageCell = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (!string.IsNullOrWhiteSpace(post.MediaPreviewUrl))
+        {
+            Image thumbImg = new()
+            {
+                Width = 56,
+                Height = 42,
+                Stretch = Stretch.UniformToFill,
+                IsVisible = false
+            };
+
+            Panel thumbPanel = new()
+            {
+                Width = 56,
+                Height = 42,
+                Children = { thumbImg }
+            };
+
+            if (post.IsVideo)
+            {
+                Border playBadge = new()
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)),
+                    CornerRadius = new Avalonia.CornerRadius(10),
+                    Padding = new Avalonia.Thickness(5, 2),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = "▶",
+                        FontSize = 10,
+                        FontWeight = FontWeight.Bold,
+                        Foreground = Brushes.White
+                    }
+                };
+                thumbPanel.Children.Add(playBadge);
+            }
+
+            Border thumbBorder = new()
+            {
+                Width = 56,
+                Height = 42,
+                CornerRadius = new Avalonia.CornerRadius(6),
+                BorderThickness = new Avalonia.Thickness(1),
+                BorderBrush = theme.Palette.SubtleBorder,
+                ClipToBounds = true,
+                Child = thumbPanel,
+                IsVisible = false,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            RemoteImageLoader.Attach(thumbImg, post.MediaPreviewUrl, thumbBorder);
+            Grid.SetColumn(thumbBorder, 0);
+            messageCell.Children.Add(thumbBorder);
+        }
+
+        Grid.SetColumn(messageTextStack, 1);
+        messageCell.Children.Add(messageTextStack);
 
         // Col 3: Buyer-Intent Score Pill
         AuditSeverity intentSeverity = intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning;
@@ -148,14 +225,14 @@ public static class LeadPostTableRow
         };
 
         Grid.SetColumn(authorCell, 0);
-        Grid.SetColumn(groupPill, 1);
+        Grid.SetColumn(groupCell, 1);
         Grid.SetColumn(messageCell, 2);
         Grid.SetColumn(intentPill, 3);
         Grid.SetColumn(timeTb, 4);
         Grid.SetColumn(statusPill, 5);
 
         row.Children.Add(authorCell);
-        row.Children.Add(groupPill);
+        row.Children.Add(groupCell);
         row.Children.Add(messageCell);
         row.Children.Add(intentPill);
         row.Children.Add(timeTb);

@@ -137,6 +137,8 @@ public static partial class ResponseParser
                     string? text = FindPostMessageText(element);
                     string? authorUid = FindActorUid(element);
                     string? authorName = FindActorName(element);
+                    string? authorAvatar = FindActorAvatarUri(element);
+                    (string? mediaPreviewUrl, bool isVideo) = FindPostMediaPreview(element);
                     string? wwwUrl = FindStringRecursive(element, "wwwURL");
                     int reactionCount = FindNestedCount(element, "reaction_count");
                     int commentCount = FindNestedCount(element, "total_comment_count");
@@ -157,7 +159,10 @@ public static partial class ResponseParser
                             permalink,
                             reactionCount,
                             commentCount,
-                            createdAt);
+                            createdAt,
+                            MediaPreviewUrl: mediaPreviewUrl,
+                            IsVideo: isVideo,
+                            AuthorAvatarUrl: authorAvatar);
                     }
                     else
                     {
@@ -177,6 +182,13 @@ public static partial class ResponseParser
                         int mergedReactions = Math.Max(existing.ReactionCount, reactionCount);
                         int mergedComments = Math.Max(existing.CommentCount, commentCount);
                         DateTimeOffset? mergedCreatedAt = existing.CreatedAt ?? createdAt;
+                        string? mergedMediaUrl = !string.IsNullOrWhiteSpace(existing.MediaPreviewUrl)
+                            ? existing.MediaPreviewUrl
+                            : mediaPreviewUrl;
+                        bool mergedIsVideo = existing.IsVideo || isVideo;
+                        string? mergedAuthorAvatar = !string.IsNullOrWhiteSpace(existing.AuthorAvatarUrl)
+                            ? existing.AuthorAvatarUrl
+                            : authorAvatar;
 
                         postsById[postId] = new PostSummary(
                             postId,
@@ -186,7 +198,10 @@ public static partial class ResponseParser
                             mergedPermalink,
                             mergedReactions,
                             mergedComments,
-                            mergedCreatedAt);
+                            mergedCreatedAt,
+                            MediaPreviewUrl: mergedMediaUrl,
+                            IsVideo: mergedIsVideo,
+                            AuthorAvatarUrl: mergedAuthorAvatar);
                     }
                 }
             }
@@ -272,6 +287,176 @@ public static partial class ResponseParser
 
     private static string? FindActorName(JsonElement storyElement) =>
         FindActorPropertyRecursive(storyElement, "name");
+
+    private static string? FindActorAvatarUri(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("actors"u8, out JsonElement actorsEl) &&
+                actorsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement actor in actorsEl.EnumerateArray())
+                {
+                    string? uri = ExtractAvatarUriFromObject(actor);
+                    if (!string.IsNullOrWhiteSpace(uri))
+                    {
+                        return uri;
+                    }
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                string? nested = FindActorAvatarUri(prop.Value);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? nested = FindActorAvatarUri(item);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractAvatarUriFromObject(JsonElement obj)
+    {
+        if (obj.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        string[] avatarFieldNames = ["profile_picture", "icon_image", "group_icon", "avatar", "image"];
+        foreach (string fieldName in avatarFieldNames)
+        {
+            if (obj.TryGetProperty(fieldName, out JsonElement picEl) &&
+                picEl.ValueKind == JsonValueKind.Object &&
+                picEl.TryGetProperty("uri"u8, out JsonElement uriEl) &&
+                uriEl.ValueKind == JsonValueKind.String)
+            {
+                string? uri = uriEl.GetString();
+                if (!string.IsNullOrWhiteSpace(uri) && uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                {
+                    return uri;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static (string? MediaPreviewUrl, bool IsVideo) FindPostMediaPreview(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            string? typeName = element.TryGetProperty("__typename"u8, out JsonElement tEl) && tEl.ValueKind == JsonValueKind.String
+                ? tEl.GetString()
+                : null;
+            bool isVideoNode = string.Equals(typeName, "Video", StringComparison.OrdinalIgnoreCase) ||
+                               element.TryGetProperty("playable_url"u8, out _) ||
+                               (element.TryGetProperty("is_playable"u8, out JsonElement playEl) && playEl.ValueKind == JsonValueKind.True);
+
+            // Check attachments array or media node
+            if (element.TryGetProperty("media"u8, out JsonElement mediaEl) &&
+                mediaEl.ValueKind == JsonValueKind.Object)
+            {
+                (string? mediaUrl, bool mediaIsVideo) = ExtractMediaFromNode(mediaEl);
+                if (!string.IsNullOrWhiteSpace(mediaUrl))
+                {
+                    return (mediaUrl, mediaIsVideo || isVideoNode);
+                }
+            }
+
+            if (string.Equals(typeName, "Photo", StringComparison.OrdinalIgnoreCase) || isVideoNode)
+            {
+                (string? nodeUrl, bool nodeIsVideo) = ExtractMediaFromNode(element);
+                if (!string.IsNullOrWhiteSpace(nodeUrl))
+                {
+                    return (nodeUrl, nodeIsVideo || isVideoNode);
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                // Skip actors so we don't accidentally treat an actor profile_picture as post media
+                if (prop.NameEquals("actors"u8) || prop.NameEquals("profile_picture"u8))
+                {
+                    continue;
+                }
+
+                (string? nestedUrl, bool nestedVideo) = FindPostMediaPreview(prop.Value);
+                if (!string.IsNullOrWhiteSpace(nestedUrl))
+                {
+                    return (nestedUrl, nestedVideo);
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                (string? nestedUrl, bool nestedVideo) = FindPostMediaPreview(item);
+                if (!string.IsNullOrWhiteSpace(nestedUrl))
+                {
+                    return (nestedUrl, nestedVideo);
+                }
+            }
+        }
+
+        return (null, false);
+    }
+
+    private static (string? Url, bool IsVideo) ExtractMediaFromNode(JsonElement mediaNode)
+    {
+        string? typeName = mediaNode.TryGetProperty("__typename"u8, out JsonElement tEl) && tEl.ValueKind == JsonValueKind.String
+            ? tEl.GetString()
+            : null;
+        bool isVideo = string.Equals(typeName, "Video", StringComparison.OrdinalIgnoreCase) ||
+                       mediaNode.TryGetProperty("playable_url"u8, out _) ||
+                       (mediaNode.TryGetProperty("is_playable"u8, out JsonElement playEl) && playEl.ValueKind == JsonValueKind.True);
+
+        string[] imageContainers = ["photo_image", "image", "preferred_thumbnail", "thumbnailImage", "viewer_image", "flexible_height_image"];
+        foreach (string container in imageContainers)
+        {
+            if (mediaNode.TryGetProperty(container, out JsonElement imgEl) &&
+                imgEl.ValueKind == JsonValueKind.Object)
+            {
+                if (imgEl.TryGetProperty("uri"u8, out JsonElement uriEl) &&
+                    uriEl.ValueKind == JsonValueKind.String)
+                {
+                    string? uri = uriEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(uri) && uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (uri, isVideo);
+                    }
+                }
+
+                if (imgEl.TryGetProperty("image"u8, out JsonElement innerImgEl) &&
+                    innerImgEl.ValueKind == JsonValueKind.Object &&
+                    innerImgEl.TryGetProperty("uri"u8, out JsonElement innerUriEl) &&
+                    innerUriEl.ValueKind == JsonValueKind.String)
+                {
+                    string? uri = innerUriEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(uri) && uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (uri, isVideo);
+                    }
+                }
+            }
+        }
+
+        return (null, isVideo);
+    }
 
     private static string? FindActorPropertyRecursive(JsonElement element, string actorField)
     {
@@ -402,7 +587,7 @@ public static partial class ResponseParser
                 idEl.ValueKind == JsonValueKind.String)
             {
                 string? groupId = idEl.GetString();
-                if (!string.IsNullOrWhiteSpace(groupId) && seenIds.Add(groupId))
+                if (!string.IsNullOrWhiteSpace(groupId))
                 {
                     string name = element.TryGetProperty("name"u8, out JsonElement nEl) && nEl.ValueKind == JsonValueKind.String
                         ? nEl.GetString() ?? groupId
@@ -410,8 +595,28 @@ public static partial class ResponseParser
                     string? rawJoin = element.TryGetProperty("viewer_join_state"u8, out JsonElement jEl)
                         ? jEl.GetString()
                         : null;
+                    string? avatarUrl = ExtractAvatarUriFromObject(element);
 
-                    groups.Add(new GroupSummary(groupId, name, MapGroupMembershipState(rawJoin)));
+                    if (seenIds.Add(groupId))
+                    {
+                        groups.Add(new GroupSummary(groupId, name, MapGroupMembershipState(rawJoin), avatarUrl));
+                    }
+                    else if (!string.IsNullOrWhiteSpace(avatarUrl) || !string.Equals(name, groupId, StringComparison.Ordinal))
+                    {
+                        for (int i = 0; i < groups.Count; i++)
+                        {
+                            if (string.Equals(groups[i].GroupId, groupId, StringComparison.Ordinal))
+                            {
+                                GroupSummary existing = groups[i];
+                                groups[i] = new GroupSummary(
+                                    groupId,
+                                    string.Equals(existing.Name, groupId, StringComparison.Ordinal) ? name : existing.Name,
+                                    existing.MembershipState != GroupMembershipState.Unknown ? existing.MembershipState : MapGroupMembershipState(rawJoin),
+                                    existing.AvatarUrl ?? avatarUrl);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 

@@ -88,12 +88,12 @@ public sealed partial class SettingsPage : UserControl
     {
         Grid splitGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("1.2*,1*"),
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
             ColumnSpacing = 14
         };
 
-        // Left Card: System & Browser Configuration
-        StackPanel formStack = new()
+        // Left Card: Appearance & Browser Engine Configuration
+        StackPanel leftStack = new()
         {
             Spacing = 14,
             HorizontalAlignment = HorizontalAlignment.Stretch
@@ -105,7 +105,7 @@ public sealed partial class SettingsPage : UserControl
             this._i18n["Settings.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        formStack.Children.Add(header);
+        leftStack.Children.Add(header);
 
         // 1. Theme & Language in a clean 2-column row
         Grid appearanceRow = new()
@@ -161,7 +161,7 @@ public sealed partial class SettingsPage : UserControl
         Grid.SetColumn(langCol, 1);
         appearanceRow.Children.Add(themeCol);
         appearanceRow.Children.Add(langCol);
-        formStack.Children.Add(appearanceRow);
+        leftStack.Children.Add(appearanceRow);
 
         // 2. Browser Engine Selector
         ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
@@ -233,7 +233,28 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        // 3. Anti-Checkpoint Delay Range Controls
+        leftStack.Children.Add(browserField);
+        leftStack.Children.Add(customExeRow);
+        leftStack.Children.Add(headlessCheck);
+
+        Border leftCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = leftStack }, new Thickness(18));
+
+        // Right Card: Action Rate & Account Safety Configuration
+        StackPanel rightStack = new()
+        {
+            Spacing = 14,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        Grid safetyHeader = SectionHeader.Create(
+            this._theme,
+            this._i18n["Settings.SafetyTitle"],
+            this._i18n["Settings.SafetyDesc"],
+            out TextBlock safetyTitleTb,
+            out TextBlock safetyDescTb);
+        rightStack.Children.Add(safetyHeader);
+
+        // 1. Publishing & Commenting Delay Range Controls
         Grid delayRow = DelayRangeSelector.Create(
             this._theme,
             this._i18n["Settings.MinDelayPrefix"],
@@ -268,32 +289,55 @@ public sealed partial class SettingsPage : UserControl
             this._i18n["Settings.DelayRangeLabel"],
             delayRow,
             out TextBlock delayRangeLabel);
+        rightStack.Children.Add(delayField);
+
+        // 2. Group Scraping Delay Range Controls
+        Grid scrapeDelayRow = DelayRangeSelector.Create(
+            this._theme,
+            this._i18n["Settings.MinDelayPrefix"],
+            this._vm.ScrapeDelayMinSeconds,
+            this._i18n["Settings.MaxDelayPrefix"],
+            this._vm.ScrapeDelayMaxSeconds,
+            out TextBlock scrapeMinDelayPrefix,
+            out NumericUpDown scrapeMinDelayBox,
+            out TextBlock scrapeMaxDelayPrefix,
+            out NumericUpDown scrapeMaxDelayBox);
+        scrapeMinDelayBox.Minimum = 2;
+        scrapeMaxDelayBox.Minimum = 2;
+
+        scrapeMinDelayBox.ValueChanged += (_, _) =>
+        {
+            int next = (int)(scrapeMinDelayBox.Value ?? 8);
+            if (this._vm.ScrapeDelayMinSeconds != next)
+            {
+                this._vm.ScrapeDelayMinSeconds = next;
+            }
+        };
+
+        scrapeMaxDelayBox.ValueChanged += (_, _) =>
+        {
+            int next = (int)(scrapeMaxDelayBox.Value ?? 18);
+            if (this._vm.ScrapeDelayMaxSeconds != next)
+            {
+                this._vm.ScrapeDelayMaxSeconds = next;
+            }
+        };
+
+        StackPanel scrapeDelayField = FormField.CreateLabeled(
+            this._theme,
+            this._i18n["Leads.ConfigRateLimitLabel"],
+            scrapeDelayRow,
+            out TextBlock scrapeDelayLabel);
+        rightStack.Children.Add(scrapeDelayField);
 
         Button saveBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Settings.BtnSaveSettings"],
             this._vm.SaveSettingsCommand,
             VectorIcons.Settings);
+        rightStack.Children.Add(saveBtn);
 
-        formStack.Children.Add(browserField);
-        formStack.Children.Add(customExeRow);
-        formStack.Children.Add(headlessCheck);
-        formStack.Children.Add(delayField);
-        formStack.Children.Add(saveBtn);
-
-        Border leftCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = formStack }, new Thickness(18));
-
-        // Right Card: Quick Start Guide
-        StackPanel guideStack = new() { Spacing = 12 };
-        Grid guideHeader = SectionHeader.Create(
-            this._theme,
-            this._i18n["Settings.GuideTitle"],
-            this._i18n["Settings.GuideBody"],
-            out TextBlock guideTitleTb,
-            out TextBlock guideBodyTb);
-        guideStack.Children.Add(guideHeader);
-
-        Border rightCard = SurfaceCard.Create(this._theme, guideStack, new Thickness(18));
+        Border rightCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = rightStack }, new Thickness(18));
 
         Grid.SetColumn(leftCard, 0);
         Grid.SetColumn(rightCard, 1);
@@ -331,14 +375,22 @@ public sealed partial class SettingsPage : UserControl
             {
                 maxDelayBox.Value = this._vm.MaxDelaySeconds;
             }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMinSeconds), StringComparison.Ordinal))
+            {
+                scrapeMinDelayBox.Value = this._vm.ScrapeDelayMinSeconds;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMaxSeconds), StringComparison.Ordinal))
+            {
+                scrapeMaxDelayBox.Value = this._vm.ScrapeDelayMaxSeconds;
+            }
         };
 
         refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Settings.Header"];
             descTb.Text = this._i18n["Settings.Desc"];
-            guideTitleTb.Text = this._i18n["Settings.GuideTitle"];
-            guideBodyTb.Text = this._i18n["Settings.GuideBody"];
+            safetyTitleTb.Text = this._i18n["Settings.SafetyTitle"];
+            safetyDescTb.Text = this._i18n["Settings.SafetyDesc"];
             themeLabel.Text = this._i18n["Settings.ThemeLabel"];
             langLabel.Text = this._i18n["Settings.LanguageLabel"];
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
@@ -348,6 +400,9 @@ public sealed partial class SettingsPage : UserControl
             delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
+            scrapeDelayLabel.Text = this._i18n["Leads.ConfigRateLimitLabel"];
+            scrapeMinDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
+            scrapeMaxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
         };
 

@@ -307,7 +307,7 @@ public sealed partial class ShellViewModel
             this.SelectedTargetGroup = this.TargetGroups[0];
         }
 
-        List<(string GroupId, string GroupName)> targets = new();
+        List<(string GroupId, string GroupName, string? GroupAvatarUrl)> targets = new();
         if (this.ScrapeAllEnabledTargetGroups && this.TargetGroups.Count > 0)
         {
             for (int i = 0; i < this.TargetGroups.Count; i++)
@@ -315,7 +315,7 @@ public sealed partial class ShellViewModel
                 SavedTargetGroup tg = this.TargetGroups[i];
                 if (tg.IsEnabled && !string.IsNullOrWhiteSpace(tg.GroupId))
                 {
-                    targets.Add((tg.GroupId, tg.GroupName));
+                    targets.Add((tg.GroupId, tg.GroupName, tg.AvatarUrl));
                 }
             }
         }
@@ -324,9 +324,10 @@ public sealed partial class ShellViewModel
         {
             string? singleId = this.SelectedTargetGroup?.GroupId ?? this.SelectedGroup?.GroupId;
             string singleName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"];
+            string? singleAvatar = this.SelectedTargetGroup?.AvatarUrl ?? this.SelectedGroup?.AvatarUrl;
             if (!string.IsNullOrWhiteSpace(singleId))
             {
-                targets.Add((singleId, singleName));
+                targets.Add((singleId, singleName, singleAvatar));
             }
         }
 
@@ -346,7 +347,7 @@ public sealed partial class ShellViewModel
         int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
         if (targets.Count > maxPerCycle)
         {
-            List<(string GroupId, string GroupName)> batch = new(maxPerCycle);
+            List<(string GroupId, string GroupName, string? GroupAvatarUrl)> batch = new(maxPerCycle);
             for (int i = 0; i < maxPerCycle; i++)
             {
                 int idx = (this._nextScrapeGroupOffset + i) % targets.Count;
@@ -381,7 +382,7 @@ public sealed partial class ShellViewModel
             for (int gIdx = 0; gIdx < targets.Count; gIdx++)
             {
                 ct.ThrowIfCancellationRequested();
-                (string groupId, string groupName) = targets[gIdx];
+                (string groupId, string groupName, string? groupAvatarUrl) = targets[gIdx];
 
                 if (gIdx > 0)
                 {
@@ -393,7 +394,7 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Info,
                     groupName,
                     this.Msg(
-                        $"Đang thu thập bài viết mới nhất ({gIdx + 1}/{targets.Count}) từ nhóm '{groupName}' vào kho dữ liệu...",
+                        $"Đang thu thập bài viết mới nhất lượt {gIdx + 1}/{targets.Count} từ nhóm '{groupName}' vào kho dữ liệu...",
                         $"Scraping newest posts ({gIdx + 1}/{targets.Count}) from group '{groupName}' into local database...")).ConfigureAwait(true);
 
                 PagedResult<PostSummary> feed = await this._context.CometClient
@@ -405,7 +406,8 @@ public sealed partial class ShellViewModel
                     PostSummary post = feed.Items[i] with
                     {
                         GroupId = groupId,
-                        GroupName = groupName
+                        GroupName = groupName,
+                        GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
                     };
 
                     if (MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
@@ -438,10 +440,10 @@ public sealed partial class ShellViewModel
 
             string logMessage = selectiveKeywords.Length > 0
                 ? this.Msg(
-                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết chọn lọc (từ khóa: '{this.ScrapeFilterKeywords}') từ {summaryTarget} vào DB (Tổng hiển thị: {this.ScrapedPosts.Count} bài).",
+                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết chọn lọc theo từ khóa '{this.ScrapeFilterKeywords}' từ {summaryTarget} vào kho lưu trữ, đang hiển thị {this.ScrapedPosts.Count} bài.",
                     $"Scraped and saved {collectedForDb.Count} selective posts (keywords: '{this.ScrapeFilterKeywords}') from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).")
                 : this.Msg(
-                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết mới nhất từ {summaryTarget} vào DB (Tổng hiển thị: {this.ScrapedPosts.Count} bài).",
+                    $"Đã thu thập và lưu {collectedForDb.Count} bài viết mới nhất từ {summaryTarget} vào kho lưu trữ, đang hiển thị {this.ScrapedPosts.Count} bài.",
                     $"Scraped and saved {collectedForDb.Count} latest posts from {summaryTarget} into DB (Showing: {this.ScrapedPosts.Count}).");
 
             _ = await this.LogAuditAsync(
@@ -481,7 +483,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.SalesComment"],
                 this.Msg(
-                    "Vui lòng bấm chọn một bài viết trong danh sách bài thu thập được trước khi gửi Comment Sale.",
+                    "Vui lòng bấm chọn một bài viết trong danh sách bài thu thập được trước khi gửi bình luận tư vấn.",
                     "Please click a post card from the discovered list before sending a Sales Comment.")).ConfigureAwait(true);
             return;
         }
@@ -511,7 +513,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
                 this.SelectedScrapedPost.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"],
-                this.Msg($"Lỗi gửi Comment Sale: {this.SanitizeErrorMessage(ex)}", $"Sales comment failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this.Msg($"Lỗi gửi bình luận tư vấn: {this.SanitizeErrorMessage(ex)}", $"Sales comment failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
         {
@@ -528,7 +530,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 this._context.Localization["Audit.Cat.SalesComment"],
                 this.Msg(
-                    "Danh sách bài viết đang trống — hãy bấm 'Quét Bài viết mới' trước.",
+                    "Danh sách bài viết đang trống — hãy bấm Thu thập bài mới trước.",
                     "Discovered post list is empty — please click 'Scan Recent Posts' first.")).ConfigureAwait(true);
             return;
         }
@@ -591,7 +593,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Error,
                 targetName,
                 this.Msg(
-                    "Ngắt mạch an toàn (Circuit Breaker): Phát hiện phiên đăng nhập hết hạn hoặc Checkpoint. Đã dừng chiến dịch ngay lập tức để bảo vệ tài khoản!",
+                    "Cơ chế bảo vệ tự động: Phát hiện phiên đăng nhập hết hạn hoặc cần xác minh bảo mật. Đã dừng chiến dịch ngay lập tức để bảo vệ tài khoản!",
                     "Safety Circuit Breaker tripped: Session expired or Checkpoint detected. Campaign halted immediately to protect account!")).ConfigureAwait(true);
             return;
         }
@@ -603,7 +605,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Error,
                 targetName,
                 this.Msg(
-                    "Ngắt mạch an toàn (Circuit Breaker - Mã 368): Facebook báo giới hạn tốc độ thao tác. Đã tự động dừng chiến dịch để tránh khóa tính năng!",
+                    "Cơ chế bảo vệ tự động: Hệ thống báo giới hạn tốc độ thao tác. Đã tự động tạm dừng chiến dịch để tránh khóa tính năng!",
                     "Safety Circuit Breaker tripped (Code 368): Facebook action rate-limit detected. Campaign paused automatically to protect account!")).ConfigureAwait(true);
             return;
         }
@@ -653,7 +655,7 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             nextTargetName,
             this.Msg(
-                $"Đang nghỉ giãn cách tự nhiên {totalSec} giây (Gaussian Jitter) trước khi xử lý '{nextTargetName}'...",
+                $"Đang nghỉ giãn cách an toàn {totalSec} giây trước khi xử lý '{nextTargetName}'...",
                 $"Waiting humanized Gaussian delay of {totalSec}s before processing '{nextTargetName}'...")).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
@@ -675,7 +677,7 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             nextGroupName,
             this.Msg(
-                $"Rate-Limit Chống Band: Đang nghỉ {totalSec} giây trước khi cào nhóm tiếp theo '{nextGroupName}'...",
+                $"Giãn cách an toàn: Đang nghỉ {totalSec} giây trước khi thu thập nhóm tiếp theo '{nextGroupName}'...",
                 $"Anti-Ban Rate-Limit: Waiting {totalSec}s before scraping next group '{nextGroupName}'...")).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
@@ -699,7 +701,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 targetLabel,
                 this.Msg(
-                    $"Bỏ qua '{targetLabel}' vì tài khoản này đã từng Comment Sale vào bài đó trước đây.",
+                    $"Bỏ qua '{targetLabel}' vì tài khoản này đã từng bình luận vào bài viết đó trước đây.",
                     $"Skipped '{targetLabel}' because this account already commented on it earlier.")).ConfigureAwait(true);
             return;
         }
@@ -743,7 +745,7 @@ public sealed partial class ShellViewModel
             AuditSeverity.Success,
             targetLabel,
             this.Msg(
-                $"Đã gửi Comment Sale thành công vào '{targetLabel}'!",
+                $"Đã gửi bình luận tư vấn thành công vào '{targetLabel}'!",
                 $"Posted Sales Comment on '{targetLabel}' successfully!"),
             post.PermalinkUrl).ConfigureAwait(true);
     }

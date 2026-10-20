@@ -28,7 +28,11 @@ public sealed record PostSummary(
     int CommentCount = 0,
     DateTimeOffset? CreatedAt = null,
     string? GroupId = null,
-    string? GroupName = null);
+    string? GroupName = null,
+    string? MediaPreviewUrl = null,
+    bool IsVideo = false,
+    string? AuthorAvatarUrl = null,
+    string? GroupAvatarUrl = null);
 
 /// <summary>
 /// Summary of a community group.
@@ -36,7 +40,8 @@ public sealed record PostSummary(
 public sealed record GroupSummary(
     string GroupId,
     string Name,
-    GroupMembershipState MembershipState = GroupMembershipState.Unknown);
+    GroupMembershipState MembershipState = GroupMembershipState.Unknown,
+    string? AvatarUrl = null);
 
 /// <summary>
 /// Represents a pending membership question when requesting to join a group.
@@ -87,7 +92,8 @@ public sealed record SavedTargetGroup(
     string GroupId,
     string GroupName,
     bool IsEnabled = true,
-    string? Notes = null);
+    string? Notes = null,
+    string? AvatarUrl = null);
 
 /// <summary>
 /// Represents a reusable Spintax post or sales comment template with an optional media attachment path.

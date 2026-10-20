@@ -285,7 +285,7 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Info,
                     group.GroupName,
                     this.Msg(
-                        $"Đang đăng bài vào nhóm '{group.GroupName}' ({i + 1}/{targets.Count})...",
+                        $"Đang đăng bài vào nhóm '{group.GroupName}', lượt {i + 1}/{targets.Count}...",
                         $"Publishing post to group '{group.GroupName}' ({i + 1}/{targets.Count})...")).ConfigureAwait(true);
 
                 string? postId = await this._context.CometClient
@@ -318,7 +318,7 @@ public sealed partial class ShellViewModel
                     group.GroupName,
                     string.IsNullOrWhiteSpace(postId)
                         ? this.Msg(
-                            $"Đã gửi bài đăng vào nhóm '{group.GroupName}' (đang chờ quản trị viên duyệt).",
+                            $"Đã gửi bài đăng vào nhóm '{group.GroupName}', đang chờ quản trị viên duyệt.",
                             $"Submitted post to group '{group.GroupName}' (pending admin approval).")
                         : this.Msg(
                             $"Đăng bài thành công vào nhóm '{group.GroupName}'!",
@@ -353,7 +353,7 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Warning,
                 this._context.Localization["Publisher.BumpTitle"],
                 this.Msg(
-                    "Chưa có bài viết vừa đăng nào trong phiên này để đẩy Top — hãy chạy đăng bài trước.",
+                    "Chưa có bài viết vừa đăng nào trong phiên này để đẩy bài — hãy chạy đăng bài trước.",
                     "No recently published posts in this session to bump — please publish a post first.")).ConfigureAwait(true);
             return;
         }
@@ -376,7 +376,7 @@ public sealed partial class ShellViewModel
                 ct.ThrowIfCancellationRequested();
                 if (i > 0)
                 {
-                    await this.WaitAntiCheckpointDelayAsync("Up-Top", ct).ConfigureAwait(true);
+                    await this.WaitAntiCheckpointDelayAsync(this._context.Localization["Publisher.TabBump"], ct).ConfigureAwait(true);
                 }
 
                 string postId = this._recentPublishedPostIds[i];
@@ -387,9 +387,9 @@ public sealed partial class ShellViewModel
                 _ = await this.LogAuditAsync(
                     AuditCategory.SalesComment,
                     AuditSeverity.Success,
-                    "Up-Top",
+                    this._context.Localization["Publisher.TabBump"],
                     this.Msg(
-                        $"Đã bình luận đẩy bài viết ({i + 1}/{this._recentPublishedPostIds.Count}) lên đầu nhóm thành công!",
+                        $"Đã bình luận đẩy bài viết lượt {i + 1}/{this._recentPublishedPostIds.Count} lên đầu nhóm thành công!",
                         $"Bumped post ({i + 1}/{this._recentPublishedPostIds.Count}) to the top of the group feed!")).ConfigureAwait(true);
             }
         }
@@ -398,7 +398,7 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                "Up-Top",
+                this._context.Localization["Publisher.TabBump"],
                 this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
@@ -406,8 +406,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
-                "Up-Top",
-                this.Msg($"Lỗi khi đẩy Top bài viết: {this.SanitizeErrorMessage(ex)}", $"Post bump failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
+                this._context.Localization["Publisher.TabBump"],
+                this.Msg($"Lỗi khi đẩy bài viết: {this.SanitizeErrorMessage(ex)}", $"Post bump failed: {this.SanitizeErrorMessage(ex)}")).ConfigureAwait(true);
         }
         finally
         {
