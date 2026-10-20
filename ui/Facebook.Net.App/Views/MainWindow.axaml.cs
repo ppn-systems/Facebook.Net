@@ -126,7 +126,7 @@ public sealed partial class MainWindow : Window
     {
         Grid sidebarGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
             Margin = new Thickness(10, 14)
         };
 
@@ -194,9 +194,27 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Top
         };
 
+        StackPanel bottomNavStack = new()
+        {
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+
+        Border bottomNavDivider = new()
+        {
+            Height = 1,
+            Margin = new Thickness(4, 0, 4, 2)
+        };
+        bottomNavStack.Children.Add(bottomNavDivider);
+
         List<(Button Btn, TextBlock Label, Control Icon, string Key, NavigationSection Section)> navEntries = new(6);
 
-        void AddNavItem(string i18nKey, string svgFileName, NavigationSection section, System.Windows.Input.ICommand cmd)
+        void AddNavItem(
+            StackPanel targetPanel,
+            string i18nKey,
+            string svgFileName,
+            NavigationSection section,
+            System.Windows.Input.ICommand cmd)
         {
             Button btn = AppButton.CreateSidebarNav(
                 this._i18n[i18nKey],
@@ -205,18 +223,20 @@ public sealed partial class MainWindow : Window
                 out TextBlock lbl,
                 out Control icn);
             navEntries.Add((btn, lbl, icn, i18nKey, section));
-            navStack.Children.Add(btn);
+            targetPanel.Children.Add(btn);
         }
 
-        AddNavItem("Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
-        AddNavItem("Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
-        AddNavItem("Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
-        AddNavItem("Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
-        AddNavItem("Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
-        AddNavItem("Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
+        AddNavItem(navStack, "Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
+        AddNavItem(navStack, "Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
+        AddNavItem(navStack, "Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
+        AddNavItem(navStack, "Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
+        AddNavItem(navStack, "Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
+        AddNavItem(bottomNavStack, "Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
 
         Grid.SetRow(navStack, 1);
+        Grid.SetRow(bottomNavStack, 2);
         sidebarGrid.Children.Add(navStack);
+        sidebarGrid.Children.Add(bottomNavStack);
 
         Border sidebar = new()
         {
@@ -232,6 +252,7 @@ public sealed partial class MainWindow : Window
             sidebar.Width = collapsed ? 60 : 232;
             sidebar.Background = p.ElevatedSurface;
             sidebar.BorderBrush = p.SubtleBorder;
+            bottomNavDivider.Background = p.SubtleBorder;
 
             brandBadge.IsVisible = !collapsed;
             brandTitle.IsVisible = !collapsed;

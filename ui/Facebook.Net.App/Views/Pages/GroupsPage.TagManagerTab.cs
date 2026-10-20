@@ -648,7 +648,14 @@ public sealed partial class GroupsPage
                         GroupTag t = assignedTags[i];
                         tagWrap.Children.Add(GroupRowCard.CreateTagPill(
                             t,
-                            onClick: async () =>
+                            onClick: () =>
+                            {
+                                selectedAssignTag = t;
+                                rebuildLeftTagList();
+                                RefreshAssignGroups();
+                                assignSearchBar.RefreshFilterChips();
+                            },
+                            onDelete: async () =>
                             {
                                 await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, t.Id).ConfigureAwait(true);
                             }));

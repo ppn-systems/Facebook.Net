@@ -197,7 +197,7 @@ public static class GroupRowCard
                 GroupTag t = assignedTags[i];
                 tagWrap.Children.Add(CreateTagPill(
                     t,
-                    onClick: onToggleTag is not null ? () => onToggleTag(t.Id) : null));
+                    onDelete: onToggleTag is not null ? () => onToggleTag(t.Id) : null));
             }
 
             nameAndTagsStack.Children.Add(tagWrap);
@@ -344,7 +344,7 @@ public static class GroupRowCard
                 GroupTag t = assignedTags[i];
                 tagWrap.Children.Add(CreateTagPill(
                     t,
-                    onClick: onToggleTag is not null ? () => onToggleTag(t.Id) : null));
+                    onDelete: onToggleTag is not null ? () => onToggleTag(t.Id) : null));
             }
 
             nameAndTagsStack.Children.Add(tagWrap);
