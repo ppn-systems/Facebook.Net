@@ -148,6 +148,23 @@ public sealed class CometClientTests
     }
 
     [Fact]
+    public void ParsePosts_DecodesBase64StoryIdAndFiltersHollowSkeletonFragments()
+    {
+        string base64StoryId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("S:_I1000888:VK:998877665544"));
+        string ndjson =
+            "{\"data\":{\"node\":{\"__typename\":\"Story\",\"post_id\":\"111222333444\"}}}\n" +
+            $"{{\"data\":{{\"node\":{{\"__typename\":\"Story\",\"id\":\"{base64StoryId}\",\"comet_sections\":{{\"context_layout\":{{\"story\":{{\"id\":\"{base64StoryId}\",\"actors\":[{{\"id\":\"1000999\",\"name\":\"Nguyễn Hoàng\"}}]}}}},\"content\":{{\"story\":{{\"id\":\"{base64StoryId}\",\"message\":{{\"text\":\"Cần mua màn hình 27 inch 2K tại Hà Nội\"}}}}}}}}}}}}}}";
+
+        GraphQlResult result = ResponseParser.ParseGraphQlResult("10001", ndjson);
+        PagedResult<PostSummary> parsed = ResponseParser.ParsePosts(result);
+
+        PostSummary post = Assert.Single(parsed.Items);
+        Assert.Equal("998877665544", post.PostId);
+        Assert.Equal("Nguyễn Hoàng", post.AuthorName);
+        Assert.Equal("Cần mua màn hình 27 inch 2K tại Hà Nội", post.MessageText);
+    }
+
+    [Fact]
     public void SpinText_ExpandsDynamicMacros_Date_Time_Day_And_RandomId()
     {
         string input = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";

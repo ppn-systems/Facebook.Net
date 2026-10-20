@@ -39,7 +39,16 @@ public static partial class ResponseParser
         List<PostSummary> posts = new(orderedIds.Count);
         for (int i = 0; i < orderedIds.Count; i++)
         {
-            posts.Add(postsById[orderedIds[i]]);
+            PostSummary candidate = postsById[orderedIds[i]];
+            bool isHollowSkeleton =
+                string.IsNullOrWhiteSpace(candidate.AuthorName) &&
+                string.IsNullOrWhiteSpace(candidate.MessageText) &&
+                string.IsNullOrWhiteSpace(candidate.MediaPreviewUrl);
+
+            if (!isHollowSkeleton)
+            {
+                posts.Add(candidate);
+            }
         }
 
         return new PagedResult<PostSummary>(posts, result.NextCursor, result.HasNextPage);
@@ -244,8 +253,109 @@ public static partial class ResponseParser
             return nestedPostId;
         }
 
+        string? subTargetId = FindStringRecursive(storyElement, "subscription_target_id");
+        if (!string.IsNullOrWhiteSpace(subTargetId) && IsNumericUid(subTargetId.AsSpan()))
+        {
+            return subTargetId;
+        }
+
+        if (storyElement.TryGetProperty("id"u8, out JsonElement rawIdEl) &&
+            rawIdEl.ValueKind == JsonValueKind.String)
+        {
+            string? decodedFromDirectId = ExtractPostIdFromStoryGraphQlId(rawIdEl.GetString());
+            if (!string.IsNullOrWhiteSpace(decodedFromDirectId))
+            {
+                return decodedFromDirectId;
+            }
+        }
+
+        string? nestedGraphId = FindStoryGraphQlIdRecursive(storyElement);
+        if (!string.IsNullOrWhiteSpace(nestedGraphId))
+        {
+            return nestedGraphId;
+        }
+
         string? url = FindStringRecursive(storyElement, "wwwURL") ?? FindPermalinkUrlRecursive(storyElement);
         return ExtractPostIdFromUrl(url);
+    }
+
+    private static string? FindStoryGraphQlIdRecursive(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("id"u8, out JsonElement idEl) &&
+                idEl.ValueKind == JsonValueKind.String)
+            {
+                string? extracted = ExtractPostIdFromStoryGraphQlId(idEl.GetString());
+                if (!string.IsNullOrWhiteSpace(extracted))
+                {
+                    return extracted;
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                string? nested = FindStoryGraphQlIdRecursive(prop.Value);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? nested = FindStoryGraphQlIdRecursive(item);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractPostIdFromStoryGraphQlId(string? rawId)
+    {
+        if (string.IsNullOrWhiteSpace(rawId))
+        {
+            return null;
+        }
+
+        string candidate = rawId.Trim();
+        if (candidate.StartsWith("Uzpf", StringComparison.Ordinal) ||
+            candidate.StartsWith("ZmVlZGJhY2s", StringComparison.Ordinal))
+        {
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(candidate);
+                candidate = System.Text.Encoding.UTF8.GetString(bytes);
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
+
+        if (!candidate.StartsWith("S:", StringComparison.OrdinalIgnoreCase) &&
+            !candidate.StartsWith("feedback:", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        int lastSep = candidate.LastIndexOfAny([':', '_']);
+        if (lastSep >= 0 && lastSep + 1 < candidate.Length)
+        {
+            ReadOnlySpan<char> tail = candidate.AsSpan(lastSep + 1);
+            if (tail.Length >= 5 && IsNumericUid(tail))
+            {
+                return tail.ToString();
+            }
+        }
+
+        return null;
     }
 
     private static string? FindPermalinkUrlRecursive(JsonElement element)
@@ -326,10 +436,12 @@ public static partial class ResponseParser
     private static string? FindPostMessageText(JsonElement storyElement)
     {
         string? listingTitle = FindStringRecursive(storyElement, "marketplace_listing_title")
-            ?? FindNestedContainerText(storyElement, "title");
+            ?? FindNestedContainerText(storyElement, "title")
+            ?? FindNestedContainerText(storyElement, "title_with_entities");
 
         string? messageText = FindNestedContainerText(storyElement, "message")
             ?? FindNestedContainerText(storyElement, "description")
+            ?? FindNestedContainerText(storyElement, "card_description")
             ?? FindNestedContainerText(storyElement, "translation");
 
         if (!string.IsNullOrWhiteSpace(listingTitle) && !string.IsNullOrWhiteSpace(messageText))
@@ -593,6 +705,21 @@ public static partial class ResponseParser
                         {
                             return val;
                         }
+                    }
+                }
+            }
+
+            foreach (string singleActorKey in new[] { "actor", "author", "owner", "seller" })
+            {
+                if (element.TryGetProperty(singleActorKey, out JsonElement singleActorEl) &&
+                    singleActorEl.ValueKind == JsonValueKind.Object &&
+                    singleActorEl.TryGetProperty(actorField, out JsonElement fieldEl) &&
+                    fieldEl.ValueKind == JsonValueKind.String)
+                {
+                    string? val = fieldEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(val))
+                    {
+                        return val;
                     }
                 }
             }

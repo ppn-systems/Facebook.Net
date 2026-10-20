@@ -47,7 +47,15 @@ public static class FormField
 
         if (height.HasValue)
         {
-            box.Height = height.Value;
+            if (multiline)
+            {
+                box.MinHeight = height.Value;
+                box.VerticalContentAlignment = VerticalAlignment.Top;
+            }
+            else
+            {
+                box.Height = height.Value;
+            }
         }
 
         void ApplyColors()

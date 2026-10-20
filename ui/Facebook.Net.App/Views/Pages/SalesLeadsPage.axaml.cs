@@ -25,7 +25,7 @@ namespace Facebook.Net.App.Views.Pages;
 /// <summary>
 /// Independent Buyer Lead Scanner &amp; Sales Commenting Page (<c>SalesLeadsPage.axaml</c>).
 /// Uses a top <see cref="SubTabBar"/> to cleanly separate:
-/// 1) Local SQLite Post Repository &amp; Filter Table (<see cref="DataTableView{T}"/> + <see cref="SegmentedFilterPill"/>),
+/// 1) Local SQLite Post Repository &amp; Master-Detail Inspector (<see cref="DataTableView{T}"/> + <see cref="SegmentedFilterPill"/>),
 /// 2) Multi-Group Selector &amp; Anti-Ban Rate-Limit Scraper Configuration,
 /// 3) Sales Comment Composer &amp; Batch Auto-Commenter.
 /// </summary>
@@ -160,7 +160,6 @@ public sealed partial class SalesLeadsPage : UserControl
             14,
             FontWeight.Bold);
 
-        // Order: [ Chưa bình luận (1) | Đã bình luận (2) | Tất cả (0) ]
         SegmentedFilterPill statusSegmentPill = new(
             this._theme,
             [
@@ -206,14 +205,20 @@ public sealed partial class SalesLeadsPage : UserControl
             {
                 if (obj is SavedTargetGroup grp)
                 {
-                    StackPanel grpItemRow = new()
+                    Grid grpItemRow = new()
                     {
-                        Orientation = Orientation.Horizontal,
-                        Spacing = 8,
+                        ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                        ColumnSpacing = 8,
                         VerticalAlignment = VerticalAlignment.Center
                     };
-                    grpItemRow.Children.Add(AvatarBadge.Create(this._theme, grp.GroupName, 22, grp.AvatarUrl));
-                    grpItemRow.Children.Add(SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium));
+                    Border badge = AvatarBadge.Create(this._theme, grp.GroupName, 22, grp.AvatarUrl);
+                    TextBlock grpItemTb = SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium);
+                    grpItemTb.MaxLines = 1;
+                    grpItemTb.TextTrimming = TextTrimming.CharacterEllipsis;
+                    Grid.SetColumn(badge, 0);
+                    Grid.SetColumn(grpItemTb, 1);
+                    grpItemRow.Children.Add(badge);
+                    grpItemRow.Children.Add(grpItemTb);
                     return grpItemRow;
                 }
 
@@ -294,15 +299,15 @@ public sealed partial class SalesLeadsPage : UserControl
         // 3. Master-Detail Split: Left = Spacious DataTableView<PostSummary>, Right = Selected Post Detail Inspector Card
         Grid masterDetailSplit = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,350"),
+            ColumnDefinitions = new ColumnDefinitions("*,365"),
             ColumnSpacing = 12
         };
 
         DataTableView<PostSummary> postsTable = new(
             this._theme,
             [
-                new DataTableColumn("155", this._i18n["Leads.ColAuthor"]),
-                new DataTableColumn("145", this._i18n["Leads.ColGroup"]),
+                new DataTableColumn("150", this._i18n["Leads.ColAuthor"]),
+                new DataTableColumn("140", this._i18n["Leads.ColGroup"]),
                 new DataTableColumn("*", this._i18n["Leads.ColMessage"]),
                 new DataTableColumn("120", this._i18n["Leads.ColIntent"]),
                 new DataTableColumn("85", this._i18n["Leads.ColTime"]),
@@ -343,10 +348,11 @@ public sealed partial class SalesLeadsPage : UserControl
         Grid.SetRow(detailBodyHost, 1);
         detailCardGrid.Children.Add(detailBodyHost);
 
-        Grid detailBtnRow = new()
+        // Full-width stacked action buttons so long labels never clip
+        StackPanel detailBtnStack = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
-            ColumnSpacing = 8
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
         Button quickReplyBtn = AppButton.CreatePrimary(
@@ -354,19 +360,19 @@ public sealed partial class SalesLeadsPage : UserControl
             this._i18n["Leads.BtnQuickReplyTab"],
             new CommunityToolkit.Mvvm.Input.RelayCommand(onQuickReplyClicked),
             VectorIcons.SalesComment);
+        quickReplyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         Button inspectOpenBrowserBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnOpenPostInBrowser"],
             this._vm.OpenSelectedPostInBrowserCommand,
             VectorIcons.Browser);
+        inspectOpenBrowserBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        Grid.SetColumn(quickReplyBtn, 0);
-        Grid.SetColumn(inspectOpenBrowserBtn, 1);
-        detailBtnRow.Children.Add(quickReplyBtn);
-        detailBtnRow.Children.Add(inspectOpenBrowserBtn);
-        Grid.SetRow(detailBtnRow, 2);
-        detailCardGrid.Children.Add(detailBtnRow);
+        detailBtnStack.Children.Add(quickReplyBtn);
+        detailBtnStack.Children.Add(inspectOpenBrowserBtn);
+        Grid.SetRow(detailBtnStack, 2);
+        detailCardGrid.Children.Add(detailBtnStack);
 
         Border detailCard = SurfaceCard.Create(this._theme, detailCardGrid, new Thickness(14));
 
@@ -380,7 +386,7 @@ public sealed partial class SalesLeadsPage : UserControl
 
             if (post is null)
             {
-                detailBtnRow.IsVisible = false;
+                detailBtnStack.IsVisible = false;
                 StackPanel emptyStack = new()
                 {
                     Spacing = 8,
@@ -404,10 +410,10 @@ public sealed partial class SalesLeadsPage : UserControl
                 return;
             }
 
-            detailBtnRow.IsVisible = true;
+            detailBtnStack.IsVisible = true;
             StackPanel contentStack = new() { Spacing = 10 };
 
-            // Author + Status Row
+            // Full-width Author + Group Header (Zero Overlap)
             string authorName = string.IsNullOrWhiteSpace(post.AuthorName)
                 ? this._i18n["Leads.DefaultAuthor"]
                 : post.AuthorName;
@@ -417,47 +423,48 @@ public sealed partial class SalesLeadsPage : UserControl
 
             Grid authorHeader = new()
             {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                 ColumnSpacing = 10,
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            Border authorAvatar = AvatarBadge.Create(this._theme, authorName, 36, post.AuthorAvatarUrl);
-            StackPanel authorMeta = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            Border authorAvatar = AvatarBadge.Create(this._theme, authorName, 38, post.AuthorAvatarUrl);
+            StackPanel authorMeta = new() { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
             TextBlock authorNameTb = SectionHeader.CreateLabel(this._theme, authorName, 13, FontWeight.Bold);
             authorNameTb.MaxLines = 1;
             authorNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
 
-            StackPanel groupBadgeRow = new()
+            Grid groupBadgeRow = new()
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 5,
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                ColumnSpacing = 6,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            groupBadgeRow.Children.Add(AvatarBadge.Create(this._theme, groupName, 16, post.GroupAvatarUrl));
-            TextBlock grpTb = SectionHeader.CreateLabel(this._theme, groupName, 11, FontWeight.Medium, isSecondary: true);
+            Border grpTinyAvatar = AvatarBadge.Create(this._theme, groupName, 16, post.GroupAvatarUrl);
+            TextBlock grpTb = SectionHeader.CreateLabel(this._theme, groupName, 11.5, FontWeight.Medium, isSecondary: true);
             grpTb.MaxLines = 1;
             grpTb.TextTrimming = TextTrimming.CharacterEllipsis;
+            Grid.SetColumn(grpTinyAvatar, 0);
+            Grid.SetColumn(grpTb, 1);
+            groupBadgeRow.Children.Add(grpTinyAvatar);
             groupBadgeRow.Children.Add(grpTb);
 
             authorMeta.Children.Add(authorNameTb);
             authorMeta.Children.Add(groupBadgeRow);
 
+            Grid.SetColumn(authorAvatar, 0);
+            Grid.SetColumn(authorMeta, 1);
+            authorHeader.Children.Add(authorAvatar);
+            authorHeader.Children.Add(authorMeta);
+            contentStack.Children.Add(SurfaceCard.CreateInset(this._theme, authorHeader, new Thickness(10, 8)));
+
+            // Status, Intent & Engagement Pill Wrap Row
             bool commented = this._vm.IsPostCommented(post.PostId);
             Border statusPill = StatusPill.Create(
                 this._theme,
                 commented ? this._i18n["Leads.StatusCommented"] : this._i18n["Leads.StatusPending"],
                 commented ? AuditSeverity.Success : AuditSeverity.Warning);
 
-            Grid.SetColumn(authorAvatar, 0);
-            Grid.SetColumn(authorMeta, 1);
-            Grid.SetColumn(statusPill, 2);
-            authorHeader.Children.Add(authorAvatar);
-            authorHeader.Children.Add(authorMeta);
-            authorHeader.Children.Add(statusPill);
-            contentStack.Children.Add(SurfaceCard.CreateInset(this._theme, authorHeader, new Thickness(10, 8)));
-
-            // Intent & Engagement Pill Row
             int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
             AuditSeverity intentSeverity = score >= 80
                 ? AuditSeverity.Success
@@ -469,6 +476,7 @@ public sealed partial class SalesLeadsPage : UserControl
                 ItemSpacing = 6,
                 LineSpacing = 6
             };
+            metaPillsWrap.Children.Add(statusPill);
             metaPillsWrap.Children.Add(StatusPill.Create(this._theme, this._vm.FormatBuyerIntentBadge(post), intentSeverity));
             metaPillsWrap.Children.Add(StatusPill.Create(
                 this._theme,
@@ -625,525 +633,6 @@ public sealed partial class SalesLeadsPage : UserControl
         };
 
         return tabGrid;
-    }
-
-    private Control BuildMultiGroupAndScraperConfigTab(out Action refreshI18n)
-    {
-        Grid splitGrid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("1.1*,1*"),
-            ColumnSpacing = 14
-        };
-
-        // Left Column: Multi-Group Selection for Scraping
-        Grid leftPane = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
-            RowSpacing = 10
-        };
-
-        Grid leftHeader = SectionHeader.Create(
-            this._theme,
-            this._i18n["Leads.ConfigMultiGroupTitle"],
-            this._i18n["Leads.ConfigMultiGroupDesc"],
-            out TextBlock multiGroupTitleTb,
-            out TextBlock multiGroupDescTb);
-        Grid.SetRow(leftHeader, 0);
-        leftPane.Children.Add(leftHeader);
-
-        Grid bulkGroupBtnRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        Button enableAllBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Groups.BtnSelectAllTargets"],
-            this._vm.EnableAllTargetGroupsCommand,
-            VectorIcons.CheckCircle);
-
-        Button disableAllBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Groups.BtnDeselectAllTargets"],
-            this._vm.DisableAllTargetGroupsCommand,
-            VectorIcons.StopCircle);
-
-        Button syncJoinedBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Groups.BtnSyncJoined"],
-            this._vm.SyncJoinedGroupsCommand,
-            VectorIcons.Sync);
-
-        Grid.SetColumn(enableAllBtn, 0);
-        Grid.SetColumn(disableAllBtn, 1);
-        Grid.SetColumn(syncJoinedBtn, 2);
-        bulkGroupBtnRow.Children.Add(enableAllBtn);
-        bulkGroupBtnRow.Children.Add(disableAllBtn);
-        bulkGroupBtnRow.Children.Add(syncJoinedBtn);
-        Grid.SetRow(bulkGroupBtnRow, 1);
-        leftPane.Children.Add(bulkGroupBtnRow);
-
-        ListBox targetGroupsList = FormField.CreateListBox<SavedTargetGroup>(
-            this._theme,
-            this._vm.TargetGroups,
-            tg => GroupRowCard.CreateTargetRow(
-                this._theme,
-                tg,
-                nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)),
-            selectedItem: this._vm.SelectedTargetGroup,
-            isVisible: this._vm.TargetGroups.Count > 0);
-
-        Border emptyTargetsBanner = EmptyStateBanner.Create(
-            this._theme,
-            this._i18n["Empty.TargetGroups"],
-            VectorIcons.Groups,
-            out TextBlock emptyTargetsTb);
-        emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
-        this._vm.TargetGroups.CollectionChanged += (_, _) =>
-        {
-            bool isEmpty = this._vm.TargetGroups.Count == 0;
-            emptyTargetsBanner.IsVisible = isEmpty;
-            targetGroupsList.IsVisible = !isEmpty;
-        };
-
-        Grid targetListHost = EmptyStateBanner.CreateHost(targetGroupsList, emptyTargetsBanner);
-        Grid.SetRow(targetListHost, 2);
-        leftPane.Children.Add(targetListHost);
-
-        // Quick Add from Joined Groups row at bottom of Left Card
-        Grid quickAddJoinedRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        ComboBox joinedGroupPicker = FormField.CreateComboBox<GroupSummary>(
-            this._theme,
-            this._vm.JoinedGroups,
-            g => SectionHeader.CreateLabel(this._theme, g.Name, 12, FontWeight.Medium),
-            this._vm.SelectedGroup,
-            this._i18n["Groups.Header"]);
-        joinedGroupPicker.SelectionChanged += (_, _) =>
-        {
-            if (joinedGroupPicker.SelectedItem is GroupSummary g)
-            {
-                this._vm.SelectedGroup = g;
-            }
-        };
-
-        Button addJoinedToTargetsBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Groups.BtnSaveTarget"],
-            this._vm.AddSelectedGroupToTargetsCommand,
-            VectorIcons.Plus);
-
-        Grid.SetColumn(joinedGroupPicker, 0);
-        Grid.SetColumn(addJoinedToTargetsBtn, 1);
-        quickAddJoinedRow.Children.Add(joinedGroupPicker);
-        quickAddJoinedRow.Children.Add(addJoinedToTargetsBtn);
-        Grid.SetRow(quickAddJoinedRow, 3);
-        leftPane.Children.Add(quickAddJoinedRow);
-
-        Border leftCard = SurfaceCard.Create(this._theme, leftPane, new Thickness(16));
-
-        // Right Column: Selective Scraper & Anti-Ban Rate-Limit Configuration
-        StackPanel rightStack = new() { Spacing = 12 };
-
-        StackPanel configHeader = SectionHeader.CreateSubHeader(
-            this._theme,
-            this._i18n["Leads.ConfigTitle"],
-            VectorIcons.Settings,
-            out TextBlock configTitleTb);
-        rightStack.Children.Add(configHeader);
-
-        Border chronoPill = IconMetricPill.Create(
-            this._theme,
-            VectorIcons.CheckCircle,
-            this._i18n["Leads.ConfigChronologicalBadge"],
-            AuditSeverity.Success,
-            out TextBlock chronoBadgeTb);
-        rightStack.Children.Add(chronoPill);
-
-        TextBox scrapeKeywordsBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Leads.ConfigKeywordsPlaceholder"],
-            this._vm.ScrapeFilterKeywords);
-        scrapeKeywordsBox.TextChanged += (_, _) =>
-            this._vm.ScrapeFilterKeywords = scrapeKeywordsBox.Text ?? string.Empty;
-
-        StackPanel scrapeKeywordsField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigKeywordsLabel"],
-            scrapeKeywordsBox,
-            out TextBlock scrapeKeywordsLbl);
-        rightStack.Children.Add(scrapeKeywordsField);
-
-        // Anti-Ban Rate-Limit Delay between Groups (Min..Max seconds)
-        Grid scrapeDelayRow = DelayRangeSelector.Create(
-            this._theme,
-            this._i18n["Settings.MinDelayPrefix"],
-            this._vm.ScrapeDelayMinSeconds,
-            this._i18n["Settings.MaxDelayPrefix"],
-            this._vm.ScrapeDelayMaxSeconds,
-            out TextBlock scrapeMinDelayPrefix,
-            out NumericUpDown scrapeMinDelayBox,
-            out TextBlock scrapeMaxDelayPrefix,
-            out NumericUpDown scrapeMaxDelayBox);
-
-        scrapeMinDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMinSeconds = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 8), 2, 600);
-        scrapeMaxDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMaxSeconds = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 18), this._vm.ScrapeDelayMinSeconds, 600);
-
-        StackPanel scrapeDelayField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigRateLimitLabel"],
-            scrapeDelayRow,
-            out TextBlock scrapeDelayLbl);
-        rightStack.Children.Add(scrapeDelayField);
-
-        // 3-Column Numbers: Posts/Group, Max Groups/Cycle (Round-Robin), Background Interval (min)
-        Grid numbersGrid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 10
-        };
-
-        TextBox postsPerGroupBox = FormField.CreateTextBox(
-            this._theme,
-            "15",
-            this._vm.ScrapePostsPerGroup.ToString(CultureInfo.InvariantCulture));
-        postsPerGroupBox.TextChanged += (_, _) =>
-        {
-            if (int.TryParse(postsPerGroupBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int val))
-            {
-                this._vm.ScrapePostsPerGroup = Math.Clamp(val, 5, 100);
-            }
-        };
-
-        StackPanel postsPerGroupField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigPostsPerGroupLabel"],
-            postsPerGroupBox,
-            out TextBlock postsPerGroupLbl);
-
-        TextBox maxGroupsCycleBox = FormField.CreateTextBox(
-            this._theme,
-            "5",
-            this._vm.ScrapeMaxGroupsPerCycle.ToString(CultureInfo.InvariantCulture));
-        maxGroupsCycleBox.TextChanged += (_, _) =>
-        {
-            if (int.TryParse(maxGroupsCycleBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int val))
-            {
-                this._vm.ScrapeMaxGroupsPerCycle = Math.Clamp(val, 1, 50);
-            }
-        };
-
-        StackPanel maxGroupsCycleField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigMaxGroupsPerCycleLabel"],
-            maxGroupsCycleBox,
-            out TextBlock maxGroupsCycleLbl);
-
-        TextBox intervalMinBox = FormField.CreateTextBox(
-            this._theme,
-            "10",
-            this._vm.AutoScrapeIntervalMinutes.ToString(CultureInfo.InvariantCulture));
-        intervalMinBox.TextChanged += (_, _) =>
-        {
-            if (int.TryParse(intervalMinBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int val))
-            {
-                this._vm.AutoScrapeIntervalMinutes = Math.Clamp(val, 1, 120);
-            }
-        };
-
-        StackPanel intervalMinField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigIntervalMinutesLabel"],
-            intervalMinBox,
-            out TextBlock intervalMinLbl);
-
-        Grid.SetColumn(postsPerGroupField, 0);
-        Grid.SetColumn(maxGroupsCycleField, 1);
-        Grid.SetColumn(intervalMinField, 2);
-        numbersGrid.Children.Add(postsPerGroupField);
-        numbersGrid.Children.Add(maxGroupsCycleField);
-        numbersGrid.Children.Add(intervalMinField);
-        rightStack.Children.Add(numbersGrid);
-
-        CheckBox scrapeAllGroupsCheck = FormField.CreateCheckBox(
-            this._theme,
-            this._i18n["Leads.ConfigAllGroupsToggle"],
-            this._vm.ScrapeAllEnabledTargetGroups,
-            out TextBlock scrapeAllGroupsLbl);
-        scrapeAllGroupsCheck.IsCheckedChanged += (_, _) =>
-            this._vm.ScrapeAllEnabledTargetGroups = scrapeAllGroupsCheck.IsChecked ?? false;
-        rightStack.Children.Add(scrapeAllGroupsCheck);
-
-        CheckBox autoBgScrapeCheck = FormField.CreateCheckBox(
-            this._theme,
-            this._i18n["Leads.ConfigAutoBackgroundToggle"],
-            this._vm.AutoBackgroundScrapeEnabled,
-            out TextBlock autoBgScrapeLbl);
-        autoBgScrapeCheck.IsCheckedChanged += (_, _) =>
-            this._vm.AutoBackgroundScrapeEnabled = autoBgScrapeCheck.IsChecked ?? false;
-        rightStack.Children.Add(autoBgScrapeCheck);
-
-        Grid configActionRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
-            Margin = new Thickness(0, 6, 0, 0)
-        };
-
-        Button runScrapeBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Leads.BtnScanPosts"],
-            this._vm.ScanGroupLeadsCommand,
-            VectorIcons.Sync);
-
-        Button clearDbBtn = AppButton.CreateDanger(
-            this._theme,
-            this._i18n["Leads.BtnClearScrapedDb"],
-            this._vm.ClearScrapedPostsDbCommand,
-            VectorIcons.Trash);
-
-        Grid.SetColumn(runScrapeBtn, 0);
-        Grid.SetColumn(clearDbBtn, 1);
-        configActionRow.Children.Add(runScrapeBtn);
-        configActionRow.Children.Add(clearDbBtn);
-        rightStack.Children.Add(configActionRow);
-
-        Border rightCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = rightStack }, new Thickness(16));
-
-        Grid.SetColumn(leftCard, 0);
-        Grid.SetColumn(rightCard, 1);
-        splitGrid.Children.Add(leftCard);
-        splitGrid.Children.Add(rightCard);
-
-        refreshI18n = () =>
-        {
-            multiGroupTitleTb.Text = this._i18n["Leads.ConfigMultiGroupTitle"];
-            multiGroupDescTb.Text = this._i18n["Leads.ConfigMultiGroupDesc"];
-            AppButton.SetText(enableAllBtn, this._i18n["Groups.BtnSelectAllTargets"]);
-            AppButton.SetText(disableAllBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
-            AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
-            emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
-            joinedGroupPicker.PlaceholderText = this._i18n["Groups.Header"];
-            AppButton.SetText(addJoinedToTargetsBtn, this._i18n["Groups.BtnSaveTarget"]);
-            configTitleTb.Text = this._i18n["Leads.ConfigTitle"];
-            chronoBadgeTb.Text = this._i18n["Leads.ConfigChronologicalBadge"];
-            scrapeKeywordsLbl.Text = this._i18n["Leads.ConfigKeywordsLabel"];
-            scrapeKeywordsBox.PlaceholderText = this._i18n["Leads.ConfigKeywordsPlaceholder"];
-            scrapeDelayLbl.Text = this._i18n["Leads.ConfigRateLimitLabel"];
-            scrapeMinDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
-            scrapeMaxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
-            postsPerGroupLbl.Text = this._i18n["Leads.ConfigPostsPerGroupLabel"];
-            maxGroupsCycleLbl.Text = this._i18n["Leads.ConfigMaxGroupsPerCycleLabel"];
-            intervalMinLbl.Text = this._i18n["Leads.ConfigIntervalMinutesLabel"];
-            scrapeAllGroupsLbl.Text = this._i18n["Leads.ConfigAllGroupsToggle"];
-            autoBgScrapeLbl.Text = this._i18n["Leads.ConfigAutoBackgroundToggle"];
-            AppButton.SetText(runScrapeBtn, this._i18n["Leads.BtnScanPosts"]);
-            AppButton.SetText(clearDbBtn, this._i18n["Leads.BtnClearScrapedDb"]);
-        };
-
-        return splitGrid;
-    }
-
-    private Control BuildSalesAutoCommentTab(out Action refreshI18n)
-    {
-        Grid commentTabGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
-            RowSpacing = 12
-        };
-
-        Grid header = SectionHeader.Create(
-            this._theme,
-            this._i18n["Leads.TabAutoComment"],
-            this._i18n["Leads.Desc"],
-            out TextBlock titleTb,
-            out TextBlock descTb);
-        Grid.SetRow(header, 0);
-        commentTabGrid.Children.Add(header);
-
-        // Selected Post Banner + Optional Photo/Video Preview
-        Image selectedMediaImg = new()
-        {
-            Width = 110,
-            Height = 76,
-            Stretch = Stretch.UniformToFill,
-            IsVisible = false
-        };
-        Border selectedMediaBorder = new()
-        {
-            Width = 110,
-            Height = 76,
-            CornerRadius = new CornerRadius(6),
-            BorderThickness = new Thickness(1),
-            BorderBrush = this._theme.Palette.SubtleBorder,
-            ClipToBounds = true,
-            Child = selectedMediaImg,
-            IsVisible = false,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock selectedPostTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._vm.SelectedScrapedPost is not null
-                ? $"{this._i18n["Leads.SelectedPostBanner"]} {this._vm.SelectedScrapedPost.AuthorName} — {this._vm.SelectedScrapedPost.MessageText}"
-                : this._i18n["Leads.NoPostSelected"],
-            12.5,
-            FontWeight.SemiBold);
-        selectedPostTb.MaxLines = 3;
-        selectedPostTb.TextWrapping = TextWrapping.Wrap;
-        selectedPostTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        selectedPostTb.VerticalAlignment = VerticalAlignment.Center;
-
-        Grid selectedPostGrid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 12,
-            Children = { selectedMediaBorder, selectedPostTb }
-        };
-        Grid.SetColumn(selectedMediaBorder, 0);
-        Grid.SetColumn(selectedPostTb, 1);
-
-        Border selectedPostWell = SurfaceCard.CreateInset(this._theme, selectedPostGrid, new Thickness(14, 10));
-        Grid.SetRow(selectedPostWell, 1);
-        commentTabGrid.Children.Add(selectedPostWell);
-
-        TextBox commentBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Leads.CommentContentPlaceholder"],
-            this._vm.SalesCommentSpintaxText,
-            multiline: true,
-            height: 160);
-        commentBox.VerticalAlignment = VerticalAlignment.Stretch;
-        commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
-        Grid.SetRow(commentBox, 2);
-        commentTabGrid.Children.Add(commentBox);
-
-        Grid commentOptionsRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 14,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        CheckBox autoReactCheck = FormField.CreateCheckBox(
-            this._theme,
-            this._i18n["Leads.AutoReactToggle"],
-            this._vm.AutoReactBeforeComment,
-            out TextBlock autoReactLbl);
-        autoReactCheck.IsCheckedChanged += (_, _) =>
-            this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
-
-        Grid commentPhotoPicker = FilePickerInput.Create(
-            this._theme,
-            this._i18n["Leads.CommentPhotoPlaceholder"],
-            this._vm.SalesCommentPhotoPath,
-            this._i18n["Publisher.BtnPickPhoto"],
-            out TextBox commentPhotoBox,
-            out Button pickCommentPhotoBtn);
-        commentPhotoBox.TextChanged += (_, _) => this._vm.SalesCommentPhotoPath = commentPhotoBox.Text ?? string.Empty;
-        pickCommentPhotoBtn.Click += async (_, _) =>
-        {
-            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
-            if (!string.IsNullOrWhiteSpace(path))
-            {
-                commentPhotoBox.Text = path;
-                this._vm.SalesCommentPhotoPath = path;
-            }
-        };
-
-        Grid.SetColumn(autoReactCheck, 0);
-        Grid.SetColumn(commentPhotoPicker, 1);
-        commentOptionsRow.Children.Add(autoReactCheck);
-        commentOptionsRow.Children.Add(commentPhotoPicker);
-        Grid.SetRow(commentOptionsRow, 3);
-        commentTabGrid.Children.Add(commentOptionsRow);
-
-        Grid commentButtonsRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 10
-        };
-
-        Button sendSelectedBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Leads.BtnSendCommentSelected"],
-            this._vm.SendSalesCommentOnSelectedPostCommand,
-            VectorIcons.SalesComment);
-
-        Button autoCommentAllBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Leads.BtnAutoCommentAllMatched"],
-            this._vm.AutoCommentAllMatchedPostsCommand,
-            VectorIcons.Publish);
-
-        Button openPostBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Leads.BtnOpenPostInBrowser"],
-            this._vm.OpenSelectedPostInBrowserCommand,
-            VectorIcons.Browser);
-
-        Grid.SetColumn(sendSelectedBtn, 0);
-        Grid.SetColumn(autoCommentAllBtn, 1);
-        Grid.SetColumn(openPostBtn, 2);
-        commentButtonsRow.Children.Add(sendSelectedBtn);
-        commentButtonsRow.Children.Add(autoCommentAllBtn);
-        commentButtonsRow.Children.Add(openPostBtn);
-        Grid.SetRow(commentButtonsRow, 4);
-        commentTabGrid.Children.Add(commentButtonsRow);
-
-        void UpdateSelectedPostBanner()
-        {
-            selectedPostTb.Text = this._vm.SelectedScrapedPost is not null
-                ? $"{this._i18n["Leads.SelectedPostBanner"]} {this._vm.SelectedScrapedPost.AuthorName} — {this._vm.SelectedScrapedPost.MessageText}"
-                : this._i18n["Leads.NoPostSelected"];
-            RemoteImageLoader.Attach(
-                selectedMediaImg,
-                this._vm.SelectedScrapedPost?.MediaPreviewUrl,
-                selectedMediaBorder);
-        }
-
-        UpdateSelectedPostBanner();
-
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedScrapedPost), StringComparison.Ordinal))
-            {
-                UpdateSelectedPostBanner();
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SalesCommentSpintaxText), StringComparison.Ordinal) &&
-                     !string.Equals(commentBox.Text, this._vm.SalesCommentSpintaxText, StringComparison.Ordinal))
-            {
-                commentBox.Text = this._vm.SalesCommentSpintaxText;
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SalesCommentPhotoPath), StringComparison.Ordinal) &&
-                     !string.Equals(commentPhotoBox.Text, this._vm.SalesCommentPhotoPath, StringComparison.Ordinal))
-            {
-                commentPhotoBox.Text = this._vm.SalesCommentPhotoPath;
-            }
-        };
-
-        refreshI18n = () =>
-        {
-            titleTb.Text = this._i18n["Leads.TabAutoComment"];
-            descTb.Text = this._i18n["Leads.Desc"];
-            UpdateSelectedPostBanner();
-            commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
-            commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
-            autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];
-            AppButton.SetText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
-            AppButton.SetText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
-            AppButton.SetText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
-            AppButton.SetText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
-        };
-
-        return SurfaceCard.Create(this._theme, commentTabGrid, new Thickness(18));
     }
 
     private async Task<string?> PickSingleFileAsync(string title)

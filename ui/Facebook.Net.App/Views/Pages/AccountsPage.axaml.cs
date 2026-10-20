@@ -20,9 +20,10 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Independent Accounts Management Page (<c>AccountsPage.axaml</c>).
-/// Uses a top <see cref="SubTabBar"/> to separate:
+/// Uses a top <see cref="SubTabBar"/> to cleanly separate:
 /// 1) Account Vault &amp; Filter List,
-/// 2) Cookie/J2Team Importer &amp; Dedicated Proxy Configuration.
+/// 2) Add &amp; Import Account Session,
+/// 3) Dedicated Network Proxy Setup.
 /// </summary>
 public sealed partial class AccountsPage : UserControl
 {
@@ -62,13 +63,15 @@ public sealed partial class AccountsPage : UserControl
     private Control BuildLayout()
     {
         Control tab1View = this.BuildVaultTab(out Action refreshTab1);
-        Control tab2View = this.BuildImportAndProxyTab(out Action refreshTab2);
+        Control tab2View = this.BuildImportTab(out Action refreshTab2);
+        Control tab3View = this.BuildProxyTab(out Action refreshTab3);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, tab1View),
-                new SubTabItem(this._i18n["Accounts.TabImportAndProxy"], VectorIcons.Shield, tab2View)
+                new SubTabItem(this._i18n["Accounts.TabImport"], VectorIcons.Plus, tab2View),
+                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -76,10 +79,12 @@ public sealed partial class AccountsPage : UserControl
             subTabBar.UpdateTabTitles(
             [
                 this._i18n["Accounts.TabVault"],
-                this._i18n["Accounts.TabImportAndProxy"]
+                this._i18n["Accounts.TabImport"],
+                this._i18n["Accounts.TabProxy"]
             ]);
             refreshTab1();
             refreshTab2();
+            refreshTab3();
         };
 
         return subTabBar;
@@ -296,108 +301,5 @@ public sealed partial class AccountsPage : UserControl
         };
 
         return tabGrid;
-    }
-
-    private Control BuildImportAndProxyTab(out Action refreshI18n)
-    {
-        Grid splitGrid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("1.1*,1*"),
-            ColumnSpacing = 14
-        };
-
-        // Left Card: Cookie / J2Team Session Importer
-        StackPanel importStack = new() { Spacing = 12 };
-        StackPanel importHeader = SectionHeader.CreateSubHeader(
-            this._theme,
-            this._i18n["Accounts.BtnQuickImport"],
-            VectorIcons.Accounts,
-            out TextBlock importTitleTb);
-        importStack.Children.Add(importHeader);
-
-        TextBox nameBox = FormField.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
-        nameBox.TextChanged += (_, _) => this._vm.AccountFriendlyNameInput = nameBox.Text ?? string.Empty;
-
-        TextBox cookieBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Accounts.CookiePlaceholder"],
-            multiline: true,
-            height: 180);
-        cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
-
-        Button confirmImportBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Accounts.BtnQuickImport"],
-            this._vm.QuickImportSessionCommand,
-            VectorIcons.Accounts);
-
-        importStack.Children.Add(nameBox);
-        importStack.Children.Add(cookieBox);
-        importStack.Children.Add(confirmImportBtn);
-
-        Border leftCard = SurfaceCard.Create(this._theme, importStack, new Thickness(16));
-
-        // Right Card: Dedicated Proxy Assignment for Selected Account
-        StackPanel proxyStack = new() { Spacing = 12 };
-        StackPanel proxyHeader = SectionHeader.CreateSubHeader(
-            this._theme,
-            this._i18n["Accounts.BtnSaveProxy"],
-            VectorIcons.Shield,
-            out TextBlock proxyTitleTb);
-        proxyStack.Children.Add(proxyHeader);
-
-        TextBox proxyBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Accounts.ProxyPlaceholder"],
-            this._vm.AccountProxyInput);
-        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
-
-        Button saveProxyBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Accounts.BtnSaveProxy"],
-            this._vm.SaveAccountProxyCommand,
-            VectorIcons.Shield);
-
-        proxyStack.Children.Add(proxyBox);
-        proxyStack.Children.Add(saveProxyBtn);
-
-        Border rightCard = SurfaceCard.Create(this._theme, proxyStack, new Thickness(16));
-
-        Grid.SetColumn(leftCard, 0);
-        Grid.SetColumn(rightCard, 1);
-        splitGrid.Children.Add(leftCard);
-        splitGrid.Children.Add(rightCard);
-
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(ShellViewModel.AccountFriendlyNameInput), StringComparison.Ordinal) &&
-                !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, StringComparison.Ordinal))
-            {
-                nameBox.Text = this._vm.AccountFriendlyNameInput;
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SessionImportRawInput), StringComparison.Ordinal) &&
-                     !string.Equals(cookieBox.Text, this._vm.SessionImportRawInput, StringComparison.Ordinal))
-            {
-                cookieBox.Text = this._vm.SessionImportRawInput;
-            }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.AccountProxyInput), StringComparison.Ordinal) &&
-                     !string.Equals(proxyBox.Text, this._vm.AccountProxyInput, StringComparison.Ordinal))
-            {
-                proxyBox.Text = this._vm.AccountProxyInput;
-            }
-        };
-
-        refreshI18n = () =>
-        {
-            importTitleTb.Text = this._i18n["Accounts.BtnQuickImport"];
-            proxyTitleTb.Text = this._i18n["Accounts.BtnSaveProxy"];
-            nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
-            cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
-            proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
-            AppButton.SetText(confirmImportBtn, this._i18n["Accounts.BtnQuickImport"]);
-            AppButton.SetText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
-        };
-
-        return splitGrid;
     }
 }

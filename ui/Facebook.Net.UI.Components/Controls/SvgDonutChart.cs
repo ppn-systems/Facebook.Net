@@ -63,18 +63,18 @@ public sealed class SvgDonutChart : Border
         StackPanel headerRow = SectionHeader.CreateSubHeader(theme, title, centerIconPath, out this._titleTb);
         cardStack.Children.Add(headerRow);
 
-        // Body Grid: Left = Vector SVG Donut Ring, Right = Multi-color Legend with counts & percentages
-        Grid bodyGrid = new()
+        // Body Stack: Top = Centered Vector SVG Donut Ring, Bottom = Full-width Multi-color Legend with progress bars
+        StackPanel bodyStack = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 16,
-            VerticalAlignment = VerticalAlignment.Center
+            Spacing = 14,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
         Grid ringContainer = new()
         {
             Width = size,
             Height = size,
+            Margin = new Thickness(0, 4, 0, 2),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -95,7 +95,7 @@ public sealed class SvgDonutChart : Border
         this._totalValueTb = new TextBlock
         {
             Text = "0",
-            FontSize = 21,
+            FontSize = 22,
             FontWeight = FontWeight.Bold,
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -103,7 +103,7 @@ public sealed class SvgDonutChart : Border
         this._totalCaptionTb = new TextBlock
         {
             Text = totalCaption,
-            FontSize = 10.5,
+            FontSize = 11,
             FontWeight = FontWeight.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -116,16 +116,14 @@ public sealed class SvgDonutChart : Border
 
         this._legendStack = new StackPanel
         {
-            Spacing = 7,
-            VerticalAlignment = VerticalAlignment.Center
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
-        Grid.SetColumn(ringContainer, 0);
-        Grid.SetColumn(this._legendStack, 1);
-        bodyGrid.Children.Add(ringContainer);
-        bodyGrid.Children.Add(this._legendStack);
+        bodyStack.Children.Add(ringContainer);
+        bodyStack.Children.Add(this._legendStack);
 
-        cardStack.Children.Add(bodyGrid);
+        cardStack.Children.Add(bodyStack);
         this.Child = cardStack;
 
         void ApplyColors()
@@ -243,14 +241,18 @@ public sealed class SvgDonutChart : Border
             }
         }
 
-        // Build colorful legend rows
+        // Build colorful full-width legend rows with proportional progress bars
         for (int i = 0; i < slices.Count; i++)
         {
             SvgDonutSlice slice = slices[i];
-            IBrush sliceBrush = new SolidColorBrush(Color.Parse(slice.ColorHex));
+            Color parsedColor = Color.Parse(slice.ColorHex);
+            IBrush sliceBrush = new SolidColorBrush(parsedColor);
+            IBrush subtleTintBrush = new SolidColorBrush(Color.FromArgb(36, parsedColor.R, parsedColor.G, parsedColor.B));
             int pct = total > 0 ? (int)Math.Round(slice.Value * 100.0 / total) : 0;
 
-            Grid legendRow = new()
+            StackPanel rowStack = new() { Spacing = 5 };
+
+            Grid topRow = new()
             {
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                 ColumnSpacing = 8,
@@ -269,9 +271,9 @@ public sealed class SvgDonutChart : Border
             TextBlock labelTb = new()
             {
                 Text = slice.Label,
-                FontSize = 11.5,
-                FontWeight = FontWeight.Medium,
-                Foreground = p.TextSecondary,
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = p.TextPrimary,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxLines = 1,
                 VerticalAlignment = VerticalAlignment.Center
@@ -280,27 +282,66 @@ public sealed class SvgDonutChart : Border
             Border countBadge = new()
             {
                 CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(6, 2),
-                Background = p.SecondarySurface,
-                BorderBrush = p.SubtleBorder,
-                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 2),
+                Background = subtleTintBrush,
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
-                    Text = $"{slice.Value} · {pct}%",
+                    Text = $"{slice.Value:N0} · {pct}%",
                     FontSize = 11,
                     FontWeight = FontWeight.Bold,
-                    Foreground = p.TextPrimary
+                    Foreground = sliceBrush
                 }
             };
 
             Grid.SetColumn(colorDot, 0);
             Grid.SetColumn(labelTb, 1);
             Grid.SetColumn(countBadge, 2);
-            legendRow.Children.Add(colorDot);
-            legendRow.Children.Add(labelTb);
-            legendRow.Children.Add(countBadge);
-            this._legendStack.Children.Add(legendRow);
+            topRow.Children.Add(colorDot);
+            topRow.Children.Add(labelTb);
+            topRow.Children.Add(countBadge);
+
+            int fillWeight = Math.Clamp(pct, 0, 100);
+            int emptyWeight = Math.Max(1, 100 - fillWeight);
+            Grid barGrid = new()
+            {
+                Height = 5,
+                ColumnDefinitions = new ColumnDefinitions($"{fillWeight}*,{emptyWeight}*")
+            };
+
+            Border trackBg = new()
+            {
+                CornerRadius = new CornerRadius(2.5),
+                Background = p.SubtleBorder
+            };
+            Grid.SetColumnSpan(trackBg, 2);
+            barGrid.Children.Add(trackBg);
+
+            if (fillWeight > 0)
+            {
+                Border fillBar = new()
+                {
+                    CornerRadius = new CornerRadius(2.5),
+                    Background = sliceBrush
+                };
+                Grid.SetColumn(fillBar, 0);
+                barGrid.Children.Add(fillBar);
+            }
+
+            rowStack.Children.Add(topRow);
+            rowStack.Children.Add(barGrid);
+
+            Border legendCard = new()
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 7),
+                Background = p.SecondarySurface,
+                BorderBrush = p.SubtleBorder,
+                BorderThickness = new Thickness(1),
+                Child = rowStack
+            };
+
+            this._legendStack.Children.Add(legendCard);
         }
     }
 

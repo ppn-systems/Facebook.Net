@@ -127,6 +127,15 @@ public sealed partial class SqliteAccountStore : IAccountStore
         await EnsureColumnExistsAsync(conn, "scraped_posts", "is_video", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "author_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "group_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+
+        using SqliteCommand cleanupCmd = conn.CreateCommand();
+        cleanupCmd.CommandText = """
+            DELETE FROM scraped_posts
+            WHERE (author_name IS NULL OR TRIM(author_name) = '')
+              AND (message_text IS NULL OR TRIM(message_text) = '')
+              AND (media_preview_url IS NULL OR TRIM(media_preview_url) = '');
+            """;
+        _ = await cleanupCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task EnsureColumnExistsAsync(

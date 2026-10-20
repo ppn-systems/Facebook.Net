@@ -21,8 +21,9 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Smart Overview / Home Dashboard Page (<c>OverviewPage.axaml</c>).
-/// Displays 4 interactive KPI cards, an Active Session &amp; Campaign Readiness Checklist card with 1-click actions,
-/// and a real-time Recent Activity <see cref="DataTableView{T}"/>.
+/// Uses a top <see cref="SubTabBar"/> to cleanly separate:
+/// 1) Main KPI Dashboard, Session Readiness &amp; Buyer Leads Queue,
+/// 2) Active Campaign Target Groups &amp; Buyer Care Donut Chart.
 /// </summary>
 public sealed partial class OverviewPage : UserControl
 {
@@ -61,10 +62,51 @@ public sealed partial class OverviewPage : UserControl
 
     private Control BuildLayout()
     {
+        Control tab1View = this.BuildDashboardTab(out Action refreshTab1, out Action refreshTab1I18n);
+        Control tab2View = this.BuildCampaignsAndChartTab(out Action refreshTab2, out Action refreshTab2I18n);
+
+        SubTabBar subTabBar = new(
+            this._theme,
+            [
+                new SubTabItem(this._i18n["Overview.TabDashboard"], VectorIcons.BrandMark, tab1View),
+                new SubTabItem(this._i18n["Overview.TabCampaigns"], VectorIcons.Groups, tab2View)
+            ]);
+
+        void RefreshAll()
+        {
+            refreshTab1();
+            refreshTab2();
+        }
+
+        RefreshAll();
+        this._theme.ThemeChanged += (_, _) => RefreshAll();
+        this._vm.PropertyChanged += (_, _) => RefreshAll();
+        this._vm.Accounts.CollectionChanged += (_, _) => RefreshAll();
+        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshAll();
+        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshAll();
+        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshAll();
+
+        this._i18n.LanguageChanged += (_, _) =>
+        {
+            subTabBar.UpdateTabTitles(
+            [
+                this._i18n["Overview.TabDashboard"],
+                this._i18n["Overview.TabCampaigns"]
+            ]);
+            refreshTab1I18n();
+            refreshTab2I18n();
+            RefreshAll();
+        };
+
+        return subTabBar;
+    }
+
+    private Control BuildDashboardTab(out Action refreshState, out Action refreshI18n)
+    {
         Grid pageGrid = new()
         {
             RowDefinitions = new RowDefinitions("Auto,Auto,*"),
-            RowSpacing = 10
+            RowSpacing = 12
         };
 
         Grid headerRow = SectionHeader.Create(
@@ -80,7 +122,7 @@ public sealed partial class OverviewPage : UserControl
         Grid statsRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*,*"),
-            ColumnSpacing = 8
+            ColumnSpacing = 10
         };
 
         Border cardAcc = KpiStatCard.Create(
@@ -130,15 +172,15 @@ public sealed partial class OverviewPage : UserControl
         Grid.SetRow(statsRow, 1);
         pageGrid.Children.Add(statsRow);
 
-        // Row 2: 2-Column Smart Dashboard Workspace
+        // Row 2: Spacious 2-Column Smart Dashboard Workspace
         Grid mainSplit = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("1.05*,1.25*"),
-            ColumnSpacing = 10
+            ColumnDefinitions = new ColumnDefinitions("1*,1.35*"),
+            ColumnSpacing = 12
         };
 
         // Left Card: Active Session Status, Readiness Checklist & Quick Actions
-        StackPanel leftStack = new() { Spacing = 10 };
+        StackPanel leftStack = new() { Spacing = 12 };
 
         StackPanel sessionHeader = SectionHeader.CreateSubHeader(
             this._theme,
@@ -147,7 +189,6 @@ public sealed partial class OverviewPage : UserControl
             out TextBlock sessionTitleTb);
         leftStack.Children.Add(sessionHeader);
 
-        // Active Account Banner inside Left Card
         Grid accountBannerGrid = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
@@ -170,7 +211,7 @@ public sealed partial class OverviewPage : UserControl
         TextBlock statusHeading = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.StatusDisconnected"], 14, FontWeight.Bold);
         statusHeading.MaxLines = 1;
         statusHeading.TextTrimming = TextTrimming.CharacterEllipsis;
-        TextBlock statusSub = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.SubtextDisconnected"], 11, FontWeight.Normal, isSecondary: true);
+        TextBlock statusSub = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.SubtextDisconnected"], 11.5, FontWeight.Normal, isSecondary: true);
         statusSub.MaxLines = 2;
         statusTextStack.Children.Add(statusHeading);
         statusTextStack.Children.Add(statusSub);
@@ -188,7 +229,7 @@ public sealed partial class OverviewPage : UserControl
         leftStack.Children.Add(accountBannerWell);
 
         // Campaign Readiness Checklist
-        StackPanel checklistStack = new() { Spacing = 6 };
+        StackPanel checklistStack = new() { Spacing = 7 };
         Border accReadyPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.CheckCircle,
@@ -267,26 +308,19 @@ public sealed partial class OverviewPage : UserControl
         quickActionsGrid.Children.Add(warmUpBtn);
         leftStack.Children.Add(quickActionsGrid);
 
-        Border leftCard = SurfaceCard.Create(this._theme, leftStack, new Thickness(14));
+        Border leftCard = SurfaceCard.Create(this._theme, leftStack, new Thickness(16, 14));
 
-        // Right Workspace: Practical Buyer Leads Queue + Active Campaign Groups & Live Donut Chart (No Raw Log Table)
-        Grid rightWorkspaceGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("1.15*,0.95*"),
-            RowSpacing = 10
-        };
-
-        // Right Top Card: Latest Buyer Leads Needing Reply
+        // Right Card: Full-Height Latest Buyer Leads Needing Reply
         Grid pendingLeadsCardGrid = new()
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
-            RowSpacing = 8
+            RowSpacing = 10
         };
 
         Grid pendingLeadsHeaderRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
-            ColumnSpacing = 6,
+            ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -325,82 +359,16 @@ public sealed partial class OverviewPage : UserControl
         Grid.SetRow(pendingLeadsHost, 1);
         pendingLeadsCardGrid.Children.Add(pendingLeadsHost);
 
-        Border pendingLeadsCard = SurfaceCard.Create(this._theme, pendingLeadsCardGrid, new Thickness(14, 12));
-        Grid.SetRow(pendingLeadsCard, 0);
-        rightWorkspaceGrid.Children.Add(pendingLeadsCard);
-
-        // Right Bottom Split: Active Campaign Groups Card + Live Multi-Color Buyer Care SVG Donut Chart
-        Grid bottomRightSplit = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("1.05*,1*"),
-            ColumnSpacing = 10
-        };
-
-        Grid activeGroupsCardGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            RowSpacing = 8
-        };
-
-        Grid activeGroupsHeaderRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        StackPanel activeGroupsHeader = SectionHeader.CreateSubHeader(
-            this._theme,
-            this._i18n["Overview.ActiveGroupsTitle"],
-            VectorIcons.Groups,
-            out TextBlock activeGroupsTitleTb);
-
-        Button goToPublisherBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Overview.BtnGoToPublisher"],
-            this._vm.NavigatePublisherCommand,
-            VectorIcons.Publish);
-
-        Grid.SetColumn(activeGroupsHeader, 0);
-        Grid.SetColumn(goToPublisherBtn, 1);
-        activeGroupsHeaderRow.Children.Add(activeGroupsHeader);
-        activeGroupsHeaderRow.Children.Add(goToPublisherBtn);
-        Grid.SetRow(activeGroupsHeaderRow, 0);
-        activeGroupsCardGrid.Children.Add(activeGroupsHeaderRow);
-
-        ContentControl activeGroupsHost = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch
-        };
-        Grid.SetRow(activeGroupsHost, 1);
-        activeGroupsCardGrid.Children.Add(activeGroupsHost);
-
-        Border activeGroupsCard = SurfaceCard.Create(this._theme, activeGroupsCardGrid, new Thickness(14, 12));
-
-        SvgDonutChart overviewLeadsChart = new(
-            this._theme,
-            this._i18n["Analytics.ChartLeadsTitle"],
-            VectorIcons.BrandMark,
-            this._i18n["Analytics.TotalLabel"],
-            size: 122,
-            strokeThickness: 18);
-
-        Grid.SetColumn(activeGroupsCard, 0);
-        Grid.SetColumn(overviewLeadsChart, 1);
-        bottomRightSplit.Children.Add(activeGroupsCard);
-        bottomRightSplit.Children.Add(overviewLeadsChart);
-        Grid.SetRow(bottomRightSplit, 1);
-        rightWorkspaceGrid.Children.Add(bottomRightSplit);
+        Border pendingLeadsCard = SurfaceCard.Create(this._theme, pendingLeadsCardGrid, new Thickness(16, 14));
 
         Grid.SetColumn(leftCard, 0);
-        Grid.SetColumn(rightWorkspaceGrid, 1);
+        Grid.SetColumn(pendingLeadsCard, 1);
         mainSplit.Children.Add(leftCard);
-        mainSplit.Children.Add(rightWorkspaceGrid);
+        mainSplit.Children.Add(pendingLeadsCard);
         Grid.SetRow(mainSplit, 2);
         pageGrid.Children.Add(mainSplit);
 
-        void RefreshOverviewState()
+        refreshState = () =>
         {
             ThemePalette p = this._theme.Palette;
             AccountProfile? acc = this._vm.SelectedAccount;
@@ -472,39 +440,25 @@ public sealed partial class OverviewPage : UserControl
             okValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
 
             // Populate Latest Uncommented Buyer Leads Widget
-            StackPanel leadsListStack = new() { Spacing = 6 };
+            StackPanel leadsListStack = new() { Spacing = 8 };
             int shownLeads = 0;
-            int highIntentPending = 0;
-            int warmPending = 0;
-            int commentedLeads = 0;
 
             for (int i = 0; i < this._vm.ScrapedPosts.Count; i++)
             {
                 PostSummary post = this._vm.ScrapedPosts[i];
-                bool isCommented = this._vm.IsPostCommented(post.PostId);
-                if (isCommented)
+                if (this._vm.IsPostCommented(post.PostId))
                 {
-                    commentedLeads++;
                     continue;
                 }
 
-                int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
-                if (score >= 70)
+                if (shownLeads >= 8)
                 {
-                    highIntentPending++;
-                }
-                else
-                {
-                    warmPending++;
-                }
-
-                if (shownLeads >= 5)
-                {
-                    continue;
+                    break;
                 }
 
                 shownLeads++;
                 PostSummary capturedPost = post;
+                int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
                 string author = string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName;
                 string snippet = string.IsNullOrWhiteSpace(post.MessageText)
                     ? this._i18n["Leads.EmptyPostText"]
@@ -513,21 +467,21 @@ public sealed partial class OverviewPage : UserControl
                 Grid itemGrid = new()
                 {
                     ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    ColumnSpacing = 8,
+                    ColumnSpacing = 10,
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                Border avatar = AvatarBadge.Create(this._theme, author, 28, post.AuthorAvatarUrl);
-                StackPanel textCol = new() { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+                Border avatar = AvatarBadge.Create(this._theme, author, 32, post.AuthorAvatarUrl);
+                StackPanel textCol = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
                 TextBlock authorLine = SectionHeader.CreateLabel(
                     this._theme,
                     string.IsNullOrWhiteSpace(post.GroupName) ? author : $"{author}  •  {post.GroupName}",
-                    11.5,
+                    12,
                     FontWeight.SemiBold);
                 authorLine.MaxLines = 1;
                 authorLine.TextTrimming = TextTrimming.CharacterEllipsis;
 
-                TextBlock msgLine = SectionHeader.CreateLabel(this._theme, snippet, 11, FontWeight.Normal, isSecondary: true);
+                TextBlock msgLine = SectionHeader.CreateLabel(this._theme, snippet, 11.5, FontWeight.Normal, isSecondary: true);
                 msgLine.MaxLines = 1;
                 msgLine.TextTrimming = TextTrimming.CharacterEllipsis;
                 textCol.Children.Add(authorLine);
@@ -550,8 +504,8 @@ public sealed partial class OverviewPage : UserControl
                     Content = itemGrid,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Padding = new Thickness(8, 6),
-                    CornerRadius = new CornerRadius(7),
+                    Padding = new Thickness(10, 8),
+                    CornerRadius = new CornerRadius(8),
                     Background = p.SecondarySurface,
                     BorderBrush = p.SubtleBorder,
                     BorderThickness = new Thickness(1),
@@ -571,87 +525,21 @@ public sealed partial class OverviewPage : UserControl
                 TextBlock emptyLeadsTb = SectionHeader.CreateLabel(
                     this._theme,
                     this._i18n["Empty.Leads"],
-                    11.5,
+                    12,
                     FontWeight.Normal,
                     isSecondary: true);
                 emptyLeadsTb.TextWrapping = TextWrapping.Wrap;
                 emptyLeadsTb.HorizontalAlignment = HorizontalAlignment.Center;
                 emptyLeadsTb.VerticalAlignment = VerticalAlignment.Center;
-                pendingLeadsHost.Content = SurfaceCard.CreateInset(this._theme, emptyLeadsTb, new Thickness(12));
+                pendingLeadsHost.Content = SurfaceCard.CreateInset(this._theme, emptyLeadsTb, new Thickness(16));
             }
             else
             {
                 pendingLeadsHost.Content = new ScrollViewer { Content = leadsListStack };
             }
+        };
 
-            overviewLeadsChart.SetSlices(
-            [
-                new SvgDonutSlice(this._i18n["Analytics.LegendHighIntentPending"], highIntentPending, "#F6821F"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendWarmPending"], warmPending, "#8B5CF6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendCommented"], commentedLeads, "#10B981")
-            ]);
-
-            // Populate Active Target Groups Widget
-            StackPanel groupsStack = new() { Spacing = 6 };
-            int shownGroups = 0;
-            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
-            {
-                SavedTargetGroup grp = this._vm.TargetGroups[i];
-                if (!grp.IsEnabled)
-                {
-                    continue;
-                }
-
-                shownGroups++;
-                Grid grpRow = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    ColumnSpacing = 8,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                Border grpAvatar = AvatarBadge.Create(this._theme, grp.GroupName, 24, grp.AvatarUrl);
-                TextBlock grpNameTb = SectionHeader.CreateLabel(this._theme, grp.GroupName, 11.5, FontWeight.SemiBold);
-                grpNameTb.MaxLines = 1;
-                grpNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
-                Border activeBadge = StatusPill.Create(this._theme, this._i18n["Groups.MemberJoined"], AuditSeverity.Success);
-
-                Grid.SetColumn(grpAvatar, 0);
-                Grid.SetColumn(grpNameTb, 1);
-                Grid.SetColumn(activeBadge, 2);
-                grpRow.Children.Add(grpAvatar);
-                grpRow.Children.Add(grpNameTb);
-                grpRow.Children.Add(activeBadge);
-                groupsStack.Children.Add(SurfaceCard.CreateInset(this._theme, grpRow, new Thickness(8, 5)));
-            }
-
-            if (shownGroups == 0)
-            {
-                TextBlock emptyGrpTb = SectionHeader.CreateLabel(
-                    this._theme,
-                    this._i18n["Empty.TargetGroups"],
-                    11.5,
-                    FontWeight.Normal,
-                    isSecondary: true);
-                emptyGrpTb.TextWrapping = TextWrapping.Wrap;
-                emptyGrpTb.HorizontalAlignment = HorizontalAlignment.Center;
-                emptyGrpTb.VerticalAlignment = VerticalAlignment.Center;
-                activeGroupsHost.Content = SurfaceCard.CreateInset(this._theme, emptyGrpTb, new Thickness(12));
-            }
-            else
-            {
-                activeGroupsHost.Content = new ScrollViewer { Content = groupsStack };
-            }
-        }
-
-        RefreshOverviewState();
-        this._theme.ThemeChanged += (_, _) => RefreshOverviewState();
-        this._vm.PropertyChanged += (_, _) => RefreshOverviewState();
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshOverviewState();
-
-        this._i18n.LanguageChanged += (_, _) =>
+        refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Nav.Overview"];
             infoTb.Text = this._i18n["Overview.InfoTip"];
@@ -662,16 +550,12 @@ public sealed partial class OverviewPage : UserControl
             sessionTitleTb.Text = this._i18n["Overview.SessionCardTitle"];
             quickActionsTitleTb.Text = this._i18n["Overview.QuickActionsTitle"];
             pendingLeadsTitleTb.Text = this._i18n["Overview.PendingLeadsTitle"];
-            activeGroupsTitleTb.Text = this._i18n["Overview.ActiveGroupsTitle"];
-            overviewLeadsChart.UpdateLabels(this._i18n["Analytics.ChartLeadsTitle"], this._i18n["Analytics.TotalLabel"]);
             AppButton.SetText(quickScrapeBtn, this._i18n["Overview.BtnScrapeNow"]);
             AppButton.SetText(goToLeadsBtn, this._i18n["Overview.BtnGoToLeads"]);
-            AppButton.SetText(goToPublisherBtn, this._i18n["Overview.BtnGoToPublisher"]);
             AppButton.SetText(openBrowserBtn, this._i18n["Overview.QuickOpenBrowser"]);
             AppButton.SetText(liveCheckBtn, this._i18n["Accounts.BtnCheckHealth"]);
             AppButton.SetText(syncGroupsBtn, this._i18n["Groups.BtnSyncJoined"]);
             AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
-            RefreshOverviewState();
         };
 
         return pageGrid;
