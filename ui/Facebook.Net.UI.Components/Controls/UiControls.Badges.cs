@@ -15,126 +15,11 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Partial implementation of <see cref="UiControls"/> providing status pills, avatar chips,
-/// compact section headers with click-to-view SVG Info (`i`) flyouts, and styled text inputs.
+/// Badges, pills, avatars, KPI cards, and empty-state banners of <see cref="UiControls"/>.
+/// All icons are rendered strictly from `.svg` files via <see cref="VectorIcons"/>.
 /// </summary>
 public static partial class UiControls
 {
-    /// <summary>
-    /// Creates a compact section header with a primary title and a clickable SVG Info (`i`) icon button
-    /// that opens a clean popover Flyout when clicked instead of cluttering the page with multi-line explanations.
-    /// </summary>
-    public static Grid CreateSectionHeader(
-        ThemeService theme,
-        string initialTitle,
-        string initialInfoText,
-        out TextBlock titleBlock,
-        out TextBlock infoFlyoutBlock)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-
-        TextBlock title = new()
-        {
-            Text = initialTitle,
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-        Button infoBtn = CreateInfoFlyoutButton(theme, initialInfoText, out TextBlock flyoutText);
-
-        Grid headerRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
-            ColumnSpacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(title, 0);
-        Grid.SetColumn(infoBtn, 1);
-        headerRow.Children.Add(title);
-        headerRow.Children.Add(infoBtn);
-
-        void ApplyColors() => title.Foreground = theme.Palette.TextPrimary;
-
-        ApplyColors();
-        BindThemeLifecycle(headerRow, theme, ApplyColors);
-
-        titleBlock = title;
-        infoFlyoutBlock = flyoutText;
-        return headerRow;
-    }
-
-    /// <summary>
-    /// Creates a compact circular SVG `i` (Info) button that displays an explanatory Flyout card when clicked.
-    /// </summary>
-    public static Button CreateInfoFlyoutButton(
-        ThemeService theme,
-        string initialInfoText,
-        out TextBlock flyoutTextBlock)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-
-        TextBlock infoBody = new()
-        {
-            Text = initialInfoText,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 320,
-            LineHeight = 18
-        };
-
-        Border flyoutCard = new()
-        {
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 10),
-            Child = infoBody
-        };
-
-        Flyout flyout = new()
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = flyoutCard
-        };
-
-        PathIcon infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
-
-        Button btn = new()
-        {
-            Width = 26,
-            Height = 26,
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(13),
-            BorderThickness = new Thickness(1),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Content = infoIcon,
-            Flyout = flyout,
-            Focusable = true
-        };
-        AutomationProperties.SetName(btn, initialInfoText);
-        ToolTip.SetTip(btn, initialInfoText);
-
-        void ApplyColors()
-        {
-            ThemePalette p = theme.Palette;
-            btn.Background = p.SecondarySurface;
-            btn.BorderBrush = p.SubtleBorder;
-            infoIcon.Foreground = p.BrandPrimary;
-            flyoutCard.Background = p.ElevatedSurface;
-            flyoutCard.BorderBrush = p.InteractiveBorder;
-            infoBody.Foreground = p.TextPrimary;
-        }
-
-        ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
-        flyoutTextBlock = infoBody;
-        return btn;
-    }
-
     /// <summary>
     /// Creates a semantic Status Pill (`Success`, `Warning`, `Error`, `Info`) with a 6px dot and 1px tinted border.
     /// </summary>
@@ -186,6 +71,87 @@ public static partial class UiControls
 
         ApplyColors();
         BindThemeLifecycle(pill, theme, ApplyColors);
+        return pill;
+    }
+
+    /// <summary>
+    /// Creates a semantic pill featuring an SVG icon (loaded from <c>Assets/Icons/*.svg</c>) and a metric/label string.
+    /// Replaces raw Unicode symbols (`✔`, `⚠`, `✖`, `👍`, `💬`) with crisp vector SVG icons.
+    /// </summary>
+    public static Border CreateIconMetricPill(
+        ThemeService theme,
+        string iconSvg,
+        string initialText,
+        AuditSeverity severity,
+        out TextBlock valueTextBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        PathIcon icon = VectorIcons.Create(iconSvg, 12, margin: new Thickness(0));
+        TextBlock label = new()
+        {
+            Text = initialText,
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        row.Children.Add(icon);
+        row.Children.Add(label);
+
+        Border pill = new()
+        {
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = row
+        };
+        AutomationProperties.SetName(pill, initialText);
+        ToolTip.SetTip(pill, initialText);
+
+        void ApplyColors()
+        {
+            ThemePalette p = theme.Palette;
+            switch (severity)
+            {
+                case AuditSeverity.Success:
+                    pill.Background = p.SuccessFill;
+                    pill.BorderBrush = p.SuccessBorder;
+                    label.Foreground = p.SuccessText;
+                    icon.Foreground = p.SuccessText;
+                    break;
+                case AuditSeverity.Warning:
+                    pill.Background = p.WarningFill;
+                    pill.BorderBrush = p.WarningBorder;
+                    label.Foreground = p.WarningText;
+                    icon.Foreground = p.WarningText;
+                    break;
+                case AuditSeverity.Error:
+                    pill.Background = p.DangerFill;
+                    pill.BorderBrush = p.DangerBorder;
+                    label.Foreground = p.DangerText;
+                    icon.Foreground = p.DangerText;
+                    break;
+                case AuditSeverity.Info:
+                default:
+                    pill.Background = p.InfoFill;
+                    pill.BorderBrush = p.InfoBorder;
+                    label.Foreground = p.InfoText;
+                    icon.Foreground = p.InfoText;
+                    break;
+            }
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(pill, theme, ApplyColors);
+        valueTextBlock = label;
         return pill;
     }
 
@@ -259,40 +225,6 @@ public static partial class UiControls
     }
 
     /// <summary>
-    /// Creates a <see cref="TextBlock"/> whose foreground color automatically updates when <see cref="ThemeService"/> switches between Dark and Light mode.
-    /// </summary>
-    public static TextBlock CreateThemedLabel(
-        ThemeService theme,
-        string initialText,
-        double fontSize = 13,
-        FontWeight fontWeight = FontWeight.Normal,
-        bool isSecondary = false,
-        bool isBrand = false)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-        TextBlock tb = new()
-        {
-            Text = initialText,
-            FontSize = fontSize,
-            FontWeight = fontWeight,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        void ApplyColors()
-        {
-            ThemePalette p = theme.Palette;
-            tb.Foreground = isBrand
-                ? p.BrandPrimary
-                : (isSecondary ? p.TextSecondary : p.TextPrimary);
-        }
-
-        ApplyColors();
-        BindThemeLifecycle(tb, theme, ApplyColors);
-        return tb;
-    }
-
-    /// <summary>
     /// Creates a circular avatar monogram badge (e.g., first 2 letters of Account or Group name)
     /// so entities are visually identifiable without showing raw numeric UIDs.
     /// </summary>
@@ -330,51 +262,6 @@ public static partial class UiControls
         ApplyColors();
         BindThemeLifecycle(circle, theme, ApplyColors);
         return circle;
-    }
-
-    /// <summary>
-    /// Creates a styled <see cref="TextBox"/> with 8px corner radius and subtle border.
-    /// </summary>
-    public static TextBox CreateTextBox(
-        ThemeService theme,
-        string placeholder,
-        string initialText = "",
-        bool multiline = false,
-        double? height = null)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-
-        TextBox box = new()
-        {
-            PlaceholderText = placeholder,
-            Text = initialText,
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(10, 8),
-            FontSize = 13,
-            AcceptsReturn = multiline,
-            TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
-            Focusable = true
-        };
-        AutomationProperties.SetName(box, placeholder);
-        ToolTip.SetTip(box, placeholder);
-
-        if (height.HasValue)
-        {
-            box.Height = height.Value;
-        }
-
-        void ApplyColors()
-        {
-            ThemePalette p = theme.Palette;
-            box.Background = p.SecondarySurface;
-            box.BorderBrush = p.InteractiveBorder;
-            box.Foreground = p.TextPrimary;
-        }
-
-        ApplyColors();
-        BindThemeLifecycle(box, theme, ApplyColors);
-        return box;
     }
 
     /// <summary>

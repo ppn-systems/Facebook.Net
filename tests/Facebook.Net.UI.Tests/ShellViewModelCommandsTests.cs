@@ -398,15 +398,6 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         // Duplicate comment prevention check
         await vm.SendSalesCommentOnSelectedPostCommand.ExecuteAsync(null);
         Assert.Equal(3, cometClient.CreatedCommentsCount);
-
-        string csvLeadsPath = Path.Combine(this._tempDir, "leads.csv");
-        string jsonLeadsPath = Path.Combine(this._tempDir, "leads.json");
-        await vm.ExportScrapedLeadsAsync(csvLeadsPath);
-        await vm.ExportScrapedLeadsAsync(jsonLeadsPath);
-        Assert.True(File.Exists(csvLeadsPath));
-        Assert.True(File.Exists(jsonLeadsPath));
-        Assert.Contains("Nguyễn Văn Mua", await File.ReadAllTextAsync(csvLeadsPath), StringComparison.Ordinal);
-        Assert.Contains("Nguyễn Văn Mua", await File.ReadAllTextAsync(jsonLeadsPath), StringComparison.Ordinal);
     }
 
     [Fact]

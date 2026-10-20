@@ -3,14 +3,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
-using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Localization;
@@ -21,10 +22,11 @@ namespace Facebook.Net.App.Views;
 
 /// <summary>
 /// Minimalist desktop Shell Window featuring:
-/// - Collapsible Left Navigation Sidebar (expanded `200px` with labels or collapsed `60px` icon rail) with top collapse button and bottom Activity Log icon button.
-/// - Clean, focused Single-Page Workspace per section with clickable SVG Info (`i`) flyouts instead of verbose inline descriptions.
-/// - Automatic settings persistence to <c>appsettings.json</c>.
-/// Split into partial files by screen area.
+/// <list type="bullet">
+///   <item><description>Fixed standard window geometry (<c>980 × 640</c>, <c>CanResize = false</c>).</description></item>
+///   <item><description>Collapsible Left Navigation Sidebar with SVG icons loaded from <c>Assets/Icons/*.svg</c>.</description></item>
+///   <item><description>Dedicated partial class per screen (<c>Overview</c>, <c>Accounts</c>, <c>Groups</c>, <c>Publisher</c>, <c>SalesLeads</c>, <c>Settings</c>, <c>Audit</c>).</description></item>
+/// </list>
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -73,6 +75,22 @@ public sealed partial class MainWindow : Window
         base.OnClosed(e);
     }
 
+    private async Task<string?> PickSingleFileAsync(string title)
+    {
+        if (this.StorageProvider is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<IStorageFile> files = await this.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        }).ConfigureAwait(true);
+
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
     private Grid BuildShellLayout()
     {
         Grid root = new()
@@ -103,7 +121,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(10, 14)
         };
 
-        // 1. Top Brand Logo + Collapse Menu Toggle Button (`[|]`)
+        // 1. Top Brand Logo + Collapse Menu Toggle Button
         Grid topHeader = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
@@ -122,19 +140,11 @@ public sealed partial class MainWindow : Window
             Child = brandIcon
         };
 
-        Button collapseBtn = new()
-        {
-            Width = 32,
-            Height = 32,
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Command = this._vm.ToggleSidebarCommand,
-            Content = VectorIcons.Create(VectorIcons.SidebarToggle, 16, margin: new Thickness(0)),
-            Focusable = true
-        };
+        Button collapseBtn = UiControls.CreateIconButton(
+            this._theme,
+            VectorIcons.SidebarToggle,
+            this._i18n["Sidebar.Collapse"],
+            this._vm.ToggleSidebarCommand);
 
         Grid.SetColumn(brandBadge, 0);
         Grid.SetColumn(collapseBtn, 2);
@@ -152,86 +162,38 @@ public sealed partial class MainWindow : Window
 
         List<(Button Btn, TextBlock Label, PathIcon Icon, string Key, NavigationSection Section)> navEntries = new(6);
 
-        Button CreateNavItem(string i18nKey, string svgPath, NavigationSection section, System.Windows.Input.ICommand cmd)
+        void AddNavItem(string i18nKey, string svgFileName, NavigationSection section, System.Windows.Input.ICommand cmd)
         {
-            PathIcon icon = VectorIcons.Create(svgPath, 17, margin: new Thickness(0));
-            TextBlock label = new()
-            {
-                Text = this._i18n[i18nKey],
-                FontSize = 13,
-                FontWeight = FontWeight.Medium,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-
-            StackPanel row = new()
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 12,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            row.Children.Add(icon);
-            row.Children.Add(label);
-
-            Button btn = new()
-            {
-                Content = row,
-                Command = cmd,
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(11, 9),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                BorderThickness = new Thickness(1),
-                Focusable = true
-            };
-            AutomationProperties.SetName(btn, this._i18n[i18nKey]);
-            ToolTip.SetTip(btn, this._i18n[i18nKey]);
-
-            navEntries.Add((btn, label, icon, i18nKey, section));
-            return btn;
+            Button btn = UiControls.CreateSidebarNavButton(
+                this._i18n[i18nKey],
+                svgFileName,
+                cmd,
+                out TextBlock lbl,
+                out PathIcon icn);
+            navEntries.Add((btn, lbl, icn, i18nKey, section));
+            navStack.Children.Add(btn);
         }
 
-        navStack.Children.Add(CreateNavItem("Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand));
-        navStack.Children.Add(CreateNavItem("Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand));
-        navStack.Children.Add(CreateNavItem("Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand));
-        navStack.Children.Add(CreateNavItem("Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand));
-        navStack.Children.Add(CreateNavItem("Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand));
-        navStack.Children.Add(CreateNavItem("Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand));
+        AddNavItem("Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
+        AddNavItem("Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
+        AddNavItem("Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
+        AddNavItem("Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
+        AddNavItem("Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
+        AddNavItem("Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
 
         Grid.SetRow(navStack, 1);
         sidebarGrid.Children.Add(navStack);
 
         // 3. Bottom-left Activity / Audit Log Icon Button
-        PathIcon auditIcon = VectorIcons.Create(VectorIcons.AuditLog, 16, margin: new Thickness(0));
-        TextBlock auditLabel = new()
-        {
-            Text = this._i18n["Nav.AuditLogs"],
-            FontSize = 12,
-            FontWeight = FontWeight.Medium,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        StackPanel bottomRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        bottomRow.Children.Add(auditIcon);
-        bottomRow.Children.Add(auditLabel);
-
-        Button bottomAuditBtn = new()
-        {
-            Content = bottomRow,
-            Command = this._vm.NavigateAuditLogsCommand,
-            CornerRadius = new CornerRadius(18),
-            Padding = new Thickness(10, 7),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            BorderThickness = new Thickness(1),
-            Focusable = true
-        };
-        AutomationProperties.SetName(bottomAuditBtn, this._i18n["Nav.AuditLogs"]);
-        ToolTip.SetTip(bottomAuditBtn, this._i18n["Nav.AuditLogs"]);
+        Button bottomAuditBtn = UiControls.CreateSidebarNavButton(
+            this._i18n["Nav.AuditLogs"],
+            VectorIcons.AuditLog,
+            this._vm.NavigateAuditLogsCommand,
+            out TextBlock auditLabel,
+            out PathIcon auditIcon);
+        bottomAuditBtn.CornerRadius = new CornerRadius(18);
+        bottomAuditBtn.Padding = new Thickness(10, 7);
+        bottomAuditBtn.HorizontalAlignment = HorizontalAlignment.Left;
 
         Grid.SetRow(bottomAuditBtn, 2);
         sidebarGrid.Children.Add(bottomAuditBtn);
@@ -257,12 +219,6 @@ public sealed partial class MainWindow : Window
 
             Grid.SetColumn(collapseBtn, collapsed ? 0 : 2);
             collapseBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right;
-            collapseBtn.Background = p.SecondarySurface;
-            collapseBtn.BorderBrush = p.SubtleBorder;
-            if (collapseBtn.Content is PathIcon toggleIcon)
-            {
-                toggleIcon.Foreground = p.TextSecondary;
-            }
 
             string collapseTip = collapsed ? this._i18n["Sidebar.Expand"] : this._i18n["Sidebar.Collapse"];
             ToolTip.SetTip(collapseBtn, collapseTip);
@@ -295,7 +251,11 @@ public sealed partial class MainWindow : Window
             bool isAuditActive = this._vm.CurrentSection == NavigationSection.AuditLogs;
             auditLabel.Text = this._i18n["Nav.AuditLogs"];
             auditLabel.IsVisible = !collapsed;
-            bottomRow.Spacing = collapsed ? 0 : 10;
+            if (bottomAuditBtn.Content is StackPanel bottomRow)
+            {
+                bottomRow.Spacing = collapsed ? 0 : 10;
+            }
+
             auditLabel.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
             auditIcon.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
             bottomAuditBtn.Background = isAuditActive ? p.BrandSubtleFill : p.SecondarySurface;
@@ -342,7 +302,6 @@ public sealed partial class MainWindow : Window
             RowDefinitions = new RowDefinitions("Auto,*,Auto")
         };
 
-        // Top subtle busy progress strip + active account selector bar
         Grid topContextStrip = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -361,7 +320,7 @@ public sealed partial class MainWindow : Window
             IsVisible = this._vm.IsBusy
         };
 
-        Button stopTaskBtn = UiControls.CreatePrimaryButton(
+        Button stopTaskBtn = UiControls.CreateDangerButton(
             this._theme,
             this._i18n["Common.BtnStopTask"],
             this._vm.StopActiveTaskCommand,
@@ -447,7 +406,6 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(activeScreenContainer, 1);
         workspaceGrid.Children.Add(activeScreenContainer);
 
-        // Subtle footer with live status ticker & version (matching the bottom of the One Client screenshot)
         Grid footerRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
@@ -484,12 +442,7 @@ public sealed partial class MainWindow : Window
             Child = workspaceGrid
         };
 
-        void ApplyHostColors()
-        {
-            ThemePalette p = this._theme.Palette;
-            busyStrip.Foreground = p.BrandPrimary;
-            stopTaskBtn.Background = p.DangerText;
-        }
+        void ApplyHostColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
 
         ApplyHostColors();
         this._theme.ThemeChanged += (_, _) => ApplyHostColors();
@@ -530,211 +483,5 @@ public sealed partial class MainWindow : Window
         };
 
         return host;
-    }
-
-    private Control BuildOverviewScreen()
-    {
-        StackPanel centerHero = new()
-        {
-            Spacing = 14,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 560
-        };
-
-        Grid headerRow = UiControls.CreateSectionHeader(
-            this._theme,
-            this._i18n["Nav.Overview"],
-            this._i18n["Overview.InfoTip"],
-            out TextBlock titleTb,
-            out TextBlock infoTb);
-        headerRow.HorizontalAlignment = HorizontalAlignment.Center;
-
-        PathIcon heroIcon = VectorIcons.Create(VectorIcons.CheckCircle, 46, margin: new Thickness(0));
-        Border heroCircle = new()
-        {
-            Width = 88,
-            Height = 88,
-            CornerRadius = new CornerRadius(44),
-            BorderThickness = new Thickness(1),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Child = heroIcon
-        };
-
-        TextBlock statusHeading = new()
-        {
-            FontSize = 24,
-            FontWeight = FontWeight.Bold,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
-        TextBlock statusSub = UiControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Overview.SubtextDisconnected"],
-            13,
-            FontWeight.Normal,
-            isSecondary: true);
-        statusSub.TextAlignment = TextAlignment.Center;
-        statusSub.HorizontalAlignment = HorizontalAlignment.Center;
-
-        Grid actionRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
-            ColumnSpacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 6, 0, 0)
-        };
-
-        Button openBrowserBtn = UiControls.CreatePrimaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnOpenBrowserLogin"],
-            this._vm.OpenBrowserAndSyncCommand,
-            VectorIcons.Browser);
-
-        Button liveCheckBtn = UiControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnCheckHealth"],
-            this._vm.CheckAccountHealthCommand,
-            VectorIcons.CheckCircle);
-
-        Grid.SetColumn(openBrowserBtn, 0);
-        Grid.SetColumn(liveCheckBtn, 1);
-        actionRow.Children.Add(openBrowserBtn);
-        actionRow.Children.Add(liveCheckBtn);
-
-        // Compact 4-metric summary pills row inside the Overview card
-        Grid statsRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*,*"),
-            ColumnSpacing = 8,
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-
-        Border cardAcc = UiControls.CreateKpiStatCard(
-            this._theme,
-            this._i18n["Nav.Accounts"],
-            "0",
-            VectorIcons.Accounts,
-            out TextBlock accTitleTb,
-            out TextBlock accValTb);
-
-        Border cardGrp = UiControls.CreateKpiStatCard(
-            this._theme,
-            this._i18n["Nav.Groups"],
-            "0",
-            VectorIcons.Groups,
-            out TextBlock grpTitleTb,
-            out TextBlock grpValTb);
-
-        Border cardLeads = UiControls.CreateKpiStatCard(
-            this._theme,
-            this._i18n["Nav.SalesLeads"],
-            "0",
-            VectorIcons.Search,
-            out TextBlock leadsTitleTb,
-            out TextBlock leadsValTb);
-
-        Border cardOk = UiControls.CreateKpiStatCard(
-            this._theme,
-            this._i18n["Nav.AuditLogs"],
-            "0",
-            VectorIcons.CheckCircle,
-            out TextBlock okTitleTb,
-            out TextBlock okValTb);
-
-        Grid.SetColumn(cardAcc, 0);
-        Grid.SetColumn(cardGrp, 1);
-        Grid.SetColumn(cardLeads, 2);
-        Grid.SetColumn(cardOk, 3);
-        statsRow.Children.Add(cardAcc);
-        statsRow.Children.Add(cardGrp);
-        statsRow.Children.Add(cardLeads);
-        statsRow.Children.Add(cardOk);
-
-        centerHero.Children.Add(headerRow);
-        centerHero.Children.Add(heroCircle);
-        centerHero.Children.Add(statusHeading);
-        centerHero.Children.Add(statusSub);
-        centerHero.Children.Add(actionRow);
-
-        Border heroCard = UiControls.CreateCard(this._theme, centerHero, new Thickness(26, 20));
-
-        Grid pageGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("*,Auto"),
-            RowSpacing = 12,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-        heroCard.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetRow(heroCard, 0);
-        Grid.SetRow(statsRow, 1);
-        pageGrid.Children.Add(heroCard);
-        pageGrid.Children.Add(statsRow);
-
-        void RefreshOverviewState()
-        {
-            ThemePalette p = this._theme.Palette;
-            AccountProfile? acc = this._vm.SelectedAccount;
-            bool isConnected = acc is not null && acc.Status == AccountStatus.Active;
-
-            if (this._vm.IsBusy)
-            {
-                statusHeading.Text = this._i18n["Overview.StatusRunning"];
-                statusHeading.Foreground = p.BrandPrimary;
-                heroCircle.Background = p.BrandSubtleFill;
-                heroCircle.BorderBrush = p.BrandPrimary;
-                heroIcon.Foreground = p.BrandPrimary;
-                statusSub.Text = this._vm.AuditDrawer.LatestTickerText;
-            }
-            else if (isConnected && acc is not null)
-            {
-                statusHeading.Text = this._i18n["Overview.StatusConnected"];
-                statusHeading.Foreground = p.SuccessText;
-                heroCircle.Background = p.SuccessFill;
-                heroCircle.BorderBrush = p.SuccessBorder;
-                heroIcon.Foreground = p.SuccessText;
-                statusSub.Text = $"{acc.DisplayName} — {this._i18n["Overview.SubtextConnected"]}";
-            }
-            else
-            {
-                statusHeading.Text = acc is not null
-                    ? this._i18n.FormatAccountStatus(acc.Status)
-                    : this._i18n["Overview.StatusDisconnected"];
-                statusHeading.Foreground = p.TextPrimary;
-                heroCircle.Background = p.SecondarySurface;
-                heroCircle.BorderBrush = p.SubtleBorder;
-                heroIcon.Foreground = p.BrandPrimary;
-                statusSub.Text = this._i18n["Overview.SubtextDisconnected"];
-            }
-
-            accValTb.Text = this._vm.Accounts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            grpValTb.Text = this._vm.TargetGroups.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            leadsValTb.Text = this._vm.ScrapedPosts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            okValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        RefreshOverviewState();
-        this._theme.ThemeChanged += (_, _) => RefreshOverviewState();
-        this._vm.PropertyChanged += (_, _) => RefreshOverviewState();
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshOverviewState();
-        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshOverviewState();
-
-        this._i18n.LanguageChanged += (_, _) =>
-        {
-            titleTb.Text = this._i18n["Nav.Overview"];
-            infoTb.Text = this._i18n["Overview.InfoTip"];
-            accTitleTb.Text = this._i18n["Nav.Accounts"];
-            grpTitleTb.Text = this._i18n["Nav.Groups"];
-            leadsTitleTb.Text = this._i18n["Nav.SalesLeads"];
-            okTitleTb.Text = this._i18n["Nav.AuditLogs"];
-            UiControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            UiControls.SetButtonText(liveCheckBtn, this._i18n["Accounts.BtnCheckHealth"]);
-            RefreshOverviewState();
-        };
-
-        return pageGrid;
     }
 }

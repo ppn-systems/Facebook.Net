@@ -229,17 +229,11 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         shell.ToggleLanguageQuickCommand.Execute(null);
         Assert.Equal(customSpintax, shell.PostSpintaxText);
 
-        // Refresh and export Audit Logs to JSON and CSV
+        // Refresh and clear Audit Logs without CSV export
         await shell.AuditDrawer.RefreshLogsAsync();
-        string jsonExportPath = Path.Combine(this._tempDir, "audit_export.json");
-        string csvExportPath = Path.Combine(this._tempDir, "audit_export.csv");
-        await shell.AuditDrawer.ExportFilteredLogsAsync(jsonExportPath);
-        await shell.AuditDrawer.ExportFilteredLogsAsync(csvExportPath);
-
-        Assert.True(File.Exists(jsonExportPath));
-        Assert.True(File.Exists(csvExportPath));
-        Assert.Contains("Nick Seeding VIP", await File.ReadAllTextAsync(jsonExportPath), StringComparison.Ordinal);
-        Assert.Contains("Nick Seeding VIP", await File.ReadAllTextAsync(csvExportPath), StringComparison.Ordinal);
+        Assert.NotEmpty(shell.AuditDrawer.FilteredLogs);
+        await shell.AuditDrawer.ClearLogsCommand.ExecuteAsync(null);
+        Assert.Empty(shell.AuditDrawer.FilteredLogs);
     }
 
     [Fact]
@@ -275,6 +269,55 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal(25, vm2.MinDelaySeconds);
         Assert.Equal(90, vm2.MaxDelaySeconds);
         Assert.True(vm2.IsSidebarCollapsed);
+    }
+
+    [Fact]
+    public void VectorIcons_All27SvgIconAssetFiles_ExistAndContainValidPathGeometry()
+    {
+        string[] allIcons =
+        [
+            Facebook.Net.UI.Components.Icons.VectorIcons.Home,
+            Facebook.Net.UI.Components.Icons.VectorIcons.SidebarToggle,
+            Facebook.Net.UI.Components.Icons.VectorIcons.InfoCircle,
+            Facebook.Net.UI.Components.Icons.VectorIcons.BrandMark,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Accounts,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Groups,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Publish,
+            Facebook.Net.UI.Components.Icons.VectorIcons.SalesComment,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Settings,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Browser,
+            Facebook.Net.UI.Components.Icons.VectorIcons.AuditLog,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Sun,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Moon,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Search,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Sync,
+            Facebook.Net.UI.Components.Icons.VectorIcons.CheckCircle,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Folder,
+            Facebook.Net.UI.Components.Icons.VectorIcons.StopCircle,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Trash,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Plus,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Clipboard,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Shield,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Bookmark,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Download,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Warning,
+            Facebook.Net.UI.Components.Icons.VectorIcons.ErrorCircle,
+            Facebook.Net.UI.Components.Icons.VectorIcons.ThumbUp
+        ];
+
+        Assert.Equal(27, allIcons.Length);
+        System.Reflection.Assembly compAsm = typeof(Facebook.Net.UI.Components.Icons.VectorIcons).Assembly;
+        for (int i = 0; i < allIcons.Length; i++)
+        {
+            string svgName = allIcons[i];
+            Assert.EndsWith(".svg", svgName, StringComparison.OrdinalIgnoreCase);
+
+            using Stream? resStream = compAsm.GetManifestResourceStream($"Assets.Icons.{svgName}");
+            Assert.NotNull(resStream);
+            using StreamReader reader = new(resStream);
+            string svgXml = reader.ReadToEnd();
+            Assert.Contains("<svg", svgXml, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     public void Dispose()

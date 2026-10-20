@@ -22,7 +22,7 @@ public static class VectorIcons
 {
     private static readonly ConcurrentDictionary<string, StreamGeometry> s_geometryCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Home / Overview globe icon asset file name.</summary>
+    /// <summary>Home / Overview house icon asset file name.</summary>
     public const string Home = "home.svg";
 
     /// <summary>Sidebar collapse / expand panel toggle icon asset file name.</summary>
@@ -76,17 +76,44 @@ public static class VectorIcons
     /// <summary>StopCircle / Cancel task icon asset file name.</summary>
     public const string StopCircle = "stop-circle.svg";
 
+    /// <summary>Trash / Delete / Clear icon asset file name.</summary>
+    public const string Trash = "trash.svg";
+
+    /// <summary>Plus / Add item icon asset file name.</summary>
+    public const string Plus = "plus.svg";
+
+    /// <summary>Clipboard / Paste icon asset file name.</summary>
+    public const string Clipboard = "clipboard.svg";
+
+    /// <summary>Shield / Proxy / Security icon asset file name.</summary>
+    public const string Shield = "shield.svg";
+
+    /// <summary>Bookmark / Save Template icon asset file name.</summary>
+    public const string Bookmark = "bookmark.svg";
+
+    /// <summary>Download / Export icon asset file name.</summary>
+    public const string Download = "download.svg";
+
+    /// <summary>Warning triangle icon asset file name.</summary>
+    public const string Warning = "warning.svg";
+
+    /// <summary>Error circle icon asset file name.</summary>
+    public const string ErrorCircle = "error-circle.svg";
+
+    /// <summary>Thumb-up / Like reaction icon asset file name.</summary>
+    public const string ThumbUp = "thumb-up.svg";
+
     /// <summary>
     /// Creates a crisp <see cref="PathIcon"/> loaded from an `.svg` file in <c>Assets/Icons/</c>.
     /// </summary>
     public static PathIcon Create(
-        string iconAssetOrPath,
+        string svgAssetFileName,
         double size = 16,
         IBrush? foreground = null,
         Thickness? margin = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(iconAssetOrPath);
-        StreamGeometry geometry = s_geometryCache.GetOrAdd(iconAssetOrPath, LoadGeometryFromSvgAsset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(svgAssetFileName);
+        StreamGeometry geometry = s_geometryCache.GetOrAdd(svgAssetFileName, LoadGeometryFromSvgAsset);
 
         PathIcon icon = new()
         {
@@ -104,25 +131,24 @@ public static class VectorIcons
         return icon;
     }
 
-    private static StreamGeometry LoadGeometryFromSvgAsset(string iconAssetOrPath)
+    private static StreamGeometry LoadGeometryFromSvgAsset(string svgAssetFileName)
     {
-        // Support loading from Assets/Icons/<name>.svg
-        if (iconAssetOrPath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+        string fileName = svgAssetFileName.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetFileName(svgAssetFileName)
+            : $"{svgAssetFileName}.svg";
+
+        string? pathData = TryExtractSvgPathData(fileName);
+        if (string.IsNullOrWhiteSpace(pathData))
         {
-            string fileName = Path.GetFileName(iconAssetOrPath);
-            string? pathData = TryExtractSvgPathData(fileName);
-            if (!string.IsNullOrWhiteSpace(pathData))
-            {
-                return StreamGeometry.Parse(pathData);
-            }
+            throw new FileNotFoundException($"SVG icon asset '{fileName}' was not found in Assets/Icons/.", fileName);
         }
 
-        return StreamGeometry.Parse(iconAssetOrPath);
+        return StreamGeometry.Parse(pathData);
     }
 
     private static string? TryExtractSvgPathData(string svgFileName)
     {
-        // 1. Try disk file in AppContext.BaseDirectory/Assets/Icons/<svgFileName> (allows live editing of .svg files)
+        // 1. Try disk file in AppContext.BaseDirectory/Assets/Icons/<svgFileName>
         string diskPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Icons", svgFileName);
         if (File.Exists(diskPath))
         {

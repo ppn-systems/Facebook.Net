@@ -13,7 +13,7 @@ using Facebook.Net.UI.ViewModels.Services;
 namespace Facebook.Net.UI.ViewModels.Audit;
 
 /// <summary>
-/// ViewModel for the Collapsible Bottom Audit Log Drawer / Taskbar, backed by the dedicated
+/// ViewModel for the Activity &amp; Audit Logs screen, backed by the dedicated
 /// <c>facebook_audit.db</c> SQLite database with multi-criteria filtering (Category, Time Range, Account, Keyword).
 /// </summary>
 public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposable
@@ -48,11 +48,11 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         }
     }
 
-    /// <summary>Gets or sets a value indicating whether the bottom audit log drawer is expanded.</summary>
+    /// <summary>Gets or sets a value indicating whether the audit log view is expanded.</summary>
     [ObservableProperty]
     public partial bool IsExpanded { get; set; }
 
-    /// <summary>Gets or sets the latest single-line summary shown in the collapsed taskbar.</summary>
+    /// <summary>Gets or sets the latest single-line summary shown in the footer status strip.</summary>
     [ObservableProperty]
     public partial string LatestTickerText { get; set; }
 
@@ -88,10 +88,10 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     [ObservableProperty]
     public partial int ErrorCount { get; set; }
 
-    /// <summary>Gets the filtered audit log records displayed in the drawer.</summary>
+    /// <summary>Gets the filtered audit log records displayed in the screen.</summary>
     public BulkObservableCollection<AuditLogRecord> FilteredLogs { get; }
 
-    /// <summary>Gets the command to expand or collapse the bottom taskbar drawer.</summary>
+    /// <summary>Gets the command to toggle the audit view state.</summary>
     public IRelayCommand ToggleDrawerCommand { get; }
 
     /// <summary>Gets the command to re-query <c>facebook_audit.db</c> with active filters.</summary>
@@ -259,86 +259,5 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Exports all currently displayed <see cref="FilteredLogs"/> to a UTF-8 CSV or JSON file.
-    /// </summary>
-    public async Task ExportFilteredLogsAsync(string filePath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-
-        if (filePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            System.Text.StringBuilder json = new(4096);
-            _ = json.AppendLine("[");
-            for (int i = 0; i < this.FilteredLogs.Count; i++)
-            {
-                AuditLogRecord r = this.FilteredLogs[i];
-                string comma = i + 1 < this.FilteredLogs.Count ? "," : string.Empty;
-                _ = json.Append("  {\"timestamp\":\"")
-                    .Append(r.Timestamp.ToLocalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture))
-                    .Append("\",\"category\":\"")
-                    .Append(EscapeJson(this._context.Localization.FormatAuditCategory(r.Category)))
-                    .Append("\",\"severity\":\"")
-                    .Append(r.Severity)
-                    .Append("\",\"account\":\"")
-                    .Append(EscapeJson(r.AccountDisplayName))
-                    .Append("\",\"target\":\"")
-                    .Append(EscapeJson(r.TargetName))
-                    .Append("\",\"message\":\"")
-                    .Append(EscapeJson(r.Message))
-                    .Append("\"}")
-                    .AppendLine(comma);
-            }
-
-            _ = json.AppendLine("]");
-            await System.IO.File.WriteAllTextAsync(filePath, json.ToString(), System.Text.Encoding.UTF8).ConfigureAwait(true);
-            return;
-        }
-
-        System.Text.StringBuilder csv = new(4096);
-        _ = csv.AppendLine("Timestamp,Category,Severity,Account,Target,Message");
-        for (int i = 0; i < this.FilteredLogs.Count; i++)
-        {
-            AuditLogRecord r = this.FilteredLogs[i];
-            _ = csv.Append(EscapeCsv(r.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)))
-                .Append(',')
-                .Append(EscapeCsv(this._context.Localization.FormatAuditCategory(r.Category)))
-                .Append(',')
-                .Append(EscapeCsv(r.Severity.ToString()))
-                .Append(',')
-                .Append(EscapeCsv(r.AccountDisplayName))
-                .Append(',')
-                .Append(EscapeCsv(r.TargetName))
-                .Append(',')
-                .AppendLine(EscapeCsv(r.Message));
-        }
-
-        await System.IO.File.WriteAllTextAsync(filePath, csv.ToString(), System.Text.Encoding.UTF8).ConfigureAwait(true);
-    }
-
-    private static string EscapeCsv(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "\"\"";
-        }
-
-        return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
-
-    private static string EscapeJson(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        return value
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal)
-            .Replace("\r", " ", StringComparison.Ordinal)
-            .Replace("\n", " ", StringComparison.Ordinal);
     }
 }
