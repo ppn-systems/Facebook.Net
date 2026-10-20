@@ -5,8 +5,11 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Localization;
@@ -17,7 +20,9 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Independent Accounts Management Page (<c>AccountsPage.axaml</c>).
-/// Supports 1-click browser login, clipboard cookie import, proxy assignment, and session health checks.
+/// Uses a top <see cref="SubTabBar"/> to separate:
+/// 1) Account Vault &amp; Filter List,
+/// 2) Cookie/J2Team Importer &amp; Dedicated Proxy Configuration.
 /// </summary>
 public sealed partial class AccountsPage : UserControl
 {
@@ -56,10 +61,44 @@ public sealed partial class AccountsPage : UserControl
 
     private Control BuildLayout()
     {
-        Grid pageGrid = new()
+        Control tab1View = this.BuildVaultTab(out Action refreshTab1);
+        Control tab2View = this.BuildImportAndProxyTab(out Action refreshTab2);
+
+        SubTabBar subTabBar = new(
+            this._theme,
+            [
+                new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, tab1View),
+                new SubTabItem(this._i18n["Accounts.TabImportAndProxy"], VectorIcons.Shield, tab2View)
+            ]);
+
+        this._i18n.LanguageChanged += (_, _) =>
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto,Auto"),
-            RowSpacing = 8
+            subTabBar.UpdateTabTitles(
+            [
+                this._i18n["Accounts.TabVault"],
+                this._i18n["Accounts.TabImportAndProxy"]
+            ]);
+            refreshTab1();
+            refreshTab2();
+        };
+
+        return subTabBar;
+    }
+
+    private Control BuildVaultTab(out Action refreshI18n)
+    {
+        Grid tabGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowSpacing = 12
+        };
+
+        // Row 0: Header + 1-Click Browser Login & Paste Clipboard
+        Grid topBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         Grid header = SectionHeader.Create(
@@ -68,53 +107,6 @@ public sealed partial class AccountsPage : UserControl
             this._i18n["Accounts.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        Grid.SetRow(header, 0);
-        pageGrid.Children.Add(header);
-
-        // Quick Import Flyout Card
-        TextBox nameBox = FormField.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
-        nameBox.TextChanged += (_, _) => this._vm.AccountFriendlyNameInput = nameBox.Text ?? string.Empty;
-
-        TextBox cookieBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Accounts.CookiePlaceholder"],
-            multiline: true,
-            height: 85);
-        cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
-
-        Button confirmImportBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Accounts.BtnQuickImport"],
-            this._vm.QuickImportSessionCommand,
-            VectorIcons.Accounts);
-
-        StackPanel importFlyoutStack = new()
-        {
-            Spacing = 8,
-            Width = 340
-        };
-        importFlyoutStack.Children.Add(nameBox);
-        importFlyoutStack.Children.Add(cookieBox);
-        importFlyoutStack.Children.Add(confirmImportBtn);
-
-        Flyout importFlyout = new()
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = SurfaceCard.Create(this._theme, importFlyoutStack, new Thickness(14))
-        };
-
-        // Row 1: Top 1-Click Action Bar
-        Grid topActionBar = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
-            ColumnSpacing = 8
-        };
-
-        Button openBrowserBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Accounts.BtnOpenBrowserLogin"],
-            this._vm.OpenBrowserAndSyncCommand,
-            VectorIcons.Browser);
 
         Button pasteClipboardBtn = AppButton.CreateSecondary(
             this._theme,
@@ -128,44 +120,86 @@ public sealed partial class AccountsPage : UserControl
                 string? clipText = await clipboard.TryGetTextAsync().ConfigureAwait(true);
                 if (!string.IsNullOrWhiteSpace(clipText))
                 {
-                    cookieBox.Text = clipText;
                     this._vm.SessionImportRawInput = clipText;
                     await this._vm.QuickImportSessionAsync().ConfigureAwait(true);
-                    cookieBox.Text = string.Empty;
-                    nameBox.Text = string.Empty;
                 }
             }
         };
 
-        Button openImportFlyoutBtn = AppButton.CreateSecondary(
+        Button openBrowserBtn = AppButton.CreatePrimary(
             this._theme,
-            this._i18n["Accounts.BtnQuickImport"],
-            iconSvg: VectorIcons.Accounts);
-        openImportFlyoutBtn.Flyout = importFlyout;
+            this._i18n["Accounts.BtnOpenBrowserLogin"],
+            this._vm.OpenBrowserAndSyncCommand,
+            VectorIcons.Browser);
 
-        Grid.SetColumn(openBrowserBtn, 0);
+        Grid.SetColumn(header, 0);
         Grid.SetColumn(pasteClipboardBtn, 1);
-        Grid.SetColumn(openImportFlyoutBtn, 2);
-        topActionBar.Children.Add(openBrowserBtn);
-        topActionBar.Children.Add(pasteClipboardBtn);
-        topActionBar.Children.Add(openImportFlyoutBtn);
-        Grid.SetRow(topActionBar, 1);
-        pageGrid.Children.Add(topActionBar);
+        Grid.SetColumn(openBrowserBtn, 2);
+        topBar.Children.Add(header);
+        topBar.Children.Add(pasteClipboardBtn);
+        topBar.Children.Add(openBrowserBtn);
+        Grid.SetRow(topBar, 0);
+        tabGrid.Children.Add(topBar);
 
-        // Row 2: Unified SearchFilterBar for Accounts
-        SearchFilterBar accountSearchBar = new(
+        // Row 1: Filter Card with SegmentedFilterPill ([ Đang hoạt động | Cần kiểm tra | Tất cả ])
+        StackPanel filterStack = new() { Spacing = 10 };
+
+        Grid filterTopRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock filterTitleTb = SectionHeader.CreateLabel(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            14,
+            FontWeight.Bold);
+
+        AccountStatus? currentStatusFilter = null;
+        SearchFilterBar accountSearchBar = null!;
+
+        SegmentedFilterPill statusPill = new(
+            this._theme,
+            [
+                this._i18n["Accounts.FilterSegActive"],
+                this._i18n["Accounts.FilterSegAttention"],
+                this._i18n["Accounts.FilterSegAll"]
+            ],
+            initialIndex: 2,
+            onSelected: idx =>
+            {
+                currentStatusFilter = idx switch
+                {
+                    0 => AccountStatus.Active,
+                    1 => AccountStatus.CookieExpired,
+                    _ => null
+                };
+                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter);
+            });
+
+        Grid.SetColumn(filterTitleTb, 0);
+        Grid.SetColumn(statusPill, 1);
+        filterTopRow.Children.Add(filterTitleTb);
+        filterTopRow.Children.Add(statusPill);
+        filterStack.Children.Add(filterTopRow);
+
+        accountSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Accounts.SearchPlaceholder"],
             this._vm.AccountFilterText);
         accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text);
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
         accountSearchBar.SearchButton.Click += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text);
-        Grid.SetRow(accountSearchBar, 2);
-        pageGrid.Children.Add(accountSearchBar);
+            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
+        filterStack.Children.Add(accountSearchBar);
 
-        // Row 3: Visual Account List using shared AccountRowCard
+        Border filterCard = SurfaceCard.Create(this._theme, filterStack, new Thickness(16, 12));
+        Grid.SetRow(filterCard, 1);
+        tabGrid.Children.Add(filterCard);
+
+        // Row 2: Visual Account List
         ListBox accountList = FormField.CreateListBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
@@ -195,39 +229,14 @@ public sealed partial class AccountsPage : UserControl
         };
 
         Grid accountListHost = EmptyStateBanner.CreateHost(accountList, emptyAccountsBanner);
-        Grid.SetRow(accountListHost, 3);
-        pageGrid.Children.Add(accountListHost);
+        Grid.SetRow(accountListHost, 2);
+        tabGrid.Children.Add(accountListHost);
 
-        // Row 4: Dedicated Proxy Configuration Row
-        Grid proxyRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        TextBox proxyBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Accounts.ProxyPlaceholder"]);
-        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
-
-        Button saveProxyBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Accounts.BtnSaveProxy"],
-            this._vm.SaveAccountProxyCommand,
-            VectorIcons.Shield);
-
-        Grid.SetColumn(proxyBox, 0);
-        Grid.SetColumn(saveProxyBtn, 1);
-        proxyRow.Children.Add(proxyBox);
-        proxyRow.Children.Add(saveProxyBtn);
-        Grid.SetRow(proxyRow, 4);
-        pageGrid.Children.Add(proxyRow);
-
-        // Row 5: Selected Account Action Buttons
+        // Row 3: Selected Account Actions
         Grid selectedAccBar = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 8
+            ColumnSpacing = 10
         };
 
         Button checkHealthBtn = AppButton.CreateSecondary(
@@ -254,8 +263,8 @@ public sealed partial class AccountsPage : UserControl
         selectedAccBar.Children.Add(checkHealthBtn);
         selectedAccBar.Children.Add(warmUpBtn);
         selectedAccBar.Children.Add(deleteBtn);
-        Grid.SetRow(selectedAccBar, 5);
-        pageGrid.Children.Add(selectedAccBar);
+        Grid.SetRow(selectedAccBar, 3);
+        tabGrid.Children.Add(selectedAccBar);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -264,8 +273,105 @@ public sealed partial class AccountsPage : UserControl
             {
                 accountList.SelectedItem = this._vm.SelectedAccount;
             }
-            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.AccountFriendlyNameInput), StringComparison.Ordinal) &&
-                     !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, StringComparison.Ordinal))
+        };
+
+        refreshI18n = () =>
+        {
+            titleTb.Text = this._i18n["Accounts.Header"];
+            descTb.Text = this._i18n["Accounts.Desc"];
+            filterTitleTb.Text = this._i18n["Common.FilterButton"];
+            statusPill.UpdateLabels(
+            [
+                this._i18n["Accounts.FilterSegActive"],
+                this._i18n["Accounts.FilterSegAttention"],
+                this._i18n["Accounts.FilterSegAll"]
+            ]);
+            emptyAccTb.Text = this._i18n["Empty.Accounts"];
+            accountSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Accounts.SearchPlaceholder"]);
+            AppButton.SetText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
+            AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            AppButton.SetText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
+            AppButton.SetText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
+        };
+
+        return tabGrid;
+    }
+
+    private Control BuildImportAndProxyTab(out Action refreshI18n)
+    {
+        Grid splitGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("1.1*,1*"),
+            ColumnSpacing = 14
+        };
+
+        // Left Card: Cookie / J2Team Session Importer
+        StackPanel importStack = new() { Spacing = 12 };
+        StackPanel importHeader = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Accounts.BtnQuickImport"],
+            VectorIcons.Accounts,
+            out TextBlock importTitleTb);
+        importStack.Children.Add(importHeader);
+
+        TextBox nameBox = FormField.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
+        nameBox.TextChanged += (_, _) => this._vm.AccountFriendlyNameInput = nameBox.Text ?? string.Empty;
+
+        TextBox cookieBox = FormField.CreateTextBox(
+            this._theme,
+            this._i18n["Accounts.CookiePlaceholder"],
+            multiline: true,
+            height: 180);
+        cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
+
+        Button confirmImportBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Accounts.BtnQuickImport"],
+            this._vm.QuickImportSessionCommand,
+            VectorIcons.Accounts);
+
+        importStack.Children.Add(nameBox);
+        importStack.Children.Add(cookieBox);
+        importStack.Children.Add(confirmImportBtn);
+
+        Border leftCard = SurfaceCard.Create(this._theme, importStack, new Thickness(16));
+
+        // Right Card: Dedicated Proxy Assignment for Selected Account
+        StackPanel proxyStack = new() { Spacing = 12 };
+        StackPanel proxyHeader = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Accounts.BtnSaveProxy"],
+            VectorIcons.Shield,
+            out TextBlock proxyTitleTb);
+        proxyStack.Children.Add(proxyHeader);
+
+        TextBox proxyBox = FormField.CreateTextBox(
+            this._theme,
+            this._i18n["Accounts.ProxyPlaceholder"],
+            this._vm.AccountProxyInput);
+        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
+
+        Button saveProxyBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Accounts.BtnSaveProxy"],
+            this._vm.SaveAccountProxyCommand,
+            VectorIcons.Shield);
+
+        proxyStack.Children.Add(proxyBox);
+        proxyStack.Children.Add(saveProxyBtn);
+
+        Border rightCard = SurfaceCard.Create(this._theme, proxyStack, new Thickness(16));
+
+        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(rightCard, 1);
+        splitGrid.Children.Add(leftCard);
+        splitGrid.Children.Add(rightCard);
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.AccountFriendlyNameInput), StringComparison.Ordinal) &&
+                !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, StringComparison.Ordinal))
             {
                 nameBox.Text = this._vm.AccountFriendlyNameInput;
             }
@@ -281,25 +387,17 @@ public sealed partial class AccountsPage : UserControl
             }
         };
 
-        this._i18n.LanguageChanged += (_, _) =>
+        refreshI18n = () =>
         {
-            titleTb.Text = this._i18n["Accounts.Header"];
-            descTb.Text = this._i18n["Accounts.Desc"];
-            emptyAccTb.Text = this._i18n["Empty.Accounts"];
-            accountSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Accounts.SearchPlaceholder"]);
+            importTitleTb.Text = this._i18n["Accounts.BtnQuickImport"];
+            proxyTitleTb.Text = this._i18n["Accounts.BtnSaveProxy"];
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
             proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
-            AppButton.SetText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
-            AppButton.SetText(openImportFlyoutBtn, this._i18n["Accounts.BtnQuickImport"]);
             AppButton.SetText(confirmImportBtn, this._i18n["Accounts.BtnQuickImport"]);
-            AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            AppButton.SetText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
-            AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
             AppButton.SetText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
-            AppButton.SetText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };
 
-        return SurfaceCard.Create(this._theme, pageGrid);
+        return splitGrid;
     }
 }

@@ -49,7 +49,10 @@ public sealed record AppConfig(
     int ScrapePostsPerGroup = 15,
     bool AutoBackgroundScrapeEnabled = false,
     int AutoScrapeIntervalMinutes = 10,
-    bool ScrapeAllEnabledTargetGroups = true)
+    bool ScrapeAllEnabledTargetGroups = true,
+    int ScrapeDelayMinSeconds = 8,
+    int ScrapeDelayMaxSeconds = 18,
+    int ScrapeMaxGroupsPerCycle = 5)
 {
     /// <summary>
     /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
@@ -60,6 +63,9 @@ public sealed record AppConfig(
         int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
         int clampedPerGroup = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
         int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 10 : this.AutoScrapeIntervalMinutes, 1, 120);
+        int clampedScrapeMin = Math.Clamp(this.ScrapeDelayMinSeconds <= 0 ? 8 : this.ScrapeDelayMinSeconds, 2, 600);
+        int clampedScrapeMax = Math.Clamp(this.ScrapeDelayMaxSeconds <= 0 ? 18 : this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600);
+        int clampedMaxGroups = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
@@ -75,7 +81,10 @@ public sealed record AppConfig(
             LastSelectedAccountUid = cleanedUid,
             ScrapeFilterKeywords = this.ScrapeFilterKeywords?.Trim() ?? string.Empty,
             ScrapePostsPerGroup = clampedPerGroup,
-            AutoScrapeIntervalMinutes = clampedInterval
+            AutoScrapeIntervalMinutes = clampedInterval,
+            ScrapeDelayMinSeconds = clampedScrapeMin,
+            ScrapeDelayMaxSeconds = clampedScrapeMax,
+            ScrapeMaxGroupsPerCycle = clampedMaxGroups
         };
     }
 }

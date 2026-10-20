@@ -294,7 +294,50 @@ public sealed partial class LocalizationService
             ["Publisher.ScheduleDelayLabel"] = "Hẹn giờ phút:",
             ["Log.TaskStoppedByUser"] = "Đã dừng tác vụ ngay lập tức theo yêu cầu của người dùng.",
             ["Log.SelectAccountFirst"] = "Vui lòng chọn hoặc thêm một tài khoản trước khi thực hiện tác vụ.",
-            ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại."
+            ["Log.ConnectionInterrupted"] = "Kết nối tạm thời bị gián đoạn, vui lòng thử lại.",
+
+            ["Leads.BtnScanPosts"] = "Thu thập bài mới",
+            ["Leads.EmptyPostText"] = "Bài viết đính kèm hình ảnh / video",
+            ["Leads.TimeRecent"] = "Mới đây",
+            ["Leads.StatusCommented"] = "✓ Đã bình luận",
+            ["Leads.StatusPending"] = "● Chưa bình luận",
+            ["Leads.FilterSegAll"] = "Tất cả",
+            ["Leads.FilterSegPending"] = "Chưa bình luận",
+            ["Leads.FilterSegCommented"] = "Đã bình luận",
+            ["Leads.FilterGroupLabel"] = "Nhóm đã thu thập",
+            ["Leads.FilterKeywordLabel"] = "Từ khóa tìm kiếm trong kho dữ liệu",
+            ["Leads.TableTitlePrefix"] = "Số bài viết đã thu thập",
+            ["Leads.ColAuthor"] = "TÁC GIẢ",
+            ["Leads.ColGroup"] = "NHÓM",
+            ["Leads.ColMessage"] = "NỘI DUNG BÀI VIẾT",
+            ["Leads.ColIntent"] = "ĐỘ TIỀM NĂNG",
+            ["Leads.ColTime"] = "THỜI GIAN",
+            ["Leads.ColStatus"] = "TRẠNG THÁI",
+            ["Leads.TabRepository"] = "Kho Bài viết & Lọc khách",
+            ["Leads.TabScraperConfig"] = "Chọn Nhóm & Cấu hình Thu thập",
+            ["Leads.TabAutoComment"] = "Kịch bản & Tự động Bình luận",
+            ["Leads.ConfigMultiGroupTitle"] = "Chọn Nhóm để Thu thập (Cho phép chọn nhiều nhóm)",
+            ["Leads.ConfigMultiGroupDesc"] = "Tích chọn các nhóm bạn muốn thu thập bài viết mới. Hệ thống sẽ tự động xoay vòng từng đợt và nghỉ giãn cách chống khóa tài khoản.",
+            ["Leads.ConfigRateLimitLabel"] = "Rate-Limit Giãn cách nghỉ giữa 2 nhóm (giây):",
+            ["Leads.ConfigMaxGroupsPerCycleLabel"] = "Số nhóm tối đa / đợt xoay vòng:",
+            ["Leads.ConfigChronologicalBadge"] = "Ưu tiên lấy Bài mới đăng nhất (Chronological) để không sót khách mới",
+
+            ["Accounts.TabVault"] = "Danh sách Tài khoản",
+            ["Accounts.TabImportAndProxy"] = "Nhập Cookie & Cấu hình Proxy",
+            ["Accounts.FilterSegAll"] = "Tất cả",
+            ["Accounts.FilterSegActive"] = "Đang hoạt động",
+            ["Accounts.FilterSegAttention"] = "Cần kiểm tra",
+            ["Accounts.TableTitlePrefix"] = "Số tài khoản quản lý",
+
+            ["Groups.TabTargets"] = "Nhóm Chiến dịch Đích",
+            ["Groups.TabDiscover"] = "Khám phá & Tham gia Nhóm mới",
+
+            ["Publisher.TabCompose"] = "Soạn & Đăng bài Chiến dịch",
+            ["Publisher.TabTemplates"] = "Kho Mẫu Đã lưu",
+            ["Publisher.TabBump"] = "Đẩy Top Bài viết",
+
+            ["Settings.TabGeneral"] = "Cấu hình Hệ thống & Trình duyệt",
+            ["Settings.TabAuditLogs"] = "Nhật ký Hoạt động"
         };
 
     private static Dictionary<string, string> CreateEnglishCatalog() =>
@@ -492,6 +535,49 @@ public sealed partial class LocalizationService
             ["Publisher.ScheduleDelayLabel"] = "Delay min:",
             ["Log.TaskStoppedByUser"] = "Task stopped immediately as requested by user.",
             ["Log.SelectAccountFirst"] = "Please select or add an account before running this task.",
-            ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again."
+            ["Log.ConnectionInterrupted"] = "Connection temporarily interrupted, please try again.",
+
+            ["Leads.BtnScanPosts"] = "Scrape New Posts",
+            ["Leads.EmptyPostText"] = "Media attachment post",
+            ["Leads.TimeRecent"] = "Just now",
+            ["Leads.StatusCommented"] = "✓ Commented",
+            ["Leads.StatusPending"] = "● Pending",
+            ["Leads.FilterSegAll"] = "All",
+            ["Leads.FilterSegPending"] = "Pending",
+            ["Leads.FilterSegCommented"] = "Commented",
+            ["Leads.FilterGroupLabel"] = "Scraped Group",
+            ["Leads.FilterKeywordLabel"] = "Database Search Keyword",
+            ["Leads.TableTitlePrefix"] = "Stored Posts",
+            ["Leads.ColAuthor"] = "AUTHOR",
+            ["Leads.ColGroup"] = "GROUP",
+            ["Leads.ColMessage"] = "POST CONTENT",
+            ["Leads.ColIntent"] = "INTENT",
+            ["Leads.ColTime"] = "TIME",
+            ["Leads.ColStatus"] = "STATUS",
+            ["Leads.TabRepository"] = "Post Repository & Filter",
+            ["Leads.TabScraperConfig"] = "Target Groups & Scraper Config",
+            ["Leads.TabAutoComment"] = "Sales Script & Auto-Comment",
+            ["Leads.ConfigMultiGroupTitle"] = "Select Groups to Scrape (Multi-Group Selection)",
+            ["Leads.ConfigMultiGroupDesc"] = "Check the groups you want to scrape for new posts. The engine rotates in safe batches with humanized delays.",
+            ["Leads.ConfigRateLimitLabel"] = "Anti-Ban Rate-Limit delay between groups (sec):",
+            ["Leads.ConfigMaxGroupsPerCycleLabel"] = "Max groups / round-robin batch:",
+            ["Leads.ConfigChronologicalBadge"] = "Prioritize Newest Posts (Chronological) so new buyers are never missed",
+
+            ["Accounts.TabVault"] = "Account Vault",
+            ["Accounts.TabImportAndProxy"] = "Import Cookie & Proxy Setup",
+            ["Accounts.FilterSegAll"] = "All",
+            ["Accounts.FilterSegActive"] = "Active",
+            ["Accounts.FilterSegAttention"] = "Needs Attention",
+            ["Accounts.TableTitlePrefix"] = "Managed Accounts",
+
+            ["Groups.TabTargets"] = "Target Campaign Groups",
+            ["Groups.TabDiscover"] = "Discover & Join Groups",
+
+            ["Publisher.TabCompose"] = "Compose & Publish",
+            ["Publisher.TabTemplates"] = "Saved Templates",
+            ["Publisher.TabBump"] = "Bump Posts",
+
+            ["Settings.TabGeneral"] = "System & Browser Settings",
+            ["Settings.TabAuditLogs"] = "Activity Logs"
         };
 }

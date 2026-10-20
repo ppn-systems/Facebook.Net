@@ -147,7 +147,10 @@ public sealed partial class ShellViewModel
             ScrapePostsPerGroup: this.ScrapePostsPerGroup,
             AutoBackgroundScrapeEnabled: this.AutoBackgroundScrapeEnabled,
             AutoScrapeIntervalMinutes: this.AutoScrapeIntervalMinutes,
-            ScrapeAllEnabledTargetGroups: this.ScrapeAllEnabledTargetGroups).Normalize();
+            ScrapeAllEnabledTargetGroups: this.ScrapeAllEnabledTargetGroups,
+            ScrapeDelayMinSeconds: this.ScrapeDelayMinSeconds,
+            ScrapeDelayMaxSeconds: this.ScrapeDelayMaxSeconds,
+            ScrapeMaxGroupsPerCycle: this.ScrapeMaxGroupsPerCycle).Normalize();
 
         this._context.Settings.Save(updated);
     }
@@ -171,6 +174,9 @@ public sealed partial class ShellViewModel
             this.AutoBackgroundScrapeEnabled = cfg.AutoBackgroundScrapeEnabled;
             this.AutoScrapeIntervalMinutes = cfg.AutoScrapeIntervalMinutes;
             this.ScrapeAllEnabledTargetGroups = cfg.ScrapeAllEnabledTargetGroups;
+            this.ScrapeDelayMinSeconds = cfg.ScrapeDelayMinSeconds;
+            this.ScrapeDelayMaxSeconds = cfg.ScrapeDelayMaxSeconds;
+            this.ScrapeMaxGroupsPerCycle = cfg.ScrapeMaxGroupsPerCycle;
         }
         finally
         {

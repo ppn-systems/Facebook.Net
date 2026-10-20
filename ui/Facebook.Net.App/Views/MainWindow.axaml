@@ -3,18 +3,16 @@
         xmlns:vm="using:Facebook.Net.UI.ViewModels.Shell"
         x:Class="Facebook.Net.App.Views.MainWindow"
         x:DataType="vm:ShellViewModel"
-        Width="980"
-        Height="640"
-        MinWidth="980"
-        MaxWidth="980"
-        MinHeight="640"
-        MaxHeight="640"
-        CanResize="False"
+        Width="1240"
+        Height="780"
+        MinWidth="1100"
+        MinHeight="700"
+        CanResize="True"
         WindowStartupLocation="CenterScreen"
         Icon="avares://Facebook.Net.App/Assets/app.ico">
     <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*">
         <Border x:Name="SidebarContainer" Grid.Column="0" />
-        <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="18,12,18,10">
+        <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="22,14,22,12">
             <Grid RowDefinitions="Auto,*,Auto">
                 <Border x:Name="TopContextContainer" Grid.Row="0" />
                 <TransitioningContentControl x:Name="PageNavigationHost"

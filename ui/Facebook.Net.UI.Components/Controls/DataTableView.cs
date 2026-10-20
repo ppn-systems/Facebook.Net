@@ -28,6 +28,9 @@ public sealed class DataTableView<T> : Border where T : class
 {
     private readonly List<TextBlock> _headerLabels = new();
     private readonly TextBlock _emptyStateLabel;
+    private readonly TextBlock? _tableTitleLabel;
+    private readonly IEnumerable<T> _itemsSource;
+    private string? _tableTitlePrefix;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DataTableView{T}"/> class.
@@ -38,29 +41,54 @@ public sealed class DataTableView<T> : Border where T : class
         IEnumerable<T> itemsSource,
         Func<T, Control> rowBuilder,
         string emptyMessage,
-        string emptyIconSvg)
+        string emptyIconSvg,
+        string? tableTitlePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(itemsSource);
         ArgumentNullException.ThrowIfNull(rowBuilder);
 
-        this.CornerRadius = new CornerRadius(8);
+        this._itemsSource = itemsSource;
+        this._tableTitlePrefix = tableTitlePrefix;
+
+        this.CornerRadius = new CornerRadius(10);
         this.BorderThickness = new Thickness(1);
         this.ClipToBounds = true;
 
         Grid rootGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*")
+            RowDefinitions = new RowDefinitions("Auto,Auto,*")
         };
+
+        // 0. Optional Table Card Title Bar (e.g., "Số bài viết đã thu thập (12)")
+        Border? titleBarBorder = null;
+        if (!string.IsNullOrWhiteSpace(tableTitlePrefix))
+        {
+            TextBlock titleTb = SectionHeader.CreateLabel(
+                theme,
+                $"{tableTitlePrefix} ({CountItems(itemsSource)})",
+                14,
+                FontWeight.Bold);
+            this._tableTitleLabel = titleTb;
+
+            titleBarBorder = new Border
+            {
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(16, 12),
+                Child = titleTb
+            };
+            Grid.SetRow(titleBarBorder, 0);
+            rootGrid.Children.Add(titleBarBorder);
+        }
 
         // 1. Table Column Header Bar
         string colWidths = string.Join(",", ExtractWidths(columns));
         Grid headerRowGrid = new()
         {
             ColumnDefinitions = new ColumnDefinitions(colWidths),
-            ColumnSpacing = 8,
-            Margin = new Thickness(14, 8)
+            ColumnSpacing = 12,
+            Margin = new Thickness(16, 10)
         };
 
         for (int i = 0; i < columns.Count; i++)
@@ -69,7 +97,7 @@ public sealed class DataTableView<T> : Border where T : class
                 theme,
                 columns[i].HeaderText,
                 11,
-                FontWeight.SemiBold,
+                FontWeight.Bold,
                 isSecondary: true);
             colTb.TextTrimming = TextTrimming.CharacterEllipsis;
             colTb.TextWrapping = TextWrapping.NoWrap;
@@ -83,7 +111,7 @@ public sealed class DataTableView<T> : Border where T : class
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = headerRowGrid
         };
-        Grid.SetRow(headerBar, 0);
+        Grid.SetRow(headerBar, 1);
         rootGrid.Children.Add(headerBar);
 
         // 2. Table Rows ListBox & Empty State Banner
@@ -94,7 +122,7 @@ public sealed class DataTableView<T> : Border where T : class
             IsVisible = hasItems,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            Padding = new Thickness(4),
+            Padding = new Thickness(6, 4),
             ItemsSource = itemsSource,
             ItemTemplate = new FuncDataTemplate<T>((item, _) =>
                 item is null ? new Border() : rowBuilder(item))
@@ -104,7 +132,8 @@ public sealed class DataTableView<T> : Border where T : class
         {
             if (e.Container is ListBoxItem item)
             {
-                item.Padding = new Thickness(6, 4);
+                item.Padding = new Thickness(10, 8);
+                item.Margin = new Thickness(0, 1);
                 item.CornerRadius = new CornerRadius(6);
             }
         };
@@ -125,11 +154,15 @@ public sealed class DataTableView<T> : Border where T : class
                 bool any = HasAnyItem(itemsSource);
                 this.RowsListBox.IsVisible = any;
                 emptyBanner.IsVisible = !any;
+                if (this._tableTitleLabel is not null && !string.IsNullOrWhiteSpace(this._tableTitlePrefix))
+                {
+                    this._tableTitleLabel.Text = $"{this._tableTitlePrefix} ({CountItems(itemsSource)})";
+                }
             };
         }
 
         Grid bodyHost = EmptyStateBanner.CreateHost(this.RowsListBox, emptyBanner);
-        Grid.SetRow(bodyHost, 1);
+        Grid.SetRow(bodyHost, 2);
         rootGrid.Children.Add(bodyHost);
 
         this.Child = rootGrid;
@@ -137,9 +170,15 @@ public sealed class DataTableView<T> : Border where T : class
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            this.Background = p.SecondarySurface;
+            this.Background = p.ElevatedSurface;
             this.BorderBrush = p.SubtleBorder;
-            headerBar.Background = p.ElevatedSurface;
+            if (titleBarBorder is not null)
+            {
+                titleBarBorder.Background = p.ElevatedSurface;
+                titleBarBorder.BorderBrush = p.SubtleBorder;
+            }
+
+            headerBar.Background = p.SecondarySurface;
             headerBar.BorderBrush = p.SubtleBorder;
         }
 
@@ -151,9 +190,9 @@ public sealed class DataTableView<T> : Border where T : class
     public ListBox RowsListBox { get; }
 
     /// <summary>
-    /// Updates localized column header texts and empty-state message.
+    /// Updates localized column header texts, empty-state message, and optional table title prefix.
     /// </summary>
-    public void UpdateHeadersAndEmptyText(IReadOnlyList<string> headerTexts, string emptyMessage)
+    public void UpdateHeadersAndEmptyText(IReadOnlyList<string> headerTexts, string emptyMessage, string? tableTitlePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(headerTexts);
 
@@ -164,6 +203,11 @@ public sealed class DataTableView<T> : Border where T : class
         }
 
         this._emptyStateLabel.Text = emptyMessage;
+        if (!string.IsNullOrWhiteSpace(tableTitlePrefix))
+        {
+            this._tableTitlePrefix = tableTitlePrefix;
+            this._tableTitleLabel?.Text = $"{tableTitlePrefix} ({CountItems(this._itemsSource)})";
+        }
     }
 
     private static string[] ExtractWidths(IReadOnlyList<DataTableColumn> columns)
@@ -175,6 +219,23 @@ public sealed class DataTableView<T> : Border where T : class
         }
 
         return result;
+    }
+
+    private static int CountItems(IEnumerable<T> source)
+    {
+        if (source is ICollection<T> col)
+        {
+            return col.Count;
+        }
+
+        int n = 0;
+        using IEnumerator<T> enumerator = source.GetEnumerator();
+        while (enumerator.MoveNext())
+        {
+            n++;
+        }
+
+        return n;
     }
 
     private static bool HasAnyItem(IEnumerable<T> source)

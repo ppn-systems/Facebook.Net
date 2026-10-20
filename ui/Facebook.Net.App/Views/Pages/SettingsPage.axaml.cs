@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,7 +11,6 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
-using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -21,8 +19,10 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Independent System Settings Page (<c>SettingsPage.axaml</c>).
-/// Includes Theme, Language, Browser Engine, Anti-Checkpoint Delay, and the bottom entry point to navigate to <see cref="AuditLogsPage"/>.
+/// Independent System Settings &amp; Activity Logs Page (<c>SettingsPage.axaml</c>).
+/// Uses a top <see cref="SubTabBar"/> to separate:
+/// 1) System, Browser Engine &amp; Anti-Checkpoint Delay Settings,
+/// 2) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>).
 /// </summary>
 public sealed partial class SettingsPage : UserControl
 {
@@ -61,20 +61,48 @@ public sealed partial class SettingsPage : UserControl
 
     private Control BuildLayout()
     {
-        StackPanel formStack = new()
+        Control tab1View = this.BuildGeneralSettingsTab(out Action refreshTab1);
+        AuditLogsPage tab2View = new(this._vm);
+
+        SubTabBar subTabBar = new(
+            this._theme,
+            [
+                new SubTabItem(this._i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
+                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab2View)
+            ]);
+
+        this._i18n.LanguageChanged += (_, _) =>
         {
-            Spacing = 12,
-            MaxWidth = 640,
-            HorizontalAlignment = HorizontalAlignment.Stretch
+            subTabBar.UpdateTabTitles(
+            [
+                this._i18n["Settings.TabGeneral"],
+                this._i18n["Settings.TabAuditLogs"]
+            ]);
+            refreshTab1();
         };
 
-        string CombinedSettingsInfo() =>
-            $"{this._i18n["Settings.Desc"]}\n\n{this._i18n["Settings.GuideTitle"]}:\n{this._i18n["Settings.GuideBody"]}";
+        return subTabBar;
+    }
+
+    private Control BuildGeneralSettingsTab(out Action refreshI18n)
+    {
+        Grid splitGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("1.2*,1*"),
+            ColumnSpacing = 14
+        };
+
+        // Left Card: System & Browser Configuration
+        StackPanel formStack = new()
+        {
+            Spacing = 14,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
 
         Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Settings.Header"],
-            CombinedSettingsInfo(),
+            this._i18n["Settings.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
         formStack.Children.Add(header);
@@ -247,65 +275,30 @@ public sealed partial class SettingsPage : UserControl
             this._vm.SaveSettingsCommand,
             VectorIcons.Settings);
 
-        // 4. Bottom Section: Compact Activity & Audit Logs Entry Card (tucked at the bottom of Settings)
-        Grid auditEntryRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        formStack.Children.Add(browserField);
+        formStack.Children.Add(customExeRow);
+        formStack.Children.Add(headlessCheck);
+        formStack.Children.Add(delayField);
+        formStack.Children.Add(saveBtn);
 
-        StackPanel auditCounters = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        Border leftCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = formStack }, new Thickness(18));
 
-        Border okPill = IconMetricPill.Create(
+        // Right Card: Quick Start Guide
+        StackPanel guideStack = new() { Spacing = 12 };
+        Grid guideHeader = SectionHeader.Create(
             this._theme,
-            VectorIcons.CheckCircle,
-            this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture),
-            AuditSeverity.Success,
-            out TextBlock okCountTb);
+            this._i18n["Settings.GuideTitle"],
+            this._i18n["Settings.GuideBody"],
+            out TextBlock guideTitleTb,
+            out TextBlock guideBodyTb);
+        guideStack.Children.Add(guideHeader);
 
-        Border warnPill = IconMetricPill.Create(
-            this._theme,
-            VectorIcons.Warning,
-            this._vm.AuditDrawer.WarningCount.ToString(CultureInfo.InvariantCulture),
-            AuditSeverity.Warning,
-            out TextBlock warnCountTb);
+        Border rightCard = SurfaceCard.Create(this._theme, guideStack, new Thickness(18));
 
-        Border errPill = IconMetricPill.Create(
-            this._theme,
-            VectorIcons.ErrorCircle,
-            this._vm.AuditDrawer.ErrorCount.ToString(CultureInfo.InvariantCulture),
-            AuditSeverity.Error,
-            out TextBlock errCountTb);
-
-        auditCounters.Children.Add(okPill);
-        auditCounters.Children.Add(warnPill);
-        auditCounters.Children.Add(errPill);
-
-        Button openAuditLogsBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Settings.BtnOpenAuditLogs"],
-            this._vm.NavigateAuditLogsCommand,
-            VectorIcons.AuditLog);
-
-        Grid.SetColumn(auditCounters, 0);
-        Grid.SetColumn(openAuditLogsBtn, 2);
-        auditEntryRow.Children.Add(auditCounters);
-        auditEntryRow.Children.Add(openAuditLogsBtn);
-
-        Border auditEntryWell = SurfaceCard.CreateInset(this._theme, auditEntryRow, new Thickness(12, 8));
-
-        this._vm.AuditDrawer.PropertyChanged += (_, _) =>
-        {
-            okCountTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
-            warnCountTb.Text = this._vm.AuditDrawer.WarningCount.ToString(CultureInfo.InvariantCulture);
-            errCountTb.Text = this._vm.AuditDrawer.ErrorCount.ToString(CultureInfo.InvariantCulture);
-        };
+        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(rightCard, 1);
+        splitGrid.Children.Add(leftCard);
+        splitGrid.Children.Add(rightCard);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -340,17 +333,12 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        formStack.Children.Add(browserField);
-        formStack.Children.Add(customExeRow);
-        formStack.Children.Add(headlessCheck);
-        formStack.Children.Add(delayField);
-        formStack.Children.Add(saveBtn);
-        formStack.Children.Add(auditEntryWell);
-
-        this._i18n.LanguageChanged += (_, _) =>
+        refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Settings.Header"];
-            descTb.Text = CombinedSettingsInfo();
+            descTb.Text = this._i18n["Settings.Desc"];
+            guideTitleTb.Text = this._i18n["Settings.GuideTitle"];
+            guideBodyTb.Text = this._i18n["Settings.GuideBody"];
             themeLabel.Text = this._i18n["Settings.ThemeLabel"];
             langLabel.Text = this._i18n["Settings.LanguageLabel"];
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
@@ -361,10 +349,9 @@ public sealed partial class SettingsPage : UserControl
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
             AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
-            AppButton.SetText(openAuditLogsBtn, this._i18n["Settings.BtnOpenAuditLogs"]);
         };
 
-        return SurfaceCard.Create(this._theme, new ScrollViewer { Content = formStack });
+        return splitGrid;
     }
 
     private async Task<string?> PickSingleFileAsync(string title)

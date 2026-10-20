@@ -49,6 +49,22 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial int AutoScrapeIntervalMinutes { get; set; } = 10;
 
+    /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    [ObservableProperty]
+    public partial int ScrapeDelayMinSeconds { get; set; } = 8;
+
+    /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    [ObservableProperty]
+    public partial int ScrapeDelayMaxSeconds { get; set; } = 18;
+
+    /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..50).</summary>
+    [ObservableProperty]
+    public partial int ScrapeMaxGroupsPerCycle { get; set; } = 5;
+
+    /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented).</summary>
+    [ObservableProperty]
+    public partial int LeadCommentStatusFilter { get; set; }
+
     /// <summary>Gets or sets the visually selected post card from <see cref="ScrapedPosts"/> for sales commenting.</summary>
     [ObservableProperty]
     public partial PostSummary? SelectedScrapedPost { get; set; }
@@ -66,7 +82,9 @@ public sealed partial class ShellViewModel
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
     private readonly List<PostSummary> _allScrapedPosts = new();
+    private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
     private CancellationTokenSource? _backgroundScrapeCts;
+    private int _nextScrapeGroupOffset;
 
     partial void OnScrapeFilterKeywordsChanged(string value)
     {
@@ -92,6 +110,33 @@ public sealed partial class ShellViewModel
         }
     }
 
+    partial void OnScrapeDelayMinSecondsChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnScrapeDelayMaxSecondsChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnScrapeMaxGroupsPerCycleChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnLeadCommentStatusFilterChanged(int value) =>
+        this.FilterCachedPostsFromDb();
+
     partial void OnAutoBackgroundScrapeEnabledChanged(bool value)
     {
         if (!this._isLoadingSettings)
@@ -114,10 +159,31 @@ public sealed partial class ShellViewModel
         _ = this.QueryLocalScrapedPostsAsync();
 
     /// <summary>
+    /// Returns whether the specified <paramref name="postId"/> has already been commented on by any account in the local action history.
+    /// </summary>
+    public bool IsPostCommented(string? postId) =>
+        !string.IsNullOrWhiteSpace(postId) && this._commentedPostIds.Contains(postId);
+
+    /// <summary>
     /// Queries stored posts from the local SQLite database (<c>scraped_posts</c>) and applies the local search/filter without calling Facebook.
     /// </summary>
     public async Task QueryLocalScrapedPostsAsync(CancellationToken ct = default)
     {
+        IReadOnlyList<ActionHistoryEntry> recentActions = await this._context.AccountStore
+            .GetRecentActionsAsync(500, ct)
+            .ConfigureAwait(true);
+
+        this._commentedPostIds.Clear();
+        for (int i = 0; i < recentActions.Count; i++)
+        {
+            ActionHistoryEntry entry = recentActions[i];
+            if (string.Equals(entry.ActionKind, "COMMENT", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(entry.TargetId))
+            {
+                _ = this._commentedPostIds.Add(entry.TargetId);
+            }
+        }
+
         IReadOnlyList<PostSummary> dbPosts = await this._context.AccountStore
             .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
             .ConfigureAwait(true);
@@ -148,6 +214,17 @@ public sealed partial class ShellViewModel
             PostSummary post = this._allScrapedPosts[i];
             if (!string.IsNullOrWhiteSpace(this.FilterScrapedGroupId) &&
                 !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            bool isCommented = this.IsPostCommented(post.PostId);
+            if (this.LeadCommentStatusFilter == 1 && isCommented)
+            {
+                continue;
+            }
+
+            if (this.LeadCommentStatusFilter == 2 && !isCommented)
             {
                 continue;
             }
@@ -265,6 +342,25 @@ public sealed partial class ShellViewModel
             return;
         }
 
+        // Apply Round-Robin batch limit (ScrapeMaxGroupsPerCycle) to prevent anti-ban rate-limit spikes when many groups are enabled
+        int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
+        if (targets.Count > maxPerCycle)
+        {
+            List<(string GroupId, string GroupName)> batch = new(maxPerCycle);
+            for (int i = 0; i < maxPerCycle; i++)
+            {
+                int idx = (this._nextScrapeGroupOffset + i) % targets.Count;
+                batch.Add(targets[idx]);
+            }
+
+            this._nextScrapeGroupOffset = (this._nextScrapeGroupOffset + maxPerCycle) % targets.Count;
+            targets = batch;
+        }
+        else
+        {
+            this._nextScrapeGroupOffset = 0;
+        }
+
         string firstGroupName = targets[0].GroupName;
         CancellationToken ct = this.BeginTaskScope();
         try
@@ -289,7 +385,7 @@ public sealed partial class ShellViewModel
 
                 if (gIdx > 0)
                 {
-                    await this.WaitAntiCheckpointDelayAsync(groupName, ct).ConfigureAwait(true);
+                    await this.WaitScraperRateLimitDelayAsync(groupName, ct).ConfigureAwait(true);
                 }
 
                 _ = await this.LogAuditAsync(
@@ -297,8 +393,8 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Info,
                     groupName,
                     this.Msg(
-                        $"Đang thu thập bài viết từ nhóm '{groupName}' vào kho dữ liệu...",
-                        $"Scraping posts from group '{groupName}' into local database...")).ConfigureAwait(true);
+                        $"Đang thu thập bài viết mới nhất ({gIdx + 1}/{targets.Count}) từ nhóm '{groupName}' vào kho dữ liệu...",
+                        $"Scraping newest posts ({gIdx + 1}/{targets.Count}) from group '{groupName}' into local database...")).ConfigureAwait(true);
 
                 PagedResult<PostSummary> feed = await this._context.CometClient
                     .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
@@ -563,6 +659,28 @@ public sealed partial class ShellViewModel
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
 
+    private async Task WaitScraperRateLimitDelayAsync(string nextGroupName, CancellationToken ct)
+    {
+        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds <= 0 ? 8 : this.ScrapeDelayMinSeconds, 1, 600);
+        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds <= 0 ? 18 : this.ScrapeDelayMaxSeconds, minSec, 600);
+        TimeSpan delay = HumanJitter.NextGaussianDelay(minSec, maxSec);
+        if (delay <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        double totalSec = Math.Round(delay.TotalSeconds, 1);
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Info,
+            nextGroupName,
+            this.Msg(
+                $"Rate-Limit Chống Band: Đang nghỉ {totalSec} giây trước khi cào nhóm tiếp theo '{nextGroupName}'...",
+                $"Anti-Ban Rate-Limit: Waiting {totalSec}s before scraping next group '{nextGroupName}'...")).ConfigureAwait(true);
+
+        await Task.Delay(delay, ct).ConfigureAwait(true);
+    }
+
     private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
     {
         string targetLabel = !string.IsNullOrWhiteSpace(post.AuthorName)
@@ -575,6 +693,7 @@ public sealed partial class ShellViewModel
 
         if (alreadyCommented)
         {
+            _ = this._commentedPostIds.Add(post.PostId);
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
@@ -607,6 +726,7 @@ public sealed partial class ShellViewModel
 
         if (!string.IsNullOrWhiteSpace(commentId))
         {
+            _ = this._commentedPostIds.Add(post.PostId);
             await this._context.AccountStore.RecordActionAsync(
                 new ActionHistoryEntry(
                     session.AccountUid,
@@ -615,6 +735,7 @@ public sealed partial class ShellViewModel
                     commentId,
                     DateTimeOffset.UtcNow),
                 ct).ConfigureAwait(true);
+            this.FilterCachedPostsFromDb();
         }
 
         _ = await this.LogAuditAsync(

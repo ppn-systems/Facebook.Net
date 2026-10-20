@@ -90,7 +90,15 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
-        PagedResult<PostSummary> firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor, ct).ConfigureAwait(false);
+        string activeSorting = "CHRONOLOGICAL";
+        PagedResult<PostSummary> firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor, activeSorting, ct).ConfigureAwait(false);
+
+        if (cursor is null && firstPage.Items.Count == 0)
+        {
+            activeSorting = "TOP_POSTS";
+            firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor: null, activeSorting, ct).ConfigureAwait(false);
+        }
+
         if (cursor is not null ||
             count <= 5 ||
             firstPage.Items.Count == 0 ||
@@ -101,44 +109,64 @@ public sealed partial class CometClient
             return firstPage;
         }
 
-        try
+        List<PostSummary> combined = new(count);
+        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        for (int i = 0; i < firstPage.Items.Count; i++)
         {
-            PagedResult<PostSummary> secondPage = await this.FetchGroupFeedPageAsync(
-                session,
-                groupId,
-                count - firstPage.Items.Count,
-                firstPage.EndCursor,
-                ct).ConfigureAwait(false);
-
-            if (secondPage.Items.Count == 0)
+            if (seenIds.Add(firstPage.Items[i].PostId))
             {
-                return firstPage;
+                combined.Add(firstPage.Items[i]);
             }
+        }
 
-            List<PostSummary> combined = new(firstPage.Items.Count + secondPage.Items.Count);
-            HashSet<string> seenIds = new(StringComparer.Ordinal);
-            for (int i = 0; i < firstPage.Items.Count; i++)
+        string? nextCursor = firstPage.EndCursor;
+        bool hasNext = firstPage.HasNextPage;
+        int pageIndex = 1;
+
+        while (combined.Count < count && hasNext && !string.IsNullOrWhiteSpace(nextCursor) && pageIndex < 4)
+        {
+            try
             {
-                if (seenIds.Add(firstPage.Items[i].PostId))
+                await Task.Delay(350, ct).ConfigureAwait(false);
+                PagedResult<PostSummary> nextPage = await this.FetchGroupFeedPageAsync(
+                    session,
+                    groupId,
+                    count - combined.Count,
+                    nextCursor,
+                    activeSorting,
+                    ct).ConfigureAwait(false);
+
+                if (nextPage.Items.Count == 0)
                 {
-                    combined.Add(firstPage.Items[i]);
+                    break;
+                }
+
+                int addedThisPage = 0;
+                for (int i = 0; i < nextPage.Items.Count && combined.Count < count; i++)
+                {
+                    if (seenIds.Add(nextPage.Items[i].PostId))
+                    {
+                        combined.Add(nextPage.Items[i]);
+                        addedThisPage++;
+                    }
+                }
+
+                nextCursor = nextPage.EndCursor ?? nextCursor;
+                hasNext = nextPage.HasNextPage;
+                pageIndex++;
+
+                if (addedThisPage == 0)
+                {
+                    break;
                 }
             }
-
-            for (int i = 0; i < secondPage.Items.Count && combined.Count < count; i++)
+            catch (Exception) when (!ct.IsCancellationRequested)
             {
-                if (seenIds.Add(secondPage.Items[i].PostId))
-                {
-                    combined.Add(secondPage.Items[i]);
-                }
+                break;
             }
+        }
 
-            return new PagedResult<PostSummary>(combined, secondPage.EndCursor ?? firstPage.EndCursor, secondPage.HasNextPage);
-        }
-        catch (Exception) when (!ct.IsCancellationRequested)
-        {
-            return firstPage;
-        }
+        return new PagedResult<PostSummary>(combined, nextCursor, hasNext);
     }
 
     private async Task<PagedResult<PostSummary>> FetchGroupFeedPageAsync(
@@ -146,6 +174,7 @@ public sealed partial class CometClient
         string groupId,
         int count,
         string? cursor,
+        string sortingSetting,
         CancellationToken ct)
     {
         string variablesJson = BuildJson(w =>
@@ -162,7 +191,7 @@ public sealed partial class CometClient
 
             w.WriteString("id"u8, groupId);
             w.WriteString("feedLocation"u8, "GROUP");
-            w.WriteString("sortingSetting"u8, "TOP_POSTS");
+            w.WriteString("sortingSetting"u8, sortingSetting);
             w.WriteBoolean("RELAY_INCREMENTAL_DELIVERY"u8, true);
             w.WriteNumber("scale"u8, 2);
         });
