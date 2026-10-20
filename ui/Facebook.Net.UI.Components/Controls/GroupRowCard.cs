@@ -140,7 +140,7 @@ public static class GroupRowCard
 
     /// <summary>
     /// Creates a reusable row for a <see cref="GroupSummary"/> item in the Facebook Group Catalog,
-    /// including optional colored tag pills and a 1-click tag assignment popover.
+    /// including optional colored tag pills, a 1-click tag assignment popover, and contextual per-row actions.
     /// </summary>
     public static Grid CreateCatalogRow(
         ThemeService theme,
@@ -149,7 +149,12 @@ public static class GroupRowCard
         IReadOnlyList<GroupTag>? assignedTags = null,
         IReadOnlyList<GroupTag>? allTags = null,
         Action<string>? onToggleTag = null,
-        string? addTagLabel = null)
+        string? addTagLabel = null,
+        bool isAlreadyInTargets = false,
+        Action? onAddToTarget = null,
+        Action? onJoinGroup = null,
+        string? addToTargetLabel = null,
+        string? joinLabel = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(i18n);
@@ -157,7 +162,7 @@ public static class GroupRowCard
 
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 10,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
@@ -205,11 +210,61 @@ public static class GroupRowCard
             row.Children.Add(tagMenuBtn);
         }
 
+        if (!isAlreadyInTargets && onAddToTarget is not null)
+        {
+            Button addTargetBtn = new()
+            {
+                Content = new TextBlock
+                {
+                    Text = addToTargetLabel ?? "+ Nhóm đích",
+                    FontSize = 11,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = theme.Palette.TextPrimary
+                },
+                Background = theme.Palette.SecondarySurface,
+                BorderBrush = theme.Palette.InteractiveBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(999),
+                Padding = new Thickness(9, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            addTargetBtn.Click += (_, _) => onAddToTarget();
+            Grid.SetColumn(addTargetBtn, 3);
+            row.Children.Add(addTargetBtn);
+        }
+
+        if ((grp.MembershipState == GroupMembershipState.CanJoin ||
+             grp.MembershipState == GroupMembershipState.Unknown) &&
+            onJoinGroup is not null)
+        {
+            Button joinBtn = new()
+            {
+                Content = new TextBlock
+                {
+                    Text = joinLabel ?? "Tham gia",
+                    FontSize = 11,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = theme.Palette.BrandPrimary
+                },
+                Background = theme.Palette.BrandSubtleFill,
+                BorderBrush = theme.Palette.BrandPrimary,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(999),
+                Padding = new Thickness(10, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            joinBtn.Click += (_, _) => onJoinGroup();
+            Grid.SetColumn(joinBtn, 4);
+            row.Children.Add(joinBtn);
+        }
+
         Border statePill = StatusPill.Create(
             theme,
             i18n.FormatGroupMembership(grp.MembershipState),
             grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
-        Grid.SetColumn(statePill, 3);
+        Grid.SetColumn(statePill, 5);
 
         i18n.LanguageChanged += (_, _) =>
             StatusPill.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
@@ -222,7 +277,7 @@ public static class GroupRowCard
 
     /// <summary>
     /// Creates a reusable row for a <see cref="SavedTargetGroup"/> item with an enable/disable checkbox,
-    /// colored tag pills, and a 1-click tag assignment popover.
+    /// colored tag pills, a 1-click tag assignment popover, and an optional remove button.
     /// </summary>
     public static Grid CreateTargetRow(
         ThemeService theme,
@@ -231,7 +286,9 @@ public static class GroupRowCard
         IReadOnlyList<GroupTag>? assignedTags = null,
         IReadOnlyList<GroupTag>? allTags = null,
         Action<string>? onToggleTag = null,
-        string? addTagLabel = null)
+        string? addTagLabel = null,
+        Action? onRemove = null,
+        string? removeLabel = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(tg);
@@ -239,7 +296,7 @@ public static class GroupRowCard
 
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto"),
             ColumnSpacing = 10,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
@@ -303,6 +360,30 @@ public static class GroupRowCard
             Button tagMenuBtn = BuildTagAssignFlyoutButton(theme, assignedTags, allTags, onToggleTag, addTagLabel ?? "+ Nhãn");
             Grid.SetColumn(tagMenuBtn, 3);
             row.Children.Add(tagMenuBtn);
+        }
+
+        if (onRemove is not null)
+        {
+            Button removeBtn = new()
+            {
+                Content = new TextBlock
+                {
+                    Text = removeLabel ?? "Gỡ",
+                    FontSize = 11,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = theme.Palette.DangerText
+                },
+                Background = theme.Palette.DangerFill,
+                BorderBrush = theme.Palette.DangerText,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(999),
+                Padding = new Thickness(9, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            removeBtn.Click += (_, _) => onRemove();
+            Grid.SetColumn(removeBtn, 4);
+            row.Children.Add(removeBtn);
         }
 
         return row;

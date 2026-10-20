@@ -208,6 +208,85 @@ public sealed partial class ShellViewModel
     }
 
     /// <summary>
+    /// Updates an existing <see cref="GroupTag"/>'s name and color in SQLite and reloads the tag list.
+    /// </summary>
+    public async Task UpdateGroupTagAsync(string tagId, string newName, string newColorHex)
+    {
+        if (string.IsNullOrWhiteSpace(tagId) || string.IsNullOrWhiteSpace(newName))
+        {
+            return;
+        }
+
+        string trimmedName = newName.Trim();
+        string color = string.IsNullOrWhiteSpace(newColorHex) ? "#F6821F" : newColorHex.Trim();
+        GroupTag updated = new(tagId, trimmedName, color);
+        await this._context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Batch-assigns or removes <paramref name="tagId"/> across the specified <paramref name="groups"/> and persists changes to SQLite.
+    /// </summary>
+    public async Task BatchSetTagOnGroupsAsync(string tagId, System.Collections.Generic.IEnumerable<SavedTargetGroup> groups, bool assignTag)
+    {
+        if (string.IsNullOrWhiteSpace(tagId) || groups is null)
+        {
+            return;
+        }
+
+        foreach (SavedTargetGroup grp in groups)
+        {
+            if (grp is null)
+            {
+                continue;
+            }
+
+            System.Collections.Generic.List<string> ids = [.. grp.GetTagIds()];
+            bool changed = false;
+            if (assignTag)
+            {
+                bool exists = false;
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    ids.Add(tagId);
+                    changed = true;
+                }
+            }
+            else
+            {
+                for (int i = ids.Count - 1; i >= 0; i--)
+                {
+                    if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ids.RemoveAt(i);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                SavedTargetGroup updated = grp with
+                {
+                    TagsCsv = ids.Count > 0 ? string.Join(',', ids) : null
+                };
+                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+            }
+        }
+
+        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
     /// Deletes a <see cref="GroupTag"/> from SQLite and removes it from any tagged groups.
     /// </summary>
     public async Task DeleteGroupTagAsync(GroupTag? tag)
@@ -657,6 +736,48 @@ public sealed partial class ShellViewModel
         {
             this.EndTaskScope();
         }
+    }
+
+    /// <summary>
+    /// Adds the specified <paramref name="group"/> to the saved campaign target groups.
+    /// </summary>
+    public async Task AddGroupToTargetsAsync(GroupSummary? group)
+    {
+        if (group is null)
+        {
+            return;
+        }
+
+        this.SelectedGroup = group;
+        await this.AddSelectedGroupToTargetsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Removes the specified <paramref name="targetGroup"/> from the saved campaign target groups.
+    /// </summary>
+    public async Task RemoveTargetGroupAsync(SavedTargetGroup? targetGroup)
+    {
+        if (targetGroup is null)
+        {
+            return;
+        }
+
+        this.SelectedTargetGroup = targetGroup;
+        await this.RemoveSelectedTargetGroupAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Requests to join the specified <paramref name="group"/> using the active browser session.
+    /// </summary>
+    public async Task JoinGroupItemAsync(GroupSummary? group)
+    {
+        if (group is null)
+        {
+            return;
+        }
+
+        this.SelectedGroup = group;
+        await this.JoinSelectedGroupAsync().ConfigureAwait(true);
     }
 
     private async Task AddSelectedGroupToTargetsAsync()

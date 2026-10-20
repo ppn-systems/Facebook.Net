@@ -156,18 +156,90 @@ public sealed partial class PublisherPage : UserControl
         nameAndBadgeRow.Children.Add(profileNameTb);
         nameAndBadgeRow.Children.Add(profileActivePill);
 
-        SegmentedFilterPill modeSelectorPill = new(
-            this._theme,
-            [
-                this._i18n["Publisher.ModeOnlyFeed"],
-                this._i18n["Publisher.ModeOnlyGroups"],
-                this._i18n["Publisher.ModeFeedAndGroups"]
-            ],
-            initialIndex: Math.Clamp(this._vm.PublishTargetMode, 0, 2),
-            onSelected: idx => this._vm.PublishTargetMode = idx);
+        string[] GetModeLabels() =>
+        [
+            this._i18n["Publisher.ModeOnlyFeed"],
+            this._i18n["Publisher.ModeOnlyGroups"],
+            this._i18n["Publisher.ModeFeedAndGroups"]
+        ];
+
+        List<(Button Btn, TextBlock Lbl)> modeButtons = new(3);
+        StackPanel modeRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2
+        };
+
+        void RefreshModeButtonsVisuals()
+        {
+            ThemePalette p = this._theme.Palette;
+            int activeIdx = Math.Clamp(this._vm.PublishTargetMode, 0, 2);
+            for (int i = 0; i < modeButtons.Count; i++)
+            {
+                (Button btn, TextBlock lbl) = modeButtons[i];
+                bool isActive = i == activeIdx;
+                btn.Background = isActive ? p.BrandPrimary : Brushes.Transparent;
+                lbl.Foreground = isActive ? Brushes.White : p.TextSecondary;
+                lbl.FontWeight = isActive ? FontWeight.SemiBold : FontWeight.Medium;
+            }
+        }
+
+        string[] initialModeLabels = GetModeLabels();
+        for (int i = 0; i < initialModeLabels.Length; i++)
+        {
+            int capturedMode = i;
+            TextBlock modeLbl = new()
+            {
+                Text = initialModeLabels[i],
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            Button modeBtn = new()
+            {
+                Content = modeLbl,
+                Padding = new Thickness(12, 5),
+                CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(0),
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+            modeBtn.Click += (_, _) =>
+            {
+                if (this._vm.PublishTargetMode != capturedMode)
+                {
+                    this._vm.PublishTargetMode = capturedMode;
+                    RefreshModeButtonsVisuals();
+                }
+            };
+
+            modeButtons.Add((modeBtn, modeLbl));
+            modeRow.Children.Add(modeBtn);
+        }
+
+        Border modeSelectorBar = new()
+        {
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = modeRow
+        };
+
+        void ApplyModeSelectorColors()
+        {
+            ThemePalette p = this._theme.Palette;
+            modeSelectorBar.Background = p.ElevatedSurface;
+            modeSelectorBar.BorderBrush = p.InteractiveBorder;
+            RefreshModeButtonsVisuals();
+        }
+
+        ApplyModeSelectorColors();
+        ThemeLifecycle.Bind(modeSelectorBar, this._theme, ApplyModeSelectorColors);
 
         identityMeta.Children.Add(nameAndBadgeRow);
-        identityMeta.Children.Add(modeSelectorPill);
+        identityMeta.Children.Add(modeSelectorBar);
 
         Grid.SetColumn(avatarHost, 0);
         Grid.SetColumn(identityMeta, 1);
@@ -452,6 +524,7 @@ public sealed partial class PublisherPage : UserControl
             string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
             profileNameTb.Text = accName;
             avatarHost.Content = AvatarBadge.Create(this._theme, accName, 42, this._vm.SelectedAccount?.AvatarUrl);
+            RefreshModeButtonsVisuals();
 
             int enabledGroups = 0;
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -505,12 +578,12 @@ public sealed partial class PublisherPage : UserControl
         refreshI18n = () =>
         {
             StatusPill.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
-            modeSelectorPill.UpdateLabels(
-            [
-                this._i18n["Publisher.ModeOnlyFeed"],
-                this._i18n["Publisher.ModeOnlyGroups"],
-                this._i18n["Publisher.ModeFeedAndGroups"]
-            ]);
+            string[] nextModeLabels = GetModeLabels();
+            for (int i = 0; i < modeButtons.Count && i < nextModeLabels.Length; i++)
+            {
+                modeButtons[i].Lbl.Text = nextModeLabels[i];
+            }
+
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             localContentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
@@ -605,16 +678,14 @@ public sealed partial class PublisherPage : UserControl
         Grid.SetRow(batchBtnsWrap, 2);
         pickerGrid.Children.Add(batchBtnsWrap);
 
-        // Row 3: Instant Group Search Input
-        TextBox groupSearchBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Groups.FilterPlaceholder"],
-            string.Empty);
-        Grid.SetRow(groupSearchBox, 3);
-        pickerGrid.Children.Add(groupSearchBox);
-
-        // Row 4: Checkable Target Groups List
+        // Row 3: Unified Group SearchFilterBar with 2-Level Drill-Down Categories (Tag + Selection State)
         BulkObservableCollection<SavedTargetGroup> filteredPickerGroups = new();
+        string? selectedTagFilter = null;
+        string? selectedSelectionFilter = null;
+        SearchFilterBar groupSearchBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Groups.FilterPlaceholder"]);
 
         void RebuildPickerState()
         {
@@ -663,11 +734,33 @@ public sealed partial class PublisherPage : UserControl
                 tagChipsWrap.Children.Add(chip);
             }
 
-            string q = (groupSearchBox.Text ?? string.Empty).Trim();
+            string q = (groupSearchBar.SearchTextBox.Text ?? string.Empty).Trim();
             List<SavedTargetGroup> matches = new(this._vm.TargetGroups.Count);
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
                 SavedTargetGroup tg = this._vm.TargetGroups[i];
+                if (string.Equals(selectedSelectionFilter, "enabled", StringComparison.OrdinalIgnoreCase) && !tg.IsEnabled)
+                {
+                    continue;
+                }
+
+                if (string.Equals(selectedSelectionFilter, "disabled", StringComparison.OrdinalIgnoreCase) && tg.IsEnabled)
+                {
+                    continue;
+                }
+
+                if (string.Equals(selectedTagFilter, "__untagged__", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (tg.GetTagIds().Count > 0)
+                    {
+                        continue;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(selectedTagFilter) && !tg.HasTag(selectedTagFilter))
+                {
+                    continue;
+                }
+
                 if (!string.IsNullOrEmpty(q) &&
                     !tg.GroupName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 {
@@ -681,8 +774,56 @@ public sealed partial class PublisherPage : UserControl
             onSelectionChanged?.Invoke();
         }
 
-        groupSearchBox.TextChanged += (_, _) => RebuildPickerState();
+        FilterCategoryDefinition tagCategory = new(
+            "tag",
+            this._i18n["Groups.FilterCatColorTag"],
+            VectorIcons.Bookmark,
+            () =>
+            {
+                List<FilterOptionItem> opts = new(this._vm.GroupTags.Count + 1);
+                for (int i = 0; i < this._vm.GroupTags.Count; i++)
+                {
+                    GroupTag t = this._vm.GroupTags[i];
+                    opts.Add(new FilterOptionItem(t.Id, t.Name, t.ColorHex));
+                }
 
+                opts.Add(new FilterOptionItem("__untagged__", this._i18n["Groups.FilterUntagged"]));
+                return opts;
+            },
+            ids =>
+            {
+                selectedTagFilter = ids.Count > 0 ? ids[0] : null;
+                RebuildPickerState();
+            },
+            allowMultiple: false);
+
+        FilterCategoryDefinition selectionCategory = new(
+            "selection",
+            this._i18n["Publisher.FilterCatSelection"],
+            VectorIcons.CheckCircle,
+            () =>
+            [
+                new FilterOptionItem("enabled", this._i18n["Groups.FilterSegEnabled"]),
+                new FilterOptionItem("disabled", this._i18n["Groups.FilterSegDisabled"])
+            ],
+            ids =>
+            {
+                selectedSelectionFilter = ids.Count > 0 ? ids[0] : null;
+                RebuildPickerState();
+            },
+            allowMultiple: false);
+
+        groupSearchBar.SetFilterCategories(
+            [tagCategory, selectionCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+
+        groupSearchBar.SearchTextBox.TextChanged += (_, _) => RebuildPickerState();
+        groupSearchBar.SearchButton.Click += (_, _) => RebuildPickerState();
+        Grid.SetRow(groupSearchBar, 3);
+        pickerGrid.Children.Add(groupSearchBar);
+
+        // Row 4: Checkable Target Groups List
         ListBox pickerList = FormField.CreateListBox<SavedTargetGroup>(
             this._theme,
             filteredPickerGroups,
@@ -708,13 +849,23 @@ public sealed partial class PublisherPage : UserControl
         pickerGrid.Children.Add(pickerList);
 
         this._vm.TargetGroups.CollectionChanged += (_, _) => RebuildPickerState();
-        this._vm.GroupTags.CollectionChanged += (_, _) => RebuildPickerState();
+        this._vm.GroupTags.CollectionChanged += (_, _) =>
+        {
+            groupSearchBar.RefreshFilterChips();
+            RebuildPickerState();
+        };
         RebuildPickerState();
 
         refreshCard = () =>
         {
             tagQuickHintTb.Text = this._i18n["Publisher.QuickSelectByTagHint"];
-            groupSearchBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
+            tagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
+            selectionCategory.Title = this._i18n["Publisher.FilterCatSelection"];
+            groupSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Groups.FilterPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             AppButton.SetText(btnAll, this._i18n["Groups.BtnSelectAllTargets"]);
             AppButton.SetText(btnNone, this._i18n["Groups.BtnDeselectAllTargets"]);
             AppButton.SetText(btnRand10, this._i18n["Publisher.BtnRandom10"]);

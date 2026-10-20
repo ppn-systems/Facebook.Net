@@ -43,9 +43,9 @@ public sealed partial class ShellViewModel
     private readonly List<AccountProfile> _allAccounts = new();
 
     /// <summary>
-    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword and optional status.
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, optional status, and optional proxy assignment.
     /// </summary>
-    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null)
+    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null, bool? hasProxyFilter = null)
     {
         if (this._allAccounts.Count == 0 && this.Accounts.Count > 0)
         {
@@ -58,7 +58,7 @@ public sealed partial class ShellViewModel
         this.AccountFilterText = filterText ?? string.Empty;
         string kw = this.AccountFilterText.Trim();
 
-        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null)
+        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null && hasProxyFilter is null)
         {
             this.Accounts.ReplaceAll(this._allAccounts);
             return;
@@ -73,6 +73,15 @@ public sealed partial class ShellViewModel
                 continue;
             }
 
+            if (hasProxyFilter is not null)
+            {
+                bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
+                if (hasProxyFilter.Value != hasProxy)
+                {
+                    continue;
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(kw) &&
                 !acc.DisplayName.Contains(kw, StringComparison.OrdinalIgnoreCase))
             {
@@ -83,6 +92,55 @@ public sealed partial class ShellViewModel
         }
 
         this.Accounts.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and runs a live session health check.
+    /// </summary>
+    public async Task CheckAccountItemHealthAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.CheckAccountHealthAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and either warms it up (when active) or launches browser login/sync.
+    /// </summary>
+    public async Task WarmUpOrLoginAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        if (account.Status == AccountStatus.Active)
+        {
+            await this.WarmUpSelectedAccountAsync().ConfigureAwait(true);
+        }
+        else
+        {
+            await this.OpenBrowserAndSyncAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and deletes it from the local vault.
+    /// </summary>
+    public async Task DeleteAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.DeleteSelectedAccountAsync().ConfigureAwait(true);
     }
 
     partial void OnSelectedAccountChanged(AccountProfile? value)

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -76,27 +77,41 @@ public sealed partial class PublisherPage
         Grid.SetRow(topHeaderRow, 0);
         tabGrid.Children.Add(topHeaderRow);
 
-        // Row 1: Filter Bar (All | Personal Timeline | Group Posts) + Search Box
+        // Row 1: Unified SearchFilterBar with 2-Level Drill-Down Categories (Source + Target Group)
         BulkObservableCollection<PublishedPostRecord> filteredPosts = new();
-        int sourceFilter = 0; // 0 = All, 1 = Personal (FEED / PERSONAL_SYNC), 2 = Group (GROUP)
-        TextBox postSearchBox = null!;
+        string? selectedSourceFilter = null;
+        string? selectedGroupFilter = null;
+        SearchFilterBar postsSearchBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Publisher.SearchPublishedPlaceholder"]);
 
         void RefreshFilteredPosts()
         {
-            string q = (postSearchBox?.Text ?? string.Empty).Trim();
+            string q = (postsSearchBar.SearchTextBox.Text ?? string.Empty).Trim();
             List<PublishedPostRecord> matches = new(this._vm.PublishedPosts.Count);
             for (int i = 0; i < this._vm.PublishedPosts.Count; i++)
             {
                 PublishedPostRecord rec = this._vm.PublishedPosts[i];
                 bool isGroup = !rec.IsPersonalProfilePost;
-                if (sourceFilter == 1 && isGroup)
+                if (string.Equals(selectedSourceFilter, "personal", StringComparison.OrdinalIgnoreCase) && isGroup)
                 {
                     continue;
                 }
 
-                if (sourceFilter == 2 && !isGroup)
+                if (string.Equals(selectedSourceFilter, "group", StringComparison.OrdinalIgnoreCase) && !isGroup)
                 {
                     continue;
+                }
+
+                if (!string.IsNullOrEmpty(selectedGroupFilter))
+                {
+                    bool matchesGroupId = string.Equals(rec.TargetGroupId, selectedGroupFilter, StringComparison.OrdinalIgnoreCase);
+                    bool matchesGroupName = string.Equals(rec.TargetGroupName, selectedGroupFilter, StringComparison.OrdinalIgnoreCase);
+                    if (!matchesGroupId && !matchesGroupName)
+                    {
+                        continue;
+                    }
                 }
 
                 if (!string.IsNullOrEmpty(q) &&
@@ -112,40 +127,55 @@ public sealed partial class PublisherPage
             filteredPosts.ReplaceAll(matches);
         }
 
-        Grid filterRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        SegmentedFilterPill sourceFilterPill = new(
-            this._theme,
+        FilterCategoryDefinition sourceCategory = new(
+            "source",
+            this._i18n["Publisher.FilterCatSource"],
+            VectorIcons.Publish,
+            () =>
             [
-                this._i18n["Publisher.FilterAllPosts"],
-                this._i18n["Publisher.FilterPersonalPosts"],
-                this._i18n["Publisher.FilterGroupPosts"]
+                new FilterOptionItem("personal", this._i18n["Publisher.FilterPersonalPosts"]),
+                new FilterOptionItem("group", this._i18n["Publisher.FilterGroupPosts"])
             ],
-            initialIndex: 0,
-            onSelected: idx =>
+            ids =>
             {
-                sourceFilter = idx;
+                selectedSourceFilter = ids.Count > 0 ? ids[0] : null;
                 RefreshFilteredPosts();
-            });
+            },
+            allowMultiple: false);
 
-        postSearchBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Publisher.SearchPublishedPlaceholder"],
-            string.Empty);
-        postSearchBox.TextChanged += (_, _) => RefreshFilteredPosts();
+        FilterCategoryDefinition groupCategory = new(
+            "group",
+            this._i18n["Publisher.FilterCatTargetGroup"],
+            VectorIcons.Groups,
+            () =>
+            {
+                List<FilterOptionItem> opts = new(this._vm.TargetGroups.Count);
+                for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+                {
+                    SavedTargetGroup tg = this._vm.TargetGroups[i];
+                    opts.Add(new FilterOptionItem(tg.GroupId, tg.GroupName));
+                }
 
-        Grid.SetColumn(sourceFilterPill, 0);
-        Grid.SetColumn(postSearchBox, 1);
-        filterRow.Children.Add(sourceFilterPill);
-        filterRow.Children.Add(postSearchBox);
-        Grid.SetRow(filterRow, 1);
-        tabGrid.Children.Add(filterRow);
+                return opts;
+            },
+            ids =>
+            {
+                selectedGroupFilter = ids.Count > 0 ? ids[0] : null;
+                RefreshFilteredPosts();
+            },
+            allowMultiple: false);
 
+        postsSearchBar.SetFilterCategories(
+            [sourceCategory, groupCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+
+        postsSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredPosts();
+        postsSearchBar.SearchButton.Click += (_, _) => RefreshFilteredPosts();
+        Grid.SetRow(postsSearchBar, 1);
+        tabGrid.Children.Add(postsSearchBar);
+
+        this._vm.TargetGroups.CollectionChanged += (_, _) => postsSearchBar.RefreshFilterChips();
         RefreshFilteredPosts();
 
         // Row 2: Master-Detail Split (Left = Published/Synced Posts List, Right = 1-Click Repost to Groups/Tags)
@@ -352,17 +382,18 @@ public sealed partial class PublisherPage
             AppButton.SetText(syncTimelineBtn, this._i18n["Publisher.BtnSyncTimelinePosts"]);
             AppButton.SetText(openBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
             AppButton.SetText(deletePostBtn, this._i18n["Publisher.BtnDeletePublishedPost"]);
-            sourceFilterPill.UpdateLabels(
-            [
-                this._i18n["Publisher.FilterAllPosts"],
-                this._i18n["Publisher.FilterPersonalPosts"],
-                this._i18n["Publisher.FilterGroupPosts"]
-            ]);
-            postSearchBox.PlaceholderText = this._i18n["Publisher.SearchPublishedPlaceholder"];
+            sourceCategory.Title = this._i18n["Publisher.FilterCatSource"];
+            groupCategory.Title = this._i18n["Publisher.FilterCatTargetGroup"];
+            postsSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Publisher.SearchPublishedPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             emptyPostsTb.Text = this._i18n["Empty.PublishedPosts"];
             repostHeaderTb.Text = this._i18n["Publisher.RepostPanelTitle"];
             repostCaptionBox.PlaceholderText = this._i18n["Publisher.RepostCaptionPlaceholder"];
             refreshRepostPicker();
+            RefreshFilteredPosts();
             UpdateRepostButtonLabel();
         };
 
@@ -401,7 +432,7 @@ public sealed partial class PublisherPage
     {
         Grid tplGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
             RowSpacing = 12
         };
 
@@ -414,32 +445,204 @@ public sealed partial class PublisherPage
         Grid.SetRow(header, 0);
         tplGrid.Children.Add(header);
 
+        BulkObservableCollection<CampaignTemplate> filteredTemplates = new();
+        string? selectedTypeFilter = null;
+        SearchFilterBar tplSearchBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Publisher.SearchTemplatesPlaceholder"]);
+
+        void RefreshFilteredTemplates()
+        {
+            string q = (tplSearchBar.SearchTextBox.Text ?? string.Empty).Trim();
+            List<CampaignTemplate> matches = new(this._vm.SavedTemplates.Count);
+            for (int i = 0; i < this._vm.SavedTemplates.Count; i++)
+            {
+                CampaignTemplate tpl = this._vm.SavedTemplates[i];
+                if (string.Equals(selectedTypeFilter, "post", StringComparison.OrdinalIgnoreCase) && tpl.IsCommentTemplate)
+                {
+                    continue;
+                }
+
+                if (string.Equals(selectedTypeFilter, "comment", StringComparison.OrdinalIgnoreCase) && !tpl.IsCommentTemplate)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(q) &&
+                    !tpl.Title.Contains(q, StringComparison.OrdinalIgnoreCase) &&
+                    !tpl.SpintaxContent.Contains(q, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                matches.Add(tpl);
+            }
+
+            filteredTemplates.ReplaceAll(matches);
+        }
+
+        FilterCategoryDefinition typeCategory = new(
+            "type",
+            this._i18n["Publisher.FilterCatTemplateType"],
+            VectorIcons.Bookmark,
+            () =>
+            [
+                new FilterOptionItem("post", this._i18n["Publisher.FilterTemplatesPost"]),
+                new FilterOptionItem("comment", this._i18n["Publisher.FilterTemplatesComment"])
+            ],
+            ids =>
+            {
+                selectedTypeFilter = ids.Count > 0 ? ids[0] : null;
+                RefreshFilteredTemplates();
+            },
+            allowMultiple: false);
+
+        tplSearchBar.SetFilterCategories(
+            [typeCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+
+        tplSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredTemplates();
+        tplSearchBar.SearchButton.Click += (_, _) => RefreshFilteredTemplates();
+        Grid.SetRow(tplSearchBar, 1);
+        tplGrid.Children.Add(tplSearchBar);
+
+        RefreshFilteredTemplates();
+
         ListBox tplList = FormField.CreateListBox<CampaignTemplate>(
             this._theme,
-            this._vm.SavedTemplates,
+            filteredTemplates,
             tpl =>
             {
-                StackPanel sp = new() { Spacing = 4 };
-                sp.Children.Add(SectionHeader.CreateLabel(this._theme, tpl.Title, 13.5, FontWeight.SemiBold));
+                Grid cardGrid = new()
+                {
+                    RowDefinitions = new RowDefinitions("Auto,Auto"),
+                    RowSpacing = 6
+                };
+
+                Grid topRow = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                TextBlock tplTitleTb = SectionHeader.CreateLabel(this._theme, tpl.Title, 13.5, FontWeight.SemiBold);
+                tplTitleTb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                Border typePill = StatusPill.Create(
+                    this._theme,
+                    tpl.IsCommentTemplate ? this._i18n["Publisher.FilterTemplatesComment"] : this._i18n["Publisher.FilterTemplatesPost"],
+                    tpl.IsCommentTemplate ? AuditSeverity.Info : AuditSeverity.Success);
+
+                Button useBtn = new()
+                {
+                    Content = new TextBlock
+                    {
+                        Text = !tpl.IsCommentTemplate
+                            ? this._i18n["Publisher.BtnUsePostTemplate"]
+                            : this._i18n["Publisher.BtnUseCommentTemplate"],
+                        FontSize = 11,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = this._theme.Palette.BrandPrimary
+                    },
+                    Background = this._theme.Palette.BrandSubtleFill,
+                    BorderBrush = this._theme.Palette.BrandPrimary,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(999),
+                    Padding = new Thickness(10, 3),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+
+                useBtn.Click += (_, _) =>
+                {
+                    this._vm.SelectedTemplate = tpl;
+                    if (!tpl.IsCommentTemplate)
+                    {
+                        contentBox.Text = tpl.SpintaxContent;
+                        this._vm.PostSpintaxText = tpl.SpintaxContent;
+
+                        string mediaPath = tpl.MediaFilePath ?? string.Empty;
+                        photoBox.Text = mediaPath;
+                        this._vm.PostMediaFilePath = mediaPath;
+                    }
+                    else
+                    {
+                        this._vm.BumpCommentSpintaxText = tpl.SpintaxContent;
+                    }
+                };
+
+                Button deleteRowBtn = new()
+                {
+                    Content = new TextBlock
+                    {
+                        Text = this._i18n["Groups.BtnDeleteTagShort"],
+                        FontSize = 11,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = this._theme.Palette.DangerText
+                    },
+                    Background = this._theme.Palette.DangerFill,
+                    BorderBrush = this._theme.Palette.DangerText,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(999),
+                    Padding = new Thickness(9, 3),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+
+                deleteRowBtn.Click += (_, _) =>
+                {
+                    this._vm.SelectedTemplate = tpl;
+                    if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
+                    {
+                        _ = this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null);
+                    }
+                };
+
+                Grid.SetColumn(tplTitleTb, 0);
+                Grid.SetColumn(typePill, 1);
+                Grid.SetColumn(useBtn, 2);
+                Grid.SetColumn(deleteRowBtn, 3);
+                topRow.Children.Add(tplTitleTb);
+                topRow.Children.Add(typePill);
+                topRow.Children.Add(useBtn);
+                topRow.Children.Add(deleteRowBtn);
+
                 TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, tpl.SpintaxContent, 12, FontWeight.Normal, isSecondary: true);
                 bodyTb.MaxLines = 2;
-                sp.Children.Add(bodyTb);
-                return SurfaceCard.Create(this._theme, sp, new Thickness(12, 10));
+                bodyTb.TextWrapping = TextWrapping.Wrap;
+                bodyTb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                Grid.SetRow(topRow, 0);
+                Grid.SetRow(bodyTb, 1);
+                cardGrid.Children.Add(topRow);
+                cardGrid.Children.Add(bodyTb);
+
+                return SurfaceCard.Create(this._theme, cardGrid, new Thickness(12, 10));
             },
             selectedItem: this._vm.SelectedTemplate,
-            isVisible: this._vm.SavedTemplates.Count > 0);
+            isVisible: filteredTemplates.Count > 0);
 
         tplList.SelectionChanged += (_, _) =>
         {
             if (tplList.SelectedItem is CampaignTemplate selectedTpl)
             {
                 this._vm.SelectedTemplate = selectedTpl;
-                contentBox.Text = selectedTpl.SpintaxContent;
-                this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
+                if (!selectedTpl.IsCommentTemplate)
+                {
+                    contentBox.Text = selectedTpl.SpintaxContent;
+                    this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
 
-                string mediaPath = selectedTpl.MediaFilePath ?? string.Empty;
-                photoBox.Text = mediaPath;
-                this._vm.PostMediaFilePath = mediaPath;
+                    string mediaPath = selectedTpl.MediaFilePath ?? string.Empty;
+                    photoBox.Text = mediaPath;
+                    this._vm.PostMediaFilePath = mediaPath;
+                }
+                else
+                {
+                    this._vm.BumpCommentSpintaxText = selectedTpl.SpintaxContent;
+                }
             }
         };
 
@@ -448,32 +651,38 @@ public sealed partial class PublisherPage
             this._i18n["Empty.Templates"],
             VectorIcons.Bookmark,
             out TextBlock emptyTplTb);
-        emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+        emptyTemplatesBanner.IsVisible = filteredTemplates.Count == 0;
+
         this._vm.SavedTemplates.CollectionChanged += (_, _) =>
         {
-            bool isEmpty = this._vm.SavedTemplates.Count == 0;
+            RefreshFilteredTemplates();
+            bool isEmpty = filteredTemplates.Count == 0;
+            emptyTemplatesBanner.IsVisible = isEmpty;
+            tplList.IsVisible = !isEmpty;
+        };
+        filteredTemplates.CollectionChanged += (_, _) =>
+        {
+            bool isEmpty = filteredTemplates.Count == 0;
             emptyTemplatesBanner.IsVisible = isEmpty;
             tplList.IsVisible = !isEmpty;
         };
 
         Grid listHost = EmptyStateBanner.CreateHost(tplList, emptyTemplatesBanner);
-        Grid.SetRow(listHost, 1);
+        Grid.SetRow(listHost, 2);
         tplGrid.Children.Add(listHost);
-
-        Button deleteTplBtn = AppButton.CreateDanger(
-            this._theme,
-            this._i18n["Publisher.BtnDeleteTemplate"],
-            this._vm.DeleteSelectedTemplateCommand,
-            VectorIcons.Trash);
-        Grid.SetRow(deleteTplBtn, 2);
-        tplGrid.Children.Add(deleteTplBtn);
 
         refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Publisher.TemplatesTitle"];
             descTb.Text = this._i18n["Publisher.Desc"];
+            typeCategory.Title = this._i18n["Publisher.FilterCatTemplateType"];
+            tplSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Publisher.SearchTemplatesPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             emptyTplTb.Text = this._i18n["Empty.Templates"];
-            AppButton.SetText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
+            RefreshFilteredTemplates();
         };
 
         return tplGrid;
@@ -507,13 +716,48 @@ public sealed partial class PublisherPage
         Grid.SetRow(bumpBox, 1);
         bumpGrid.Children.Add(bumpBox);
 
+        Grid bumpActionsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 10
+        };
+
+        Button saveBumpTplBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnSaveBumpTemplate"],
+            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
+            {
+                string raw = this._vm.BumpCommentSpintaxText.Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return;
+                }
+
+                string title = raw.Length > 36 ? string.Concat(raw[..36], "...") : raw;
+                CampaignTemplate tpl = new(
+                    Id: $"tpl_bump_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+                    Title: title,
+                    SpintaxContent: raw,
+                    MediaFilePath: null,
+                    IsCommentTemplate: true);
+                await this._vm.Context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
+                this._vm.SavedTemplates.Add(tpl);
+            }),
+            VectorIcons.Bookmark);
+
         Button bumpBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Publisher.BtnBumpRecentPosts"],
             this._vm.BumpRecentPostsCommand,
             VectorIcons.SalesComment);
-        Grid.SetRow(bumpBtn, 2);
-        bumpGrid.Children.Add(bumpBtn);
+        bumpBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        Grid.SetColumn(saveBumpTplBtn, 0);
+        Grid.SetColumn(bumpBtn, 1);
+        bumpActionsRow.Children.Add(saveBumpTplBtn);
+        bumpActionsRow.Children.Add(bumpBtn);
+        Grid.SetRow(bumpActionsRow, 2);
+        bumpGrid.Children.Add(bumpActionsRow);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -529,6 +773,7 @@ public sealed partial class PublisherPage
             titleTb.Text = this._i18n["Publisher.BumpTitle"];
             descTb.Text = this._i18n["Publisher.Desc"];
             bumpBox.PlaceholderText = this._i18n["Publisher.BumpPlaceholder"];
+            AppButton.SetText(saveBumpTplBtn, this._i18n["Publisher.BtnSaveBumpTemplate"]);
             AppButton.SetText(bumpBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
         };
 

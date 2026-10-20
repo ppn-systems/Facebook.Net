@@ -131,10 +131,8 @@ public sealed partial class SalesLeadsPage
         void UpdateSelectedPostBanner()
         {
             PostSummary? post = this._vm.SelectedScrapedPost;
-            if (post is null && this._vm.ScrapedPosts.Count > 0)
-            {
-                post = this._vm.ScrapedPosts[0];
-            }
+            sendSelectedBtn.IsVisible = post is not null;
+            openPostBtn.IsVisible = post is not null;
 
             if (post is null)
             {

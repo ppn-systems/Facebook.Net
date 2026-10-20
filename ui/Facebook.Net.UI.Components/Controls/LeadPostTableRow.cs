@@ -3,7 +3,9 @@
 
 using System;
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -28,7 +30,11 @@ public static class LeadPostTableRow
         PostSummary post,
         int intentScore,
         Func<string> formatIntentBadge,
-        bool isCommented)
+        bool isCommented,
+        Action? onQuickReply = null,
+        string? quickReplyLabel = null,
+        Action? onOpenInBrowser = null,
+        string? openBrowserLabel = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(i18n);
@@ -211,6 +217,65 @@ public static class LeadPostTableRow
             HorizontalAlignment = HorizontalAlignment.Left,
             Children = { statusPill, intentPill }
         };
+
+        if (onQuickReply is not null || onOpenInBrowser is not null)
+        {
+            StackPanel actionRow = new()
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+
+            if (onQuickReply is not null)
+            {
+                Button quickReplyBtn = new()
+                {
+                    Content = new TextBlock
+                    {
+                        Text = quickReplyLabel ?? "Tư vấn",
+                        FontSize = 11,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = theme.Palette.BrandPrimary
+                    },
+                    Background = theme.Palette.BrandSubtleFill,
+                    BorderBrush = theme.Palette.BrandPrimary,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(999),
+                    Padding = new Thickness(8, 2.5),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                quickReplyBtn.Click += (_, _) => onQuickReply();
+                actionRow.Children.Add(quickReplyBtn);
+            }
+
+            if (onOpenInBrowser is not null)
+            {
+                Button openBrowserBtn = new()
+                {
+                    Content = new TextBlock
+                    {
+                        Text = openBrowserLabel ?? "Mở bài",
+                        FontSize = 11,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = theme.Palette.TextPrimary
+                    },
+                    Background = theme.Palette.SecondarySurface,
+                    BorderBrush = theme.Palette.InteractiveBorder,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(999),
+                    Padding = new Thickness(8, 2.5),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                openBrowserBtn.Click += (_, _) => onOpenInBrowser();
+                actionRow.Children.Add(openBrowserBtn);
+            }
+
+            statusStack.Children.Add(actionRow);
+        }
 
         i18n.LanguageChanged += (_, _) =>
         {
