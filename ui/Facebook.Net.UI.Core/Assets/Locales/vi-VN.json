@@ -418,7 +418,7 @@
   "Groups.BtnBatchRemoveAllFiltered": "Gỡ nhãn khỏi các nhóm đang lọc",
   "Groups.TagGroupCountFormat": "{0} nhóm",
   "Groups.TagAssignPanelTitle": "Gắn & Gỡ Nhãn Cho Nhóm",
-  "Groups.TagAssignPanelHint": "Chọn một nhãn màu ở danh sách bên trái, sau đó tích chọn từng nhóm hoặc bấm gắn hàng loạt.",
+  "Groups.TagAssignPanelHint": "Chọn một nhãn màu ở danh sách bên phải, sau đó tích chọn từng nhóm hoặc bấm gắn hàng loạt.",
   "Groups.FilterTagAssigned": "Đã gắn nhãn đang chọn",
   "Groups.FilterTagUnassigned": "Chưa gắn nhãn đang chọn",
 

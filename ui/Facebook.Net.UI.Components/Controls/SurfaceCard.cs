@@ -26,6 +26,7 @@ public static class SurfaceCard
             CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1),
             Padding = padding ?? new Thickness(16),
+            ClipToBounds = true,
             Child = content
         };
 
@@ -54,6 +55,7 @@ public static class SurfaceCard
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
             Padding = padding ?? new Thickness(12),
+            ClipToBounds = true,
             Child = content
         };
 

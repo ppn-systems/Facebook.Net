@@ -27,7 +27,7 @@ public sealed partial class GroupsPage
     {
         Grid rootGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("350,*"),
+            ColumnDefinitions = new ColumnDefinitions("1.2*,1*"),
             ColumnSpacing = 14
         };
 
@@ -183,7 +183,7 @@ public sealed partial class GroupsPage
         leftGrid.Children.Add(tagListScroll);
 
         Border leftCard = SurfaceCard.Create(this._theme, leftGrid, new Thickness(14));
-        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(leftCard, 1);
         rootGrid.Children.Add(leftCard);
 
         // ───────────────────────────── Right Column: Batch Tag Assignment ─────────────────────────────
@@ -266,7 +266,7 @@ public sealed partial class GroupsPage
         Grid.SetColumn(batchRemoveBtn, 1);
         batchButtonsRow.Children.Add(batchAssignBtn);
         batchButtonsRow.Children.Add(batchRemoveBtn);
-        Grid.SetRow(batchButtonsRow, 1);
+        Grid.SetRow(batchButtonsRow, 2);
         rightGrid.Children.Add(batchButtonsRow);
 
         void RefreshAssignGroups()
@@ -355,7 +355,7 @@ public sealed partial class GroupsPage
 
         assignSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshAssignGroups();
         assignSearchBar.SearchButton.Click += (_, _) => RefreshAssignGroups();
-        Grid.SetRow(assignSearchBar, 2);
+        Grid.SetRow(assignSearchBar, 1);
         rightGrid.Children.Add(assignSearchBar);
 
         Action rebuildLeftTagList = null!;
@@ -616,7 +616,7 @@ public sealed partial class GroupsPage
         rightGrid.Children.Add(assignListHost);
 
         Border rightCard = SurfaceCard.Create(this._theme, rightGrid, new Thickness(14));
-        Grid.SetColumn(rightCard, 1);
+        Grid.SetColumn(rightCard, 0);
         rootGrid.Children.Add(rightCard);
 
         refreshI18n = () =>

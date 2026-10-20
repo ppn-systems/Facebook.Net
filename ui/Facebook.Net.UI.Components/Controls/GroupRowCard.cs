@@ -80,6 +80,8 @@ public static class GroupRowCard
             FontSize = 11,
             FontWeight = isActive ? FontWeight.SemiBold : FontWeight.Medium,
             Foreground = textBrush,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = 180,
             VerticalAlignment = VerticalAlignment.Center
         };
 

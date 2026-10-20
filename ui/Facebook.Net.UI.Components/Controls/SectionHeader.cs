@@ -40,12 +40,21 @@ public static class SectionHeader
         TextBlock title = new()
         {
             Text = initialTitle,
-            FontSize = 18,
+            FontSize = 17,
             FontWeight = FontWeight.Bold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center
         };
 
         Button infoBtn = AppButton.CreateInfoFlyout(theme, initialSubtitle, out TextBlock subtitle);
+
+        headerRow.SizeChanged += (_, e) =>
+        {
+            if (e.NewSize.Width > 40)
+            {
+                title.MaxWidth = Math.Max(60, e.NewSize.Width - 34);
+            }
+        };
 
         void ApplyColors() => title.Foreground = theme.Palette.TextPrimary;
 

@@ -418,7 +418,7 @@
   "Groups.BtnBatchRemoveAllFiltered": "Untag All Filtered Groups",
   "Groups.TagGroupCountFormat": "{0} groups",
   "Groups.TagAssignPanelTitle": "Assign & Remove Group Tags",
-  "Groups.TagAssignPanelHint": "Select a color tag on the left, then check individual groups or batch-assign.",
+  "Groups.TagAssignPanelHint": "Select a color tag on the right, then check individual groups or batch-assign.",
   "Groups.FilterTagAssigned": "Has Selected Tag",
   "Groups.FilterTagUnassigned": "Without Selected Tag",
 

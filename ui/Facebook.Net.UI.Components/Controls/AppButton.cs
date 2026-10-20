@@ -342,15 +342,15 @@ public static class AppButton
             Content = flyoutCard
         };
 
-        Control infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
+        Control infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 16, margin: new Thickness(0));
 
         Button btn = new()
         {
-            Width = 26,
-            Height = 26,
-            CornerRadius = new CornerRadius(13),
+            Width = 24,
+            Height = 24,
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(0),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -363,8 +363,7 @@ public static class AppButton
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            btn.Background = p.SecondarySurface;
-            btn.BorderBrush = p.SubtleBorder;
+            btn.Background = p.BrandSubtleFill;
             VectorIcons.SetForeground(infoIcon, p.BrandPrimary);
             flyoutCard.Background = p.ElevatedSurface;
             flyoutCard.BorderBrush = p.InteractiveBorder;
