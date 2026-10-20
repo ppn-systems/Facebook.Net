@@ -10,6 +10,13 @@
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IsPackable>false</IsPackable>
+    <PublishDocumentationFile>false</PublishDocumentationFile>
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType Condition="'$(PublishSingleFile)' == 'true'">embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,5 +43,14 @@
     <ProjectReference Include="..\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
     <ProjectReference Include="..\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
   </ItemGroup>
+
+  <Target Name="RemovePdbAndXmlFromSingleFilePublish"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Extension)' == '.pdb' or '%(Extension)' == '.xml'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

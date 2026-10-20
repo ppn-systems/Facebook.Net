@@ -1,0 +1,131 @@
+name: Release Desktop App
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DOTNET_CLI_USE_MSBUILD_SERVER: false
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Draft release tag (e.g. v2026.10.0). Leave empty to auto-detect latest draft release or build artifact only."
+        required: false
+        type: string
+
+concurrency:
+  group: release-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Single-File App (win-x64)
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Resolve target release tag
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$(gh release list --limit 20 --json tagName,isDraft,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[] | select(.isDraft == true) | .tagName' \
+              | head -n 1 || true)"
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then
+            echo "Resolved release tag: $tag"
+          else
+            echo "No release tag found. Will build and upload workflow artifact only."
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Decode signing key
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "${{ secrets.SIGNING_KEY }}" | base64 -d > "$GITHUB_WORKSPACE/src/Facebook.Net.snk"
+          else
+            echo "SIGNING_KEY is not set. Skipping signing key creation."
+          fi
+
+      - name: Publish Single-File Executable (FacebookOneClient.exe)
+        shell: bash
+        run: |
+          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+            --configuration Release \
+            --runtime win-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:IncludeAllContentForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:PublishDocumentationFile=false \
+            -p:PublishReferencesDocumentationFiles=false \
+            -p:CopyOutputSymbolsToPublishDirectory=false \
+            -p:DebugType=none \
+            -p:DebugSymbols=false \
+            --output ./publish/win-x64
+
+          rm -f ./publish/win-x64/*.pdb ./publish/win-x64/*.xml 2>/dev/null || true
+
+      - name: Verify Single-File Output
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="./publish/win-x64/FacebookOneClient.exe"
+          test -f "$BIN"
+          FILE_COUNT=$(find ./publish/win-x64 -maxdepth 1 -type f | wc -l)
+          echo "Files in ./publish/win-x64 ($FILE_COUNT):"
+          ls -lh ./publish/win-x64
+          if [ "$FILE_COUNT" -ne 1 ]; then
+            echo "Expected exactly 1 file (FacebookOneClient.exe), found $FILE_COUNT."
+            exit 1
+          fi
+
+      - name: Upload Single-File Executable Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: FacebookOneClient-win-x64
+          path: ./publish/win-x64/FacebookOneClient.exe
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload to GitHub Release
+        if: ${{ steps.release.outputs.tag != '' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: |
+            ./publish/win-x64/FacebookOneClient.exe
+          draft: true
+          fail_on_unmatched_files: true
