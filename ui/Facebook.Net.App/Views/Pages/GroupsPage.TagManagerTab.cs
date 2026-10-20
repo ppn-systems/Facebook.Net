@@ -25,6 +25,8 @@ public sealed partial class GroupsPage
     [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "UI checkmark symbol only.")]
     private Control BuildTagManagerTab(out Action refreshI18n)
     {
+        Grid tabOverlayHost = new();
+
         Grid rootGrid = new()
         {
             ColumnDefinitions = new ColumnDefinitions("1.2*,1*"),
@@ -35,10 +37,10 @@ public sealed partial class GroupsPage
         GroupTag? selectedAssignTag = this._vm.GroupTags.Count > 0 ? this._vm.GroupTags[0] : null;
         string? assignFilterMode = null; // "assigned", "unassigned", or null
 
-        // ───────────────────────────── Left Column: Create / Edit / Delete Color Tags ─────────────────────────────
+        // ───────────────────────────── Right Column: Color Tags List + Trigger Modal Button ─────────────────────────────
         Grid leftGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
             RowSpacing = 12
         };
 
@@ -51,21 +53,88 @@ public sealed partial class GroupsPage
         Grid.SetRow(leftHeader, 0);
         leftGrid.Children.Add(leftHeader);
 
+        Button openCreateModalBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Groups.BtnCreateTag"],
+            null,
+            VectorIcons.Plus);
+        Grid.SetRow(openCreateModalBtn, 1);
+        leftGrid.Children.Add(openCreateModalBtn);
+
+        StackPanel tagListStack = new()
+        {
+            Spacing = 6
+        };
+
+        ScrollViewer tagListScroll = new()
+        {
+            Content = tagListStack
+        };
+        Grid.SetRow(tagListScroll, 2);
+        leftGrid.Children.Add(tagListScroll);
+
+        Border leftCard = SurfaceCard.Create(this._theme, leftGrid, new Thickness(14));
+        Grid.SetColumn(leftCard, 1);
+        rootGrid.Children.Add(leftCard);
+
+        // ───────────────────────────── Modal Popup Overlay (Create / Edit Color Tag) ─────────────────────────────
+        Border modalBackdrop = new()
+        {
+            IsVisible = false,
+            Background = new SolidColorBrush(Color.FromArgb(148, 10, 14, 24)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
+        StackPanel modalContentStack = new()
+        {
+            Spacing = 14
+        };
+
+        Grid modalHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock modalTitleTb = SectionHeader.CreateLabel(
+            this._theme,
+            this._i18n["Groups.BtnCreateTag"],
+            16,
+            FontWeight.Bold);
+
+        ContentControl modalLivePreviewHost = new()
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Grid.SetColumn(modalTitleTb, 0);
+        Grid.SetColumn(modalLivePreviewHost, 1);
+        modalHeaderRow.Children.Add(modalTitleTb);
+        modalHeaderRow.Children.Add(modalLivePreviewHost);
+        modalContentStack.Children.Add(modalHeaderRow);
+
         TextBox tagNameBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Groups.TagNamePlaceholder"],
             this._vm.NewGroupTagName);
-        tagNameBox.TextChanged += (_, _) =>
-            this._vm.NewGroupTagName = tagNameBox.Text ?? string.Empty;
-        Grid.SetRow(tagNameBox, 1);
-        leftGrid.Children.Add(tagNameBox);
 
         WrapPanel swatchesWrap = new()
         {
             Orientation = Orientation.Horizontal,
-            ItemSpacing = 8,
-            LineSpacing = 8
+            ItemSpacing = 10,
+            LineSpacing = 10
         };
+
+        void RefreshModalLivePreview()
+        {
+            string previewName = string.IsNullOrWhiteSpace(this._vm.NewGroupTagName)
+                ? this._i18n["Groups.FilterCatColorTag"]
+                : this._vm.NewGroupTagName.Trim();
+            GroupTag sampleTag = new("preview", previewName, this._vm.NewGroupTagColorHex);
+            modalLivePreviewHost.Content = GroupRowCard.CreateTagPill(sampleTag, isActive: true);
+        }
 
         Action rebuildSwatches = null!;
         rebuildSwatches = () =>
@@ -79,18 +148,18 @@ public sealed partial class GroupsPage
 
                 Border swatch = new()
                 {
-                    Width = 28,
-                    Height = 28,
+                    Width = 32,
+                    Height = 32,
                     CornerRadius = new CornerRadius(999),
                     Background = new SolidColorBrush(c),
-                    BorderBrush = isChosen ? Brushes.White : Brushes.Transparent,
+                    BorderBrush = isChosen ? this._theme.Palette.TextPrimary : Brushes.Transparent,
                     BorderThickness = new Thickness(isChosen ? 2.5 : 0),
                     Cursor = new Cursor(StandardCursorType.Hand),
                     Child = isChosen
                         ? new TextBlock
                         {
                             Text = "✓",
-                            FontSize = 12,
+                            FontSize = 13,
                             FontWeight = FontWeight.Bold,
                             Foreground = Brushes.White,
                             HorizontalAlignment = HorizontalAlignment.Center,
@@ -102,89 +171,119 @@ public sealed partial class GroupsPage
                 {
                     this._vm.NewGroupTagColorHex = hex;
                     rebuildSwatches();
+                    RefreshModalLivePreview();
                 };
                 swatchesWrap.Children.Add(swatch);
             }
         };
-        rebuildSwatches();
-        Grid.SetRow(swatchesWrap, 2);
-        leftGrid.Children.Add(swatchesWrap);
+
+        tagNameBox.TextChanged += (_, _) =>
+        {
+            this._vm.NewGroupTagName = tagNameBox.Text ?? string.Empty;
+            RefreshModalLivePreview();
+        };
+
+        modalContentStack.Children.Add(tagNameBox);
+        modalContentStack.Children.Add(swatchesWrap);
 
         Grid formButtonsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 10
         };
-
-        Button saveOrCreateTagBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Groups.BtnCreateTag"],
-            null,
-            VectorIcons.Plus);
 
         Button cancelEditBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnCancelEditTag"],
             null,
             VectorIcons.StopCircle);
-        cancelEditBtn.IsVisible = false;
+
+        Button saveOrCreateTagBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Groups.BtnCreateTag"],
+            null,
+            VectorIcons.CheckCircle);
 
         void UpdateEditModeUi()
         {
             bool isEditing = editingTag is not null;
+            modalTitleTb.Text = isEditing ? this._i18n["Groups.BtnUpdateTag"] : this._i18n["Groups.BtnCreateTag"];
             AppButton.SetText(
                 saveOrCreateTagBtn,
                 isEditing ? this._i18n["Groups.BtnUpdateTag"] : this._i18n["Groups.BtnCreateTag"]);
-            cancelEditBtn.IsVisible = isEditing;
+            RefreshModalLivePreview();
         }
+
+        void OpenTagModal(GroupTag? tagToEdit)
+        {
+            editingTag = tagToEdit;
+            if (tagToEdit is not null)
+            {
+                this._vm.NewGroupTagName = tagToEdit.Name;
+                this._vm.NewGroupTagColorHex = tagToEdit.ColorHex;
+            }
+            else
+            {
+                this._vm.NewGroupTagName = string.Empty;
+            }
+
+            tagNameBox.Text = this._vm.NewGroupTagName;
+            rebuildSwatches();
+            UpdateEditModeUi();
+            modalBackdrop.IsVisible = true;
+            _ = tagNameBox.Focus();
+        }
+
+        void CloseTagModal()
+        {
+            modalBackdrop.IsVisible = false;
+            editingTag = null;
+            this._vm.NewGroupTagName = string.Empty;
+        }
+
+        openCreateModalBtn.Click += (_, _) => OpenTagModal(null);
 
         saveOrCreateTagBtn.Click += async (_, _) =>
         {
+            if (string.IsNullOrWhiteSpace(this._vm.NewGroupTagName))
+            {
+                _ = tagNameBox.Focus();
+                return;
+            }
+
             if (editingTag is not null)
             {
                 string tagId = editingTag.Id;
                 string newName = this._vm.NewGroupTagName;
                 string newColor = this._vm.NewGroupTagColorHex;
-                editingTag = null;
-                this._vm.NewGroupTagName = string.Empty;
-                UpdateEditModeUi();
+                CloseTagModal();
                 await this._vm.UpdateGroupTagAsync(tagId, newName, newColor).ConfigureAwait(true);
             }
             else if (this._vm.CreateGroupTagCommand.CanExecute(null))
             {
                 await this._vm.CreateGroupTagCommand.ExecuteAsync(null).ConfigureAwait(true);
+                CloseTagModal();
             }
         };
 
-        cancelEditBtn.Click += (_, _) =>
-        {
-            editingTag = null;
-            this._vm.NewGroupTagName = string.Empty;
-            UpdateEditModeUi();
-        };
+        cancelEditBtn.Click += (_, _) => CloseTagModal();
 
-        Grid.SetColumn(saveOrCreateTagBtn, 0);
         Grid.SetColumn(cancelEditBtn, 1);
-        formButtonsRow.Children.Add(saveOrCreateTagBtn);
+        Grid.SetColumn(saveOrCreateTagBtn, 2);
         formButtonsRow.Children.Add(cancelEditBtn);
-        Grid.SetRow(formButtonsRow, 3);
-        leftGrid.Children.Add(formButtonsRow);
+        formButtonsRow.Children.Add(saveOrCreateTagBtn);
+        modalContentStack.Children.Add(formButtonsRow);
 
-        StackPanel tagListStack = new()
-        {
-            Spacing = 6
-        };
+        Border modalDialogCard = SurfaceCard.Create(this._theme, modalContentStack, new Thickness(22, 18));
+        modalDialogCard.Width = 420;
+        modalDialogCard.CornerRadius = new CornerRadius(14);
+        modalDialogCard.HorizontalAlignment = HorizontalAlignment.Center;
+        modalDialogCard.VerticalAlignment = VerticalAlignment.Center;
+        modalDialogCard.PointerPressed += (_, e) => e.Handled = true;
 
-        ScrollViewer tagListScroll = new()
-        {
-            Content = tagListStack
-        };
-        Grid.SetRow(tagListScroll, 4);
-        leftGrid.Children.Add(tagListScroll);
-
-        Border leftCard = SurfaceCard.Create(this._theme, leftGrid, new Thickness(14));
-        Grid.SetColumn(leftCard, 1);
-        rootGrid.Children.Add(leftCard);
+        modalBackdrop.PointerPressed += (_, _) => CloseTagModal();
+        modalBackdrop.Child = modalDialogCard;
+        rebuildSwatches();
 
         // ───────────────────────────── Right Column: Batch Tag Assignment ─────────────────────────────
         Grid rightGrid = new()
@@ -423,14 +522,10 @@ public sealed partial class GroupsPage
                 };
                 editBtn.Click += (_, _) =>
                 {
-                    editingTag = tag;
                     selectedAssignTag = tag;
-                    this._vm.NewGroupTagName = tag.Name;
-                    this._vm.NewGroupTagColorHex = tag.ColorHex;
-                    rebuildSwatches();
-                    UpdateEditModeUi();
                     rebuildLeftTagList();
                     RefreshAssignGroups();
+                    OpenTagModal(tag);
                 };
 
                 Button deleteBtn = new()
@@ -454,9 +549,7 @@ public sealed partial class GroupsPage
                 {
                     if (editingTag is not null && string.Equals(editingTag.Id, tag.Id, StringComparison.OrdinalIgnoreCase))
                     {
-                        editingTag = null;
-                        this._vm.NewGroupTagName = string.Empty;
-                        UpdateEditModeUi();
+                        CloseTagModal();
                     }
 
                     await this._vm.DeleteGroupTagAsync(tag).ConfigureAwait(true);
@@ -619,10 +712,14 @@ public sealed partial class GroupsPage
         Grid.SetColumn(rightCard, 0);
         rootGrid.Children.Add(rightCard);
 
+        tabOverlayHost.Children.Add(rootGrid);
+        tabOverlayHost.Children.Add(modalBackdrop);
+
         refreshI18n = () =>
         {
             leftTitleTb.Text = this._i18n["Groups.TagCreatorTitle"];
             leftDescTb.Text = this._i18n["Groups.TagManagerDesc"];
+            AppButton.SetText(openCreateModalBtn, this._i18n["Groups.BtnCreateTag"]);
             tagNameBox.PlaceholderText = this._i18n["Groups.TagNamePlaceholder"];
             UpdateEditModeUi();
             AppButton.SetText(cancelEditBtn, this._i18n["Groups.BtnCancelEditTag"]);
@@ -644,6 +741,6 @@ public sealed partial class GroupsPage
             RefreshAssignGroups();
         };
 
-        return rootGrid;
+        return tabOverlayHost;
     }
 }
