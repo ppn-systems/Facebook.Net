@@ -310,12 +310,8 @@ public sealed partial class ThemeService : INotifyPropertyChanged
         return AppThemeMode.Light;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Interoperability",
-        "SYSLIB1054:Use 'LibraryImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time",
-        Justification = "Avoids requiring AllowUnsafeBlocks in UI.Core.")]
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int RegGetValueW(
+    [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int RegGetValueW(
         nint hkey,
         string lpSubKey,
         string lpValue,
