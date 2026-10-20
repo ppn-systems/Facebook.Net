@@ -138,6 +138,13 @@ public sealed class CometClientTests
         Assert.Equal("Lại vọc linh tinh rồi hẹ hẹ", post.MessageText);
         Assert.Equal(12, post.ReactionCount);
         Assert.Equal(5, post.CommentCount);
+
+        GraphQlRequest defaultReq = new(
+            FriendlyName: ProtocolConstants.Queries.GroupFeedName,
+            DocId: ProtocolConstants.Queries.GroupFeedDocId,
+            VariablesJson: "{}");
+        string defaultForm = PayloadBuilder.BuildGraphQlFormBody(CreateDummyMaterial(), defaultReq, 1);
+        Assert.Contains("__comet_req=15", defaultForm, StringComparison.Ordinal);
     }
 
     [Fact]

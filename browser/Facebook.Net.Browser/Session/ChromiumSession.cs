@@ -225,71 +225,104 @@ public sealed partial class ChromiumSession : IBrowserSession
 
         const string extractDomJs = """
             (() => {
+                const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+                const rand6 = () => Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
                 const tryReq = (mod) => {
                     try { return typeof window.require === 'function' ? window.require(mod) : null; }
                     catch { return null; }
                 };
-                const html = document.documentElement ? document.documentElement.innerHTML : '';
-                const userMod = tryReq('CurrentUserInitialData') || tryReq('CurrentUser');
-                const dtsgMod = tryReq('DTSGInitialData') || tryReq('DTSGInitData') || tryReq('DTSG');
-                const lsdMod = tryReq('LSD');
-                const siteMod = tryReq('SiteData');
+                try {
+                    const html = (document && document.documentElement) ? (document.documentElement.innerHTML || '') : '';
+                    const userMod = tryReq('CurrentUserInitialData') || tryReq('CurrentUser');
+                    const dtsgMod = tryReq('DTSGInitialData') || tryReq('DTSGInitData') || tryReq('DTSG');
+                    const lsdMod = tryReq('LSD');
+                    const siteMod = tryReq('SiteData');
 
-                let reqDtsg = '';
-                if (dtsgMod) {
-                    if (typeof dtsgMod.token === 'string' && dtsgMod.token) reqDtsg = dtsgMod.token;
-                    else if (typeof dtsgMod.getToken === 'function') {
-                        try { reqDtsg = dtsgMod.getToken() || ''; } catch {}
+                    let reqDtsg = '';
+                    if (dtsgMod) {
+                        if (typeof dtsgMod.token === 'string' && dtsgMod.token) reqDtsg = dtsgMod.token;
+                        else if (typeof dtsgMod.getToken === 'function') {
+                            try { reqDtsg = dtsgMod.getToken() || ''; } catch {}
+                        }
                     }
+                    let domDtsg = '';
+                    try { domDtsg = document.querySelector('input[name="fb_dtsg"]')?.value || ''; } catch {}
+                    const dtsg1 = html.match(/DTSGInitialData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
+                        || html.match(/DTSGInitData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
+                        || html.match(/"fb_dtsg"\s*:\s*"([^"]+)"/);
+                    const dtsg2 = html.match(/name="fb_dtsg"\s+value="([^"]+)"/);
+
+                    const reqLsd = (lsdMod && typeof lsdMod.token === 'string') ? lsdMod.token : '';
+                    const lsd = html.match(/"LSD"\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/);
+
+                    const reqRev = (siteMod && siteMod.client_revision) ? String(siteMod.client_revision) : '';
+                    const rev = html.match(/"client_revision"\s*:\s*(\d+)/);
+
+                    const reqHs = (siteMod && typeof siteMod.haste_session === 'string') ? siteMod.haste_session : '';
+                    const hs = html.match(/"haste_session"\s*:\s*"([^"]+)"/);
+
+                    let reqUid = '';
+                    if (userMod) {
+                        try {
+                            const candidate = userMod.USER_ID || userMod.ACCOUNT_ID || (typeof userMod.getID === 'function' ? userMod.getID() : '');
+                            if (candidate && String(candidate) !== '0') reqUid = String(candidate);
+                        } catch {}
+                    }
+                    let cookieStr = '';
+                    try { cookieStr = document.cookie || ''; } catch {}
+                    const uidMatch = cookieStr.match(/(?:^|;\s*)(?:i_user|c_user)=(\d+)/)
+                        || html.match(/"USER_ID"\s*:\s*"(\d+)"/)
+                        || html.match(/"ACCOUNT_ID"\s*:\s*"(\d+)"/)
+                        || html.match(/"actorID"\s*:\s*"(\d+)"/);
+
+                    const resolvedUid = reqUid || (uidMatch && uidMatch[1] !== '0' ? uidMatch[1] : '');
+                    const resolvedDtsg = reqDtsg || domDtsg || (dtsg1 ? dtsg1[1] : (dtsg2 ? dtsg2[1] : ''));
+                    const resolvedLsd = reqLsd || (lsd ? lsd[1] : '');
+                    const resolvedRev = reqRev || (rev ? rev[1] : '1020000000');
+                    const resolvedHs = reqHs || (hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1');
+
+                    return JSON.stringify({
+                        uid: resolvedUid,
+                        fbDtsg: resolvedDtsg,
+                        lsd: resolvedLsd,
+                        clientRevision: resolvedRev,
+                        hasteSession: resolvedHs,
+                        webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
+                        userAgent: navigator.userAgent || ''
+                    });
+                } catch {
+                    return JSON.stringify({
+                        uid: '',
+                        fbDtsg: '',
+                        lsd: '',
+                        clientRevision: '1020000000',
+                        hasteSession: '20745.HYP:comet_pkg.2.1...1',
+                        webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
+                        userAgent: (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
+                    });
                 }
-                const domDtsg = document.querySelector('input[name="fb_dtsg"]')?.value || '';
-                const dtsg1 = html.match(/DTSGInitialData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
-                    || html.match(/DTSGInitData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
-                    || html.match(/"fb_dtsg"\s*:\s*"([^"]+)"/);
-                const dtsg2 = html.match(/name="fb_dtsg"\s+value="([^"]+)"/);
-
-                const reqLsd = (lsdMod && typeof lsdMod.token === 'string') ? lsdMod.token : '';
-                const lsd = html.match(/"LSD"\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/);
-
-                const reqRev = (siteMod && siteMod.client_revision) ? String(siteMod.client_revision) : '';
-                const rev = html.match(/"client_revision"\s*:\s*(\d+)/);
-
-                const reqHs = (siteMod && typeof siteMod.haste_session === 'string') ? siteMod.haste_session : '';
-                const hs = html.match(/"haste_session"\s*:\s*"([^"]+)"/);
-
-                let reqUid = '';
-                if (userMod) {
-                    const candidate = userMod.USER_ID || userMod.ACCOUNT_ID || (typeof userMod.getID === 'function' ? userMod.getID() : '');
-                    if (candidate && String(candidate) !== '0') reqUid = String(candidate);
-                }
-                const uidMatch = document.cookie.match(/(?:^|;\s*)(?:i_user|c_user)=(\d+)/)
-                    || html.match(/"USER_ID"\s*:\s*"(\d+)"/)
-                    || html.match(/"ACCOUNT_ID"\s*:\s*"(\d+)"/)
-                    || html.match(/"actorID"\s*:\s*"(\d+)"/);
-
-                const resolvedUid = reqUid || (uidMatch && uidMatch[1] !== '0' ? uidMatch[1] : '');
-                const resolvedDtsg = reqDtsg || domDtsg || (dtsg1 ? dtsg1[1] : (dtsg2 ? dtsg2[1] : ''));
-                const resolvedLsd = reqLsd || (lsd ? lsd[1] : '');
-                const resolvedRev = reqRev || (rev ? rev[1] : '1020000000');
-                const resolvedHs = reqHs || (hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1');
-
-                const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-                const rand6 = () => Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-                return JSON.stringify({
-                    uid: resolvedUid,
-                    fbDtsg: resolvedDtsg,
-                    lsd: resolvedLsd,
-                    clientRevision: resolvedRev,
-                    hasteSession: resolvedHs,
-                    webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
-                    userAgent: navigator.userAgent
-                });
             })()
             """;
 
-        string snapshotJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
-        DomMaterialSnapshot? snapshot = JsonSerializer.Deserialize(snapshotJson, BrowserJsonContext.Default.DomMaterialSnapshot)
-            ?? throw new ProtocolException("Failed to deserialize DOM session material snapshot.");
+        DomMaterialSnapshot? snapshot = null;
+        try
+        {
+            string snapshotJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
+            snapshot = JsonSerializer.Deserialize(snapshotJson, BrowserJsonContext.Default.DomMaterialSnapshot);
+        }
+        catch (ProtocolException)
+        {
+            // Browser frame may still be committing navigation; fallback below will handle token extraction
+        }
+
+        snapshot ??= new DomMaterialSnapshot(
+            Uid: string.Empty,
+            FbDtsg: string.Empty,
+            Lsd: string.Empty,
+            ClientRevision: "1020000000",
+            HasteSession: "20745.HYP:comet_pkg.2.1...1",
+            WebSessionId: "abc123:def456:ghi789",
+            UserAgent: this._options?.UserAgent ?? ProtocolConstants.Protocol.DefaultWindowsUserAgent);
 
         string resolvedUid = !string.IsNullOrWhiteSpace(cookieUid) && cookieUid != "0"
             ? cookieUid
@@ -309,13 +342,20 @@ public sealed partial class ChromiumSession : IBrowserSession
             for (int attempt = 0; attempt < 8 && string.IsNullOrWhiteSpace(resolvedFbDtsg); attempt++)
             {
                 await Task.Delay(250, ct).ConfigureAwait(false);
-                string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
-                DomMaterialSnapshot? retrySnapshot = JsonSerializer.Deserialize(retryJson, BrowserJsonContext.Default.DomMaterialSnapshot);
-                if (retrySnapshot is not null && !string.IsNullOrWhiteSpace(retrySnapshot.FbDtsg))
+                try
                 {
-                    snapshot = retrySnapshot;
-                    resolvedFbDtsg = retrySnapshot.FbDtsg;
-                    break;
+                    string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
+                    DomMaterialSnapshot? retrySnapshot = JsonSerializer.Deserialize(retryJson, BrowserJsonContext.Default.DomMaterialSnapshot);
+                    if (retrySnapshot is not null && !string.IsNullOrWhiteSpace(retrySnapshot.FbDtsg))
+                    {
+                        snapshot = retrySnapshot;
+                        resolvedFbDtsg = retrySnapshot.FbDtsg;
+                        break;
+                    }
+                }
+                catch (ProtocolException)
+                {
+                    // Continue polling while navigation commits
                 }
             }
         }

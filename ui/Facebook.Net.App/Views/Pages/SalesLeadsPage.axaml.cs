@@ -65,19 +65,14 @@ public sealed partial class SalesLeadsPage : UserControl
             RowSpacing = 8
         };
 
-        Grid topHeaderRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,240,Auto"),
-            ColumnSpacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
         Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Leads.Header"],
             this._i18n["Leads.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
+        Grid.SetRow(header, 0);
+        pageGrid.Children.Add(header);
 
         ComboBox targetGroupCombo = FormField.CreateComboBox<SavedTargetGroup>(
             this._theme,
@@ -95,22 +90,7 @@ public sealed partial class SalesLeadsPage : UserControl
             }
         };
 
-        Button scanBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Leads.BtnScanGroupPosts"],
-            this._vm.ScanGroupLeadsCommand,
-            VectorIcons.Search);
-
-        Grid.SetColumn(header, 0);
-        Grid.SetColumn(targetGroupCombo, 1);
-        Grid.SetColumn(scanBtn, 2);
-        topHeaderRow.Children.Add(header);
-        topHeaderRow.Children.Add(targetGroupCombo);
-        topHeaderRow.Children.Add(scanBtn);
-        Grid.SetRow(topHeaderRow, 0);
-        pageGrid.Children.Add(topHeaderRow);
-
-        // Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ])
+        // Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]) alongside Target Group selector
         CheckBox autoReactFilterCheck = FormField.CreateCheckBox(
             this._theme,
             this._i18n["Leads.AutoReactToggle"],
@@ -132,8 +112,19 @@ public sealed partial class SalesLeadsPage : UserControl
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
 
-        Grid.SetRow(searchFilterBar, 1);
-        pageGrid.Children.Add(searchFilterBar);
+        Grid filterToolbarRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("240,*"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(targetGroupCombo, 0);
+        Grid.SetColumn(searchFilterBar, 1);
+        filterToolbarRow.Children.Add(targetGroupCombo);
+        filterToolbarRow.Children.Add(searchFilterBar);
+
+        Grid.SetRow(filterToolbarRow, 1);
+        pageGrid.Children.Add(filterToolbarRow);
 
         // Discovered Group Posts List using shared LeadPostRowCard
         ListBox postsList = FormField.CreateListBox<PostSummary>(
@@ -289,7 +280,6 @@ public sealed partial class SalesLeadsPage : UserControl
             emptyLeadsTb.Text = this._i18n["Empty.Leads"];
             searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
             autoReactFilterLbl.Text = this._i18n["Leads.AutoReactToggle"];
-            AppButton.SetText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
             autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];

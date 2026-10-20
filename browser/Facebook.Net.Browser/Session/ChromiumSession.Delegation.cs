@@ -188,6 +188,13 @@ public sealed partial class ChromiumSession
             string exText = exDetails.TryGetProperty("text"u8, out JsonElement tEl)
                 ? tEl.GetString() ?? "JS exception"
                 : "JS exception";
+            if (exDetails.TryGetProperty("exception"u8, out JsonElement exObj) &&
+                exObj.TryGetProperty("description"u8, out JsonElement descEl) &&
+                descEl.GetString() is { Length: > 0 } desc)
+            {
+                exText = string.Concat(exText, " — ", desc);
+            }
+
             throw new ProtocolException($"In-page JS evaluation failed: {exText}");
         }
 

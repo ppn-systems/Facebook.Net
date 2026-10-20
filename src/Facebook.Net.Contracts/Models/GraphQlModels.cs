@@ -15,7 +15,7 @@ public sealed record GraphQlRequest(
     string? ContextRoute = null,
     string? PreNavigateUrl = null,
     string? PostNavigateUrl = null,
-    string CometReq = "0",
+    string CometReq = "15",
     bool IsMultipartStream = false);
 
 /// <summary>

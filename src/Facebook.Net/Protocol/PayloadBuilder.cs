@@ -215,7 +215,7 @@ public static class PayloadBuilder
         AppendParam(sb, "__rev", material.ClientRevision);
         AppendParam(sb, "__s", material.WebSessionId);
         AppendParam(sb, "__hsi", hsi);
-        AppendParam(sb, "__comet_req", string.IsNullOrWhiteSpace(request.CometReq) ? "15" : request.CometReq);
+        AppendParam(sb, "__comet_req", string.IsNullOrWhiteSpace(request.CometReq) || request.CometReq == "0" ? "15" : request.CometReq);
         AppendParam(sb, "fb_dtsg", material.FbDtsg);
         AppendParam(sb, "jazoest", material.Jazoest);
         AppendParam(sb, "lsd", material.Lsd);
