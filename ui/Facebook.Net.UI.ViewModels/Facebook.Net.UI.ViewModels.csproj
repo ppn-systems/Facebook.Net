@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.UI.ViewModels - Multi-Screen MVVM ViewModels</Title>
+    <Description>Screen ViewModels for Account Vault, Visual Group Manager, Group/Personal Publisher, Sales Lead Scanner &amp; Commenter, Audit Log Drawer, and Settings.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net.Storage\Facebook.Net.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net\Facebook.Net.csproj" />
+    <ProjectReference Include="..\..\browser\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />
+    <ProjectReference Include="..\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+  </ItemGroup>
+
+</Project>

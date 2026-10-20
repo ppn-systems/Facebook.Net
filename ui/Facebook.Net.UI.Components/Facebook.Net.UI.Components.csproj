@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Facebook.Net.UI.Components - Design System Controls &amp; SVG Icons</Title>
+    <Description>Reusable Avalonia UI components, vector icons, status pills, visual entity cards, and info flyouts.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="Assets.Icons.%(Filename)%(Extension)" />
+    <None Include="Assets\Icons\*.svg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+  </ItemGroup>
+
+</Project>

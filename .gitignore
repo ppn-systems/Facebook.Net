@@ -63,3 +63,6 @@ build_errors*.txt
 /.mcp.json
 /node_modules
 /scratch.cs
+.local/
+*.session.json
+

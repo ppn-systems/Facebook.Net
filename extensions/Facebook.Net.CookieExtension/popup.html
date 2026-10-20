@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Facebook.Net Session Exporter</title>
+  <style>
+    :root {
+      --bg: #0F1115;
+      --card: #18181B;
+      --border: #27272A;
+      --brand: #F6821F;
+      --brand-hover: #FF9538;
+      --text: #FAFAFA;
+      --muted: #A1A1AA;
+      --ok: #34D399;
+      --err: #F87171;
+    }
+    body {
+      margin: 0;
+      padding: 14px;
+      width: 320px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    h3 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      color: var(--brand);
+    }
+    p {
+      margin: 0 0 12px 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: var(--brand-hover);
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>Facebook.Net — 1-Click Session</h3>
+    <p>Bấm nút bên dưới để sao chép phiên Facebook hiện tại rồi bấm <b>"Dán 1-Click từ Clipboard"</b> trên phần mềm (Cross-compatible with J2Team Cookies).</p>
+    <button id="copyBtn">Sao chép Phiên 1-Click / Copy Session</button>
+    <div id="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
