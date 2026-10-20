@@ -46,7 +46,8 @@ public sealed class BrowserSessionManager : IBrowserManager
         ArgumentException.ThrowIfNullOrWhiteSpace(options.AccountUid);
 
         if (this._sessions.TryGetValue(options.AccountUid, out IBrowserSession? existing) &&
-            existing.State == BrowserState.Running)
+            existing.State == BrowserState.Running &&
+            (options.Headless || existing.IsBrowserProcessAttached))
         {
             return existing;
         }
@@ -56,7 +57,8 @@ public sealed class BrowserSessionManager : IBrowserManager
         {
             if (this._sessions.TryGetValue(options.AccountUid, out existing))
             {
-                if (existing.State == BrowserState.Running)
+                if (existing.State == BrowserState.Running &&
+                    (options.Headless || existing.IsBrowserProcessAttached))
                 {
                     return existing;
                 }
@@ -81,7 +83,12 @@ public sealed class BrowserSessionManager : IBrowserManager
             try
             {
                 await cdp.ConnectAsync(process.DebuggerWebSocketUri, ct).ConfigureAwait(false);
-                ChromiumSession session = new(options.AccountUid, process, cdp);
+                ChromiumSession session = new(options.AccountUid, process, cdp, options);
+                if (options.EffectiveBlockStaticMedia)
+                {
+                    await session.ConfigureNetworkOptimizationAsync(blockStaticMedia: true, ct).ConfigureAwait(false);
+                }
+
                 this._sessions[options.AccountUid] = session;
                 this._lastLaunchTime = DateTimeOffset.UtcNow;
 

@@ -281,7 +281,7 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync().ConfigureAwait(true);
+        IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(forceVisible: true).ConfigureAwait(true);
         if (session is null)
         {
             return;

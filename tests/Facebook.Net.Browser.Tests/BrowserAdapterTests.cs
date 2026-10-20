@@ -35,11 +35,90 @@ public sealed class BrowserAdapterTests
 
         Assert.Contains("--remote-debugging-port=9333", args);
         Assert.Contains("--disable-blink-features=AutomationControlled", args);
+        Assert.Contains("--disable-background-networking", args);
+        Assert.Contains("--disable-component-update", args);
+        Assert.Contains("--disable-domain-reliability", args);
+        Assert.Contains("--disable-breakpad", args);
+        Assert.Contains("--disk-cache-size=104857600", args);
+        Assert.Contains("--js-flags=--max-old-space-size=256", args);
+        Assert.Contains("--enable-low-end-device-mode", args);
         Assert.Contains("--user-agent=CustomAgent/1.0", args);
         Assert.Contains("--proxy-server=socks5://10.0.0.1:1080", args);
         Assert.Contains("--window-size=1366,768", args);
         Assert.Contains("--window-position=100,200", args);
         Assert.Contains("--headless=new", args);
+        Assert.Contains("--disable-gpu", args);
+        Assert.Contains("--disable-software-rasterizer", args);
+        Assert.Contains("--mute-audio", args);
+        Assert.True(options.EffectiveBlockStaticMedia);
+        Assert.True(options.EffectiveLowResourceMode);
+    }
+
+    [Fact]
+    public void BuildStealthArguments_VisibleInteractiveMode_PreservesFullRenderingWithoutHeadlessOrMediaBlock()
+    {
+        BrowserLaunchOptions visibleOptions = new(
+            AccountUid: "10002",
+            UserDataDir: @"C:\Temp\ProfileVisible",
+            Headless: false);
+
+        IReadOnlyList<string> args = BrowserLauncherHelpers.BuildStealthArguments(visibleOptions, 9444);
+
+        Assert.Contains("--disable-background-networking", args);
+        Assert.Contains("--disable-component-update", args);
+        Assert.Contains("--disable-domain-reliability", args);
+        Assert.Contains("--disable-breakpad", args);
+        Assert.Contains("--disk-cache-size=104857600", args);
+
+        Assert.DoesNotContain("--headless=new", args);
+        Assert.DoesNotContain("--disable-gpu", args);
+        Assert.DoesNotContain("--disable-software-rasterizer", args);
+        Assert.DoesNotContain("--mute-audio", args);
+        Assert.DoesNotContain("--js-flags=--max-old-space-size=256", args);
+        Assert.DoesNotContain("--enable-low-end-device-mode", args);
+        Assert.False(visibleOptions.EffectiveBlockStaticMedia);
+        Assert.False(visibleOptions.EffectiveLowResourceMode);
+    }
+
+    [Fact]
+    public void CleanProfileDiskCache_RemovesEphemeralCacheDirs_WhilePreservingCookieStore()
+    {
+        string tempProfile = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "fbnet_cache_test_" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            string cacheDir = System.IO.Path.Combine(tempProfile, "Default", "Cache");
+            string codeCacheDir = System.IO.Path.Combine(tempProfile, "Default", "Code Cache");
+            string shaderDir = System.IO.Path.Combine(tempProfile, "GrShaderCache");
+            string crashpadDir = System.IO.Path.Combine(tempProfile, "Crashpad");
+            string cookieDir = System.IO.Path.Combine(tempProfile, "Default", "Network");
+            string cookieFile = System.IO.Path.Combine(cookieDir, "Cookies");
+
+            _ = System.IO.Directory.CreateDirectory(cacheDir);
+            _ = System.IO.Directory.CreateDirectory(codeCacheDir);
+            _ = System.IO.Directory.CreateDirectory(shaderDir);
+            _ = System.IO.Directory.CreateDirectory(crashpadDir);
+            _ = System.IO.Directory.CreateDirectory(cookieDir);
+            System.IO.File.WriteAllText(cookieFile, "c_user=10001;xs=secret;");
+
+            int cleaned = BrowserLauncherHelpers.CleanProfileDiskCache(tempProfile);
+
+            Assert.Equal(4, cleaned);
+            Assert.False(System.IO.Directory.Exists(cacheDir));
+            Assert.False(System.IO.Directory.Exists(codeCacheDir));
+            Assert.False(System.IO.Directory.Exists(shaderDir));
+            Assert.False(System.IO.Directory.Exists(crashpadDir));
+            Assert.True(System.IO.File.Exists(cookieFile));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(tempProfile))
+            {
+                System.IO.Directory.Delete(tempProfile, recursive: true);
+            }
+        }
     }
 
     [Fact]

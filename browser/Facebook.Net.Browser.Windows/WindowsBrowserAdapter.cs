@@ -87,6 +87,11 @@ public sealed class WindowsBrowserAdapter : IBrowserAdapter
             return new ManagedBrowserProcess(null, existingWsUri);
         }
 
+        if (options.CleanDiskCache)
+        {
+            _ = BrowserLauncherHelpers.CleanProfileDiskCache(options.UserDataDir);
+        }
+
         int port = BrowserLauncherHelpers.AllocateFreePort();
 
         BrowserLaunchOptions effectiveOptions = string.IsNullOrWhiteSpace(options.UserAgent)

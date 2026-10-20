@@ -32,6 +32,32 @@ public static class BrowserLauncherHelpers
     };
 
     /// <summary>
+    /// Default URL wildcard patterns blocked via CDP <c>Network.setBlockedURLs</c> during automated/headless sessions
+    /// to accelerate token extraction and save 75%–90% of proxy bandwidth.
+    /// </summary>
+    public static readonly IReadOnlyList<string> BlockedStaticAssetPatterns =
+    [
+        "*.jpg",
+        "*.jpeg",
+        "*.png",
+        "*.webp",
+        "*.mp4",
+        "*.gif",
+        "*.woff2"
+    ];
+
+    private static readonly string[] s_ephemeralCacheSubpaths =
+    [
+        Path.Combine("Default", "Cache"),
+        Path.Combine("Default", "Code Cache"),
+        Path.Combine("Default", "GPUCache"),
+        "GrShaderCache",
+        "ShaderCache",
+        "Crashpad",
+        "BrowserMetrics"
+    ];
+
+    /// <summary>
     /// Allocates an available local ephemeral TCP port on <c>127.0.0.1</c>.
     /// </summary>
     public static int AllocateFreePort()
@@ -44,13 +70,50 @@ public static class BrowserLauncherHelpers
     }
 
     /// <summary>
-    /// Builds the list of stealth command-line arguments for launching Chromium/Edge without automation flags.
+    /// Safely deletes ephemeral disk caches (<c>Default\Cache</c>, <c>Default\Code Cache</c>, <c>GrShaderCache</c>, <c>Crashpad</c>)
+    /// inside <paramref name="userDataDir"/> without touching <c>Cookies</c>, <c>Local State</c>, or <c>Preferences</c>.
+    /// </summary>
+    /// <param name="userDataDir">The Chromium profile root directory.</param>
+    /// <returns>The number of cache directories cleaned.</returns>
+    public static int CleanProfileDiskCache(string userDataDir)
+    {
+        if (string.IsNullOrWhiteSpace(userDataDir) || !Directory.Exists(userDataDir))
+        {
+            return 0;
+        }
+
+        int cleaned = 0;
+        for (int i = 0; i < s_ephemeralCacheSubpaths.Length; i++)
+        {
+            string targetDir = Path.Combine(userDataDir, s_ephemeralCacheSubpaths[i]);
+            if (!Directory.Exists(targetDir))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.Delete(targetDir, recursive: true);
+                cleaned++;
+            }
+            catch
+            {
+                // Ignore files locked by a running browser instance
+            }
+        }
+
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Builds the list of stealth and resource-optimized command-line arguments for launching Chromium/Edge.
+    /// Separates Scenario 1 (Visible user login/checkpoint: full rendering) from Scenario 2 (Headless/Automated: low RAM, GPU off).
     /// </summary>
     public static List<string> BuildStealthArguments(BrowserLaunchOptions options, int debuggingPort)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        List<string> args = new(18)
+        List<string> args = new(28)
         {
             string.Concat("--remote-debugging-port=", debuggingPort.ToString(CultureInfo.InvariantCulture)),
             string.Concat("--user-data-dir=", Path.GetFullPath(options.UserDataDir)),
@@ -60,13 +123,24 @@ public static class BrowserLauncherHelpers
             "--disable-infobars",
             "--disable-popup-blocking",
             "--disable-sync",
-            "--disable-features=msEdgeSyncConfirmation,msImplicitSignin,Translate",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-domain-reliability",
+            "--disable-breakpad",
+            "--disable-features=msEdgeSyncConfirmation,msImplicitSignin,Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions",
+            "--disk-cache-size=104857600",
             string.Concat(
                 "--window-size=",
                 options.WindowWidth.ToString(CultureInfo.InvariantCulture),
                 ",",
                 options.WindowHeight.ToString(CultureInfo.InvariantCulture))
         };
+
+        if (options.EffectiveLowResourceMode)
+        {
+            args.Add("--js-flags=--max-old-space-size=256");
+            args.Add("--enable-low-end-device-mode");
+        }
 
         if (options.WindowX.HasValue && options.WindowY.HasValue)
         {
@@ -97,6 +171,9 @@ public static class BrowserLauncherHelpers
         if (options.Headless)
         {
             args.Add("--headless=new");
+            args.Add("--disable-gpu");
+            args.Add("--disable-software-rasterizer");
+            args.Add("--mute-audio");
         }
 
         args.Add(ProtocolConstants.Endpoints.HomeEnglishUrl);

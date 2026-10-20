@@ -85,6 +85,19 @@ public interface IBrowserSession : IAsyncDisposable, IDisposable
     SessionMaterial? CurrentMaterial { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the native Chromium OS process is currently attached and running.
+    /// Returns <c>false</c> after <see cref="DetachBrowserProcessAsync"/> terminates the browser process in Extract-and-Terminate mode.
+    /// </summary>
+    bool IsBrowserProcessAttached => true;
+
+    /// <summary>
+    /// Terminates the underlying Chromium OS process to free RAM while keeping <see cref="CurrentMaterial"/>
+    /// active for direct HTTP API execution via <see cref="ExecuteInPagePostAsync"/>.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    Task DetachBrowserProcessAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
     /// Navigates the active tab to the specified URL and waits for network stability (Pre/Post-Navigation).
     /// </summary>
     /// <param name="url">Target URL to navigate to.</param>

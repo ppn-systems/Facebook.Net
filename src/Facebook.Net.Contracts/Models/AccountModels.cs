@@ -48,6 +48,8 @@ public sealed record SessionMaterial(
 
 /// <summary>
 /// Launch configuration for starting an isolated Chromium instance via OS-specific adapter.
+/// Distinguishes between interactive visible sessions (full rendering, zero media blocking) and
+/// automated headless/background extraction sessions (media blocking, V8 heap cap, GPU off, optional process detach).
 /// </summary>
 public sealed record BrowserLaunchOptions(
     string AccountUid,
@@ -59,7 +61,24 @@ public sealed record BrowserLaunchOptions(
     int WindowWidth = 1280,
     int WindowHeight = 800,
     int? WindowX = null,
-    int? WindowY = null);
+    int? WindowY = null,
+    bool? BlockStaticMedia = null,
+    bool? LowResourceMode = null,
+    bool TerminateProcessAfterExtract = false,
+    bool CleanDiskCache = true)
+{
+    /// <summary>
+    /// Gets a value indicating whether static media assets (<c>*.jpg</c>, <c>*.png</c>, <c>*.webp</c>, <c>*.mp4</c>, <c>*.gif</c>, <c>*.woff2</c>)
+    /// should be blocked via CDP <c>Network.setBlockedURLs</c>. Defaults to <see cref="Headless"/>.
+    /// </summary>
+    public bool EffectiveBlockStaticMedia => this.BlockStaticMedia ?? this.Headless;
+
+    /// <summary>
+    /// Gets a value indicating whether low-memory V8 heap limits (<c>--max-old-space-size=256</c>) and
+    /// <c>--enable-low-end-device-mode</c> should be applied. Defaults to <see cref="Headless"/>.
+    /// </summary>
+    public bool EffectiveLowResourceMode => this.LowResourceMode ?? this.Headless;
+}
 
 /// <summary>
 /// Event payload emitted when an account or browser session changes state.

@@ -3,18 +3,27 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Browser.Protocol;
 using Facebook.Net.Contracts.Exceptions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Contracts.Serialization;
 
 namespace Facebook.Net.Browser.Session;
 
 public sealed partial class ChromiumSession
 {
+    private HttpClient? _detachedHttpClient;
+
     /// <inheritdoc />
     public async Task<string> ExecuteInPagePostAsync(
         string url,
@@ -26,6 +35,11 @@ public sealed partial class ChromiumSession
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(formUrlEncodedBody);
+
+        if (this._isDetached || !this.IsBrowserProcessAttached)
+        {
+            return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
+        }
 
         string headersJson = JsonSerializer.Serialize(headers, BrowserJsonContext.Default.IReadOnlyDictionaryStringString);
         string escapedUrl = JsonSerializer.Serialize(url, ContractsJsonContext.Default.String);
@@ -64,6 +78,11 @@ public sealed partial class ChromiumSession
         if (!File.Exists(localFilePath))
         {
             throw new FileNotFoundException("Local file for DOM bridge upload was not found.", localFilePath);
+        }
+
+        if (this._isDetached || !this.IsBrowserProcessAttached)
+        {
+            return await this.ExecuteDetachedMultipartUploadAsync(uploadUrl, localFilePath, fileFieldName, additionalFields, ct).ConfigureAwait(false);
         }
 
         string bridgeId = string.Concat("__fb_bridge_", Guid.NewGuid().ToString("N"));
@@ -207,5 +226,132 @@ public sealed partial class ChromiumSession
         }
 
         throw new ProtocolException($"DOM element matching selector '{selector}' was not found.");
+    }
+
+    private HttpClient GetOrCreateDetachedHttpClient()
+    {
+        if (this._detachedHttpClient is not null)
+        {
+            return this._detachedHttpClient;
+        }
+
+        SocketsHttpHandler handler = new()
+        {
+            AutomaticDecompression = DecompressionMethods.All,
+            UseCookies = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+        };
+
+        if (this._options?.Proxy is { } proxy)
+        {
+            string scheme = proxy.Protocol == ProxyProtocol.Socks5 ? "socks5" : "http";
+            Uri proxyUri = new(string.Create(CultureInfo.InvariantCulture, $"{scheme}://{proxy.Host}:{proxy.Port}"));
+            WebProxy webProxy = new(proxyUri);
+            if (!string.IsNullOrWhiteSpace(proxy.Username))
+            {
+                webProxy.Credentials = new NetworkCredential(proxy.Username, proxy.Password ?? string.Empty);
+            }
+
+            handler.Proxy = webProxy;
+            handler.UseProxy = true;
+        }
+
+        this._detachedHttpClient = new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = TimeSpan.FromSeconds(30)
+        };
+        return this._detachedHttpClient;
+    }
+
+    private void DisposeDetachedHttpClient()
+    {
+        this._detachedHttpClient?.Dispose();
+        this._detachedHttpClient = null;
+    }
+
+    private async Task<string> ExecuteDetachedHttpPostAsync(
+        string url,
+        IReadOnlyDictionary<string, string> headers,
+        string formUrlEncodedBody,
+        CancellationToken ct)
+    {
+        SessionMaterial material = this.CurrentMaterial
+            ?? throw new ProtocolException("Cannot execute detached HTTP request before extracting SessionMaterial.");
+
+        HttpClient client = this.GetOrCreateDetachedHttpClient();
+        using HttpRequestMessage req = new(HttpMethod.Post, url)
+        {
+            Content = new StringContent(formUrlEncodedBody, Encoding.UTF8, "application/x-www-form-urlencoded")
+        };
+
+        _ = req.Headers.TryAddWithoutValidation("User-Agent", material.UserAgent);
+        _ = req.Headers.TryAddWithoutValidation("Cookie", material.CookieHeader);
+        _ = req.Headers.TryAddWithoutValidation("Origin", ProtocolConstants.Endpoints.BaseOrigin);
+        _ = req.Headers.TryAddWithoutValidation("Referer", string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/"));
+        _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
+        _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
+        _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-origin");
+
+        foreach (KeyValuePair<string, string> kvp in headers)
+        {
+            if (string.Equals(kvp.Key, "content-type", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _ = req.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
+        }
+
+        using HttpResponseMessage resp = await client.SendAsync(req, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new ProtocolException($"Detached HTTP POST failed with status {(int)resp.StatusCode} ({resp.ReasonPhrase}).");
+        }
+
+        return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<string> ExecuteDetachedMultipartUploadAsync(
+        string uploadUrl,
+        string localFilePath,
+        string fileFieldName,
+        IReadOnlyDictionary<string, string>? additionalFields,
+        CancellationToken ct)
+    {
+        SessionMaterial material = this.CurrentMaterial
+            ?? throw new ProtocolException("Cannot execute detached file upload before extracting SessionMaterial.");
+
+        HttpClient client = this.GetOrCreateDetachedHttpClient();
+        using MultipartFormDataContent form = new();
+        if (additionalFields is not null)
+        {
+            foreach (KeyValuePair<string, string> kvp in additionalFields)
+            {
+                form.Add(new StringContent(kvp.Value, Encoding.UTF8), kvp.Key);
+            }
+        }
+
+        byte[] fileBytes = await File.ReadAllBytesAsync(localFilePath, ct).ConfigureAwait(false);
+        ByteArrayContent fileContent = new(fileBytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(fileContent, fileFieldName, Path.GetFileName(localFilePath));
+
+        using HttpRequestMessage req = new(HttpMethod.Post, uploadUrl)
+        {
+            Content = form
+        };
+
+        _ = req.Headers.TryAddWithoutValidation("User-Agent", material.UserAgent);
+        _ = req.Headers.TryAddWithoutValidation("Cookie", material.CookieHeader);
+        _ = req.Headers.TryAddWithoutValidation("Origin", ProtocolConstants.Endpoints.BaseOrigin);
+        _ = req.Headers.TryAddWithoutValidation("Referer", string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/"));
+
+        using HttpResponseMessage resp = await client.SendAsync(req, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new ProtocolException($"Detached upload failed with status {(int)resp.StatusCode} ({resp.ReasonPhrase}).");
+        }
+
+        return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
     }
 }

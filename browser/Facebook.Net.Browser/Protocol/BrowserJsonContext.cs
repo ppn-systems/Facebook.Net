@@ -94,6 +94,12 @@ public sealed record CdpSetCookiesParams(
     [property: JsonPropertyName("cookies")] IReadOnlyList<CdpCookie> Cookies);
 
 /// <summary>
+/// Parameters for <c>Network.setBlockedURLs</c> CDP command to block static media and save proxy bandwidth.
+/// </summary>
+public sealed record CdpSetBlockedUrlsParams(
+    [property: JsonPropertyName("urls")] IReadOnlyList<string> Urls);
+
+/// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for CDP protocol messages under Native AOT.
 /// </summary>
 [JsonSourceGenerationOptions(
@@ -104,6 +110,7 @@ public sealed record CdpSetCookiesParams(
 [JsonSerializable(typeof(CdpEvaluateParams))]
 [JsonSerializable(typeof(CdpGetCookiesParams))]
 [JsonSerializable(typeof(CdpSetCookiesParams))]
+[JsonSerializable(typeof(CdpSetBlockedUrlsParams))]
 [JsonSerializable(typeof(CdpGetDocumentParams))]
 [JsonSerializable(typeof(CdpQuerySelectorParams))]
 [JsonSerializable(typeof(CdpSetFileInputFilesParams))]

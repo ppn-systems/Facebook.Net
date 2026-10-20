@@ -390,7 +390,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
 
         IBrowserSession? existing = this._context.SessionManager.TryGetSession(this.SelectedAccount.Uid);
-        if (existing is not null && existing.State == Facebook.Net.Contracts.Primitives.BrowserState.Running)
+        if (existing is not null &&
+            existing.State == Facebook.Net.Contracts.Primitives.BrowserState.Running &&
+            (!forceVisible || existing.IsBrowserProcessAttached))
         {
             return existing;
         }
@@ -410,14 +412,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
+        bool isAutomatedHeadless = !forceVisible && this._context.Settings.Current.RunBrowserHeadless;
         string? preferredExe = this._context.Settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions options = new(
             AccountUid: this.SelectedAccount.Uid,
             UserDataDir: this.SelectedAccount.ProfileDirectory,
             UserAgent: this.SelectedAccount.UserAgent,
             Proxy: resolvedProxy,
-            Headless: !forceVisible && this._context.Settings.Current.RunBrowserHeadless,
-            ExecutablePath: preferredExe);
+            Headless: isAutomatedHeadless,
+            ExecutablePath: preferredExe,
+            BlockStaticMedia: isAutomatedHeadless,
+            LowResourceMode: isAutomatedHeadless,
+            TerminateProcessAfterExtract: isAutomatedHeadless,
+            CleanDiskCache: true);
 
         IBrowserSession session = await this._context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.CookieHeader))
