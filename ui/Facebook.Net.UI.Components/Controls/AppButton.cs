@@ -6,6 +6,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.UI.Components.Icons;
@@ -14,15 +15,15 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Button components of <see cref="UiControls"/>: Primary CTA, Secondary Outlined, Danger/Destructive,
-/// Sidebar Navigation Item, Icon Button, and SVG Info (`i`) Flyout Button.
+/// Standalone button component factory (Primary, Secondary, Danger, IconOnly, SidebarNav, and InfoFlyout).
+/// All icons are loaded exclusively from <c>Assets/Icons/*.svg</c>.
 /// </summary>
-public static partial class UiControls
+public static class AppButton
 {
     /// <summary>
-    /// Creates a primary Call-To-Action button in brand orange (`#F6821F`) with an SVG icon.
+    /// Creates a primary action button accented with <see cref="ThemePalette.BrandPrimary"/>.
     /// </summary>
-    public static Button CreatePrimaryButton(
+    public static Button CreatePrimary(
         ThemeService theme,
         string initialText,
         ICommand? command = null,
@@ -34,54 +35,61 @@ public static partial class UiControls
         {
             Text = initialText,
             FontWeight = FontWeight.SemiBold,
-            FontSize = 12.5,
-            Foreground = Brushes.White,
+            FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.NoWrap,
+            Foreground = Brushes.White,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
-        Control buttonContent = label;
-        if (!string.IsNullOrWhiteSpace(iconSvg))
+        Control? icon = !string.IsNullOrWhiteSpace(iconSvg)
+            ? VectorIcons.Create(iconSvg, 15, Brushes.White, new Thickness(0))
+            : null;
+
+        StackPanel row = new()
         {
-            StackPanel row = new()
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 6
-            };
-            row.Children.Add(VectorIcons.Create(iconSvg, 14, Brushes.White, new Thickness(0)));
-            row.Children.Add(label);
-            buttonContent = row;
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (icon is not null)
+        {
+            row.Children.Add(icon);
         }
+
+        row.Children.Add(label);
 
         Button btn = new()
         {
-            Content = buttonContent,
+            Content = row,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 7),
+            Padding = new Thickness(14, 8),
+            BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            Foreground = Brushes.White,
-            BorderThickness = new Thickness(0),
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
         AutomationProperties.SetName(btn, initialText);
         ToolTip.SetTip(btn, initialText);
 
-        void ApplyColors() => btn.Background = theme.Palette.BrandPrimary;
+        void ApplyColors()
+        {
+            ThemePalette p = theme.Palette;
+            btn.Background = p.BrandPrimary;
+            btn.Foreground = Brushes.White;
+        }
 
         ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
+        ThemeLifecycle.Bind(btn, theme, ApplyColors);
         return btn;
     }
 
     /// <summary>
-    /// Creates a secondary outlined button with an SVG icon that adapts to Dark and Light mode.
+    /// Creates a secondary action button with subtle border and SVG icon.
     /// </summary>
-    public static Button CreateSecondaryButton(
+    public static Button CreateSecondary(
         ThemeService theme,
         string initialText,
         ICommand? command = null,
@@ -93,9 +101,8 @@ public static partial class UiControls
         {
             Text = initialText,
             FontWeight = FontWeight.Medium,
-            FontSize = 12.5,
+            FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
@@ -103,31 +110,31 @@ public static partial class UiControls
             ? VectorIcons.Create(iconSvg, 14, margin: new Thickness(0))
             : null;
 
-        Control buttonContent = label;
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         if (icon is not null)
         {
-            StackPanel row = new()
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 6
-            };
             row.Children.Add(icon);
-            row.Children.Add(label);
-            buttonContent = row;
         }
+
+        row.Children.Add(label);
 
         Button btn = new()
         {
-            Content = buttonContent,
+            Content = row,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 6),
+            Padding = new Thickness(12, 7),
+            BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            BorderThickness = new Thickness(1),
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
         AutomationProperties.SetName(btn, initialText);
         ToolTip.SetTip(btn, initialText);
@@ -145,14 +152,14 @@ public static partial class UiControls
         }
 
         ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
+        ThemeLifecycle.Bind(btn, theme, ApplyColors);
         return btn;
     }
 
     /// <summary>
-    /// Creates a subtle destructive / remove action button with danger border and SVG icon.
+    /// Creates a danger action button (delete / clear / stop) with a red outline and SVG icon.
     /// </summary>
-    public static Button CreateDangerButton(
+    public static Button CreateDanger(
         ThemeService theme,
         string initialText,
         ICommand? command = null,
@@ -164,9 +171,8 @@ public static partial class UiControls
         {
             Text = initialText,
             FontWeight = FontWeight.Medium,
-            FontSize = 12.5,
+            FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
@@ -176,9 +182,9 @@ public static partial class UiControls
         StackPanel row = new()
         {
             Orientation = Orientation.Horizontal,
+            Spacing = 7,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 6
+            VerticalAlignment = VerticalAlignment.Center
         };
         row.Children.Add(icon);
         row.Children.Add(label);
@@ -188,11 +194,11 @@ public static partial class UiControls
             Content = row,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 6),
+            Padding = new Thickness(12, 7),
+            BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            BorderThickness = new Thickness(1),
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
         AutomationProperties.SetName(btn, initialText);
         ToolTip.SetTip(btn, initialText);
@@ -207,14 +213,14 @@ public static partial class UiControls
         }
 
         ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
+        ThemeLifecycle.Bind(btn, theme, ApplyColors);
         return btn;
     }
 
     /// <summary>
-    /// Creates a compact square SVG icon button (used for sidebar collapse toggle or toolbar actions).
+    /// Creates a compact square SVG icon button.
     /// </summary>
-    public static Button CreateIconButton(
+    public static Button CreateIcon(
         ThemeService theme,
         string iconSvg,
         string tooltipText,
@@ -229,17 +235,17 @@ public static partial class UiControls
         {
             Width = size,
             Height = size,
-            Padding = new Thickness(0),
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
+            Padding = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             Command = command,
             Content = icon,
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
-        AutomationProperties.SetName(btn, tooltipText);
         ToolTip.SetTip(btn, tooltipText);
+        AutomationProperties.SetName(btn, tooltipText);
 
         void ApplyColors()
         {
@@ -250,14 +256,14 @@ public static partial class UiControls
         }
 
         ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
+        ThemeLifecycle.Bind(btn, theme, ApplyColors);
         return btn;
     }
 
     /// <summary>
-    /// Creates a reusable Sidebar Navigation Button with an SVG icon and text label.
+    /// Creates a sidebar navigation button with an SVG icon and text label that supports collapsed mode.
     /// </summary>
-    public static Button CreateSidebarNavButton(
+    public static Button CreateSidebarNav(
         string initialLabel,
         string iconSvg,
         ICommand command,
@@ -277,7 +283,7 @@ public static partial class UiControls
         StackPanel row = new()
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 12,
+            Spacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
         row.Children.Add(icon);
@@ -287,12 +293,12 @@ public static partial class UiControls
         {
             Content = row,
             Command = command,
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(11, 9),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 9),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
         AutomationProperties.SetName(btn, initialLabel);
         ToolTip.SetTip(btn, initialLabel);
@@ -303,12 +309,13 @@ public static partial class UiControls
     }
 
     /// <summary>
-    /// Creates a compact circular SVG `i` (Info) button that displays an explanatory Flyout card when clicked.
+    /// Creates a compact circular <c>i</c> (<see cref="VectorIcons.InfoCircle"/>) icon button that opens a
+    /// themed <see cref="Flyout"/> popup when clicked.
     /// </summary>
-    public static Button CreateInfoFlyoutButton(
+    public static Button CreateInfoFlyout(
         ThemeService theme,
         string initialInfoText,
-        out TextBlock flyoutTextBlock)
+        out TextBlock infoTextBlock)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
@@ -317,7 +324,7 @@ public static partial class UiControls
             Text = initialInfoText,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 320,
+            MaxWidth = 340,
             LineHeight = 18
         };
 
@@ -341,18 +348,17 @@ public static partial class UiControls
         {
             Width = 26,
             Height = 26,
-            Padding = new Thickness(0),
             CornerRadius = new CornerRadius(13),
+            Padding = new Thickness(0),
             BorderThickness = new Thickness(1),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Content = infoIcon,
             Flyout = flyout,
-            Focusable = true
+            Cursor = new Cursor(StandardCursorType.Hand)
         };
-        AutomationProperties.SetName(btn, initialInfoText);
-        ToolTip.SetTip(btn, initialInfoText);
+        AutomationProperties.SetName(btn, "Info");
 
         void ApplyColors()
         {
@@ -366,37 +372,36 @@ public static partial class UiControls
         }
 
         ApplyColors();
-        BindThemeLifecycle(btn, theme, ApplyColors);
-        flyoutTextBlock = infoBody;
+        ThemeLifecycle.Bind(btn, theme, ApplyColors);
+
+        infoTextBlock = infoBody;
         return btn;
     }
 
     /// <summary>
-    /// Updates the text inside a button created by <see cref="CreatePrimaryButton"/>, <see cref="CreateSecondaryButton"/>, or <see cref="CreateDangerButton"/>.
+    /// Updates the text label inside a button created by <see cref="AppButton"/>.
     /// </summary>
-    public static void SetButtonText(Button button, string text)
+    public static void SetText(Button btn, string newText)
     {
-        ArgumentNullException.ThrowIfNull(button);
-        AutomationProperties.SetName(button, text);
-        ToolTip.SetTip(button, text);
-        if (button.Content is TextBlock tb)
-        {
-            tb.Text = text;
-        }
-        else if (button.Content is StackPanel sp)
+        ArgumentNullException.ThrowIfNull(btn);
+
+        if (btn.Content is StackPanel sp)
         {
             for (int i = 0; i < sp.Children.Count; i++)
             {
-                if (sp.Children[i] is TextBlock innerTb)
+                if (sp.Children[i] is TextBlock tb)
                 {
-                    innerTb.Text = text;
+                    tb.Text = newText;
                     break;
                 }
             }
         }
-        else
+        else if (btn.Content is TextBlock directTb)
         {
-            button.Content = text;
+            directTb.Text = newText;
         }
+
+        AutomationProperties.SetName(btn, newText);
+        ToolTip.SetTip(btn, newText);
     }
 }

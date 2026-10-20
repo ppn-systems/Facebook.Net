@@ -4,6 +4,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -20,7 +21,8 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Independent Activity &amp; Audit Logs Page (<c>AuditLogsPage.axaml</c>).
-/// Navigated to from the bottom of <see cref="SettingsPage"/> or the footer status ticker.
+/// Features the unified <see cref="SearchFilterBar"/> (<c>[ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]</c>)
+/// and the <see cref="DataTableView{T}"/> table component.
 /// </summary>
 public sealed partial class AuditLogsPage : UserControl
 {
@@ -74,7 +76,7 @@ public sealed partial class AuditLogsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Grid header = UiControls.CreateSectionHeader(
+        Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Audit.TaskbarTitle"],
             this._i18n["Audit.SearchPlaceholder"],
@@ -89,21 +91,21 @@ public sealed partial class AuditLogsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Border okPill = UiControls.CreateIconMetricPill(
+        Border okPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.CheckCircle,
             drawerVm.SuccessCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Success,
             out TextBlock okCountTb);
 
-        Border warnPill = UiControls.CreateIconMetricPill(
+        Border warnPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.Warning,
             drawerVm.WarningCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Warning,
             out TextBlock warnCountTb);
 
-        Border errPill = UiControls.CreateIconMetricPill(
+        Border errPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.ErrorCircle,
             drawerVm.ErrorCount.ToString(CultureInfo.InvariantCulture),
@@ -114,7 +116,7 @@ public sealed partial class AuditLogsPage : UserControl
         countersRow.Children.Add(warnPill);
         countersRow.Children.Add(errPill);
 
-        Button backToSettingsBtn = UiControls.CreateSecondaryButton(
+        Button backToSettingsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Audit.BtnBackToSettings"],
             this._vm.NavigateSettingsCommand,
@@ -129,15 +131,8 @@ public sealed partial class AuditLogsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
-        // Unified 1-Row Filter & Action Bar: Category, TimeRange, Account, Keyword Search, Refresh, Clear
-        Grid filterBarRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("1.1*,1*,1.1*,1.4*,Auto,Auto"),
-            ColumnSpacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        ComboBox categoryCombo = UiControls.CreateComboBox<object>(
+        // Filter Flyout Content inside [ ▽ Bộ lọc ] button: Category, TimeRange, Account
+        ComboBox categoryCombo = FormField.CreateComboBox<object>(
             this._theme,
             new object[]
             {
@@ -152,7 +147,7 @@ public sealed partial class AuditLogsPage : UserControl
             obj =>
             {
                 AuditCategory? cat = obj is AuditCategory c ? c : null;
-                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
+                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditCategory(cat);
                 return tb;
             },
@@ -162,9 +157,8 @@ public sealed partial class AuditLogsPage : UserControl
             drawerVm.SelectedCategory = categoryCombo.SelectedItem is AuditCategory cat ? cat : null;
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
-        Grid.SetColumn(categoryCombo, 0);
 
-        ComboBox timeRangeCombo = UiControls.CreateComboBox<AuditTimeRange>(
+        ComboBox timeRangeCombo = FormField.CreateComboBox<AuditTimeRange>(
             this._theme,
             new AuditTimeRange[]
             {
@@ -175,7 +169,7 @@ public sealed partial class AuditLogsPage : UserControl
             },
             r =>
             {
-                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
+                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditTimeRange(r);
                 return tb;
             },
@@ -188,7 +182,6 @@ public sealed partial class AuditLogsPage : UserControl
                 await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
             }
         };
-        Grid.SetColumn(timeRangeCombo, 1);
 
         ObservableCollection<object> accountFilterItems = new() { "ALL" };
         for (int i = 0; i < this._vm.Accounts.Count; i++)
@@ -196,17 +189,17 @@ public sealed partial class AuditLogsPage : UserControl
             accountFilterItems.Add(this._vm.Accounts[i]);
         }
 
-        ComboBox accountFilterCombo = UiControls.CreateComboBox<object>(
+        ComboBox accountFilterCombo = FormField.CreateComboBox<object>(
             this._theme,
             accountFilterItems,
             obj =>
             {
                 if (obj is AccountProfile acc)
                 {
-                    return UiControls.CreateThemedLabel(this._theme, acc.DisplayName, 12);
+                    return SectionHeader.CreateLabel(this._theme, acc.DisplayName, 12);
                 }
 
-                TextBlock allTb = UiControls.CreateThemedLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
+                TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
                 this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Audit.FilterAccountAll"];
                 return allTb;
             },
@@ -237,73 +230,92 @@ public sealed partial class AuditLogsPage : UserControl
             drawerVm.SelectedAccountUid = accountFilterCombo.SelectedItem is AccountProfile acc ? acc.Uid : null;
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
-        Grid.SetColumn(accountFilterCombo, 2);
 
-        TextBox searchBox = UiControls.CreateTextBox(this._theme, this._i18n["Audit.SearchPlaceholder"]);
-        searchBox.TextChanged += async (_, _) =>
+        StackPanel filterFlyoutStack = new() { Spacing = 8, Width = 280 };
+        filterFlyoutStack.Children.Add(categoryCombo);
+        filterFlyoutStack.Children.Add(timeRangeCombo);
+        filterFlyoutStack.Children.Add(accountFilterCombo);
+        Border filterFlyoutCard = SurfaceCard.Create(this._theme, filterFlyoutStack, new Thickness(12));
+
+        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]) + Refresh + Clear
+        Grid filterBarRow = new()
         {
-            drawerVm.SearchKeyword = searchBox.Text ?? string.Empty;
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        SearchFilterBar searchFilterBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Audit.SearchPlaceholder"],
+            drawerVm.SearchKeyword,
+            filterFlyoutCard,
+            drawerVm.RefreshFilterCommand);
+
+        searchFilterBar.SearchTextBox.TextChanged += async (_, _) =>
+        {
+            drawerVm.SearchKeyword = searchFilterBar.SearchTextBox.Text ?? string.Empty;
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
-        Grid.SetColumn(searchBox, 3);
 
-        Button refreshBtn = UiControls.CreateSecondaryButton(
+        Button refreshBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand,
             VectorIcons.Sync);
-        Grid.SetColumn(refreshBtn, 4);
 
-        Button clearBtn = UiControls.CreateDangerButton(
+        Button clearBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Audit.BtnClear"],
             drawerVm.ClearLogsCommand,
             VectorIcons.Trash);
-        Grid.SetColumn(clearBtn, 5);
 
-        filterBarRow.Children.Add(categoryCombo);
-        filterBarRow.Children.Add(timeRangeCombo);
-        filterBarRow.Children.Add(accountFilterCombo);
-        filterBarRow.Children.Add(searchBox);
+        Grid.SetColumn(searchFilterBar, 0);
+        Grid.SetColumn(refreshBtn, 1);
+        Grid.SetColumn(clearBtn, 2);
+        filterBarRow.Children.Add(searchFilterBar);
         filterBarRow.Children.Add(refreshBtn);
         filterBarRow.Children.Add(clearBtn);
         Grid.SetRow(filterBarRow, 1);
         pageGrid.Children.Add(filterBarRow);
 
-        Border emptyLogsBanner = UiControls.CreateEmptyState(
+        // Row 2: DataTableView<AuditLogRecord> with column headers and empty state
+        DataTableView<AuditLogRecord> auditTable = new(
             this._theme,
-            this._i18n["Empty.AuditLogs"],
-            VectorIcons.AuditLog,
-            out TextBlock emptyLogsMsg);
-        emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
-
-        ListBox logList = UiControls.CreateListBox<AuditLogRecord>(
-            this._theme,
+            [
+                new DataTableColumn("66", this._i18n["Table.ColTime"]),
+                new DataTableColumn("115", this._i18n["Table.ColAccount"]),
+                new DataTableColumn("105", this._i18n["Table.ColCategory"]),
+                new DataTableColumn("130", this._i18n["Table.ColTarget"]),
+                new DataTableColumn("*", this._i18n["Table.ColMessage"])
+            ],
             drawerVm.FilteredLogs,
-            rec => UiControls.CreateAuditLogItemRow(this._theme, this._i18n, rec),
-            isVisible: drawerVm.FilteredLogs.Count > 0);
+            rec => AuditLogTableRow.Create(this._theme, this._i18n, rec),
+            this._i18n["Empty.AuditLogs"],
+            VectorIcons.AuditLog);
 
-        drawerVm.FilteredLogs.CollectionChanged += (_, _) =>
-        {
-            bool isEmpty = drawerVm.FilteredLogs.Count == 0;
-            emptyLogsBanner.IsVisible = isEmpty;
-            logList.IsVisible = !isEmpty;
-        };
-
-        Grid logContentHost = UiControls.CreateListWithEmptyStateHost(logList, emptyLogsBanner);
-        Grid.SetRow(logContentHost, 2);
-        pageGrid.Children.Add(logContentHost);
+        Grid.SetRow(auditTable, 2);
+        pageGrid.Children.Add(auditTable);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Audit.TaskbarTitle"];
             infoTb.Text = this._i18n["Audit.SearchPlaceholder"];
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
-            searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
-            emptyLogsMsg.Text = this._i18n["Empty.AuditLogs"];
-            UiControls.SetButtonText(backToSettingsBtn, this._i18n["Audit.BtnBackToSettings"]);
-            UiControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
-            UiControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
+            searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Audit.SearchPlaceholder"]);
+            auditTable.UpdateHeadersAndEmptyText(
+                [
+                    this._i18n["Table.ColTime"],
+                    this._i18n["Table.ColAccount"],
+                    this._i18n["Table.ColCategory"],
+                    this._i18n["Table.ColTarget"],
+                    this._i18n["Table.ColMessage"]
+                ],
+                this._i18n["Empty.AuditLogs"]);
+            AppButton.SetText(backToSettingsBtn, this._i18n["Audit.BtnBackToSettings"]);
+            AppButton.SetText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
+            AppButton.SetText(clearBtn, this._i18n["Audit.BtnClear"]);
         };
 
         drawerVm.PropertyChanged += (_, _) =>
@@ -313,6 +325,6 @@ public sealed partial class AuditLogsPage : UserControl
             errCountTb.Text = drawerVm.ErrorCount.ToString(CultureInfo.InvariantCulture);
         };
 
-        return UiControls.CreateCard(this._theme, pageGrid);
+        return SurfaceCard.Create(this._theme, pageGrid);
     }
 }

@@ -62,7 +62,7 @@ public sealed partial class AccountsPage : UserControl
             RowSpacing = 10
         };
 
-        Grid header = UiControls.CreateSectionHeader(
+        Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Accounts.Header"],
             this._i18n["Accounts.Desc"],
@@ -72,17 +72,17 @@ public sealed partial class AccountsPage : UserControl
         pageGrid.Children.Add(header);
 
         // Quick Import Flyout Card
-        TextBox nameBox = UiControls.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
+        TextBox nameBox = FormField.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
         nameBox.TextChanged += (_, _) => this._vm.AccountFriendlyNameInput = nameBox.Text ?? string.Empty;
 
-        TextBox cookieBox = UiControls.CreateTextBox(
+        TextBox cookieBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Accounts.CookiePlaceholder"],
             multiline: true,
             height: 85);
         cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
 
-        Button confirmImportBtn = UiControls.CreatePrimaryButton(
+        Button confirmImportBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Accounts.BtnQuickImport"],
             this._vm.QuickImportSessionCommand,
@@ -100,7 +100,7 @@ public sealed partial class AccountsPage : UserControl
         Flyout importFlyout = new()
         {
             Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = UiControls.CreateCard(this._theme, importFlyoutStack, new Thickness(14))
+            Content = SurfaceCard.Create(this._theme, importFlyoutStack, new Thickness(14))
         };
 
         // Top 1-Click Action Bar
@@ -110,13 +110,13 @@ public sealed partial class AccountsPage : UserControl
             ColumnSpacing = 8
         };
 
-        Button openBrowserBtn = UiControls.CreatePrimaryButton(
+        Button openBrowserBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Accounts.BtnOpenBrowserLogin"],
             this._vm.OpenBrowserAndSyncCommand,
             VectorIcons.Browser);
 
-        Button pasteClipboardBtn = UiControls.CreateSecondaryButton(
+        Button pasteClipboardBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Accounts.BtnPasteClipboard"],
             iconSvg: VectorIcons.Clipboard);
@@ -137,7 +137,7 @@ public sealed partial class AccountsPage : UserControl
             }
         };
 
-        Button openImportFlyoutBtn = UiControls.CreateSecondaryButton(
+        Button openImportFlyoutBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Accounts.BtnQuickImport"],
             iconSvg: VectorIcons.Accounts);
@@ -152,11 +152,11 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetRow(topActionBar, 1);
         pageGrid.Children.Add(topActionBar);
 
-        // Visual Account List using shared UiControls.CreateAccountItemCard
-        ListBox accountList = UiControls.CreateListBox<AccountProfile>(
+        // Visual Account List using shared AccountRowCard
+        ListBox accountList = FormField.CreateListBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            item => UiControls.CreateAccountItemCard(this._theme, this._i18n, item),
+            item => AccountRowCard.Create(this._theme, this._i18n, item),
             selectedItem: this._vm.SelectedAccount,
             isVisible: this._vm.Accounts.Count > 0);
 
@@ -168,7 +168,7 @@ public sealed partial class AccountsPage : UserControl
             }
         };
 
-        Border emptyAccountsBanner = UiControls.CreateEmptyState(
+        Border emptyAccountsBanner = EmptyStateBanner.Create(
             this._theme,
             this._i18n["Empty.Accounts"],
             VectorIcons.Accounts,
@@ -181,7 +181,7 @@ public sealed partial class AccountsPage : UserControl
             accountList.IsVisible = !isEmpty;
         };
 
-        Grid accountListHost = UiControls.CreateListWithEmptyStateHost(accountList, emptyAccountsBanner);
+        Grid accountListHost = EmptyStateBanner.CreateHost(accountList, emptyAccountsBanner);
         Grid.SetRow(accountListHost, 2);
         pageGrid.Children.Add(accountListHost);
 
@@ -192,12 +192,12 @@ public sealed partial class AccountsPage : UserControl
             ColumnSpacing = 8
         };
 
-        TextBox proxyBox = UiControls.CreateTextBox(
+        TextBox proxyBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Accounts.ProxyPlaceholder"]);
         proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
 
-        Button saveProxyBtn = UiControls.CreateSecondaryButton(
+        Button saveProxyBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Accounts.BtnSaveProxy"],
             this._vm.SaveAccountProxyCommand,
@@ -217,19 +217,19 @@ public sealed partial class AccountsPage : UserControl
             ColumnSpacing = 8
         };
 
-        Button checkHealthBtn = UiControls.CreateSecondaryButton(
+        Button checkHealthBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Accounts.BtnCheckHealth"],
             this._vm.CheckAccountHealthCommand,
             VectorIcons.CheckCircle);
 
-        Button warmUpBtn = UiControls.CreateSecondaryButton(
+        Button warmUpBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Accounts.BtnWarmUp"],
             this._vm.WarmUpAccountCommand,
             VectorIcons.Sync);
 
-        Button deleteBtn = UiControls.CreateDangerButton(
+        Button deleteBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Accounts.BtnDelete"],
             this._vm.DeleteSelectedAccountCommand,
@@ -276,16 +276,16 @@ public sealed partial class AccountsPage : UserControl
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
             proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
-            UiControls.SetButtonText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
-            UiControls.SetButtonText(openImportFlyoutBtn, this._i18n["Accounts.BtnQuickImport"]);
-            UiControls.SetButtonText(confirmImportBtn, this._i18n["Accounts.BtnQuickImport"]);
-            UiControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            UiControls.SetButtonText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
-            UiControls.SetButtonText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
-            UiControls.SetButtonText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
-            UiControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
+            AppButton.SetText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
+            AppButton.SetText(openImportFlyoutBtn, this._i18n["Accounts.BtnQuickImport"]);
+            AppButton.SetText(confirmImportBtn, this._i18n["Accounts.BtnQuickImport"]);
+            AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            AppButton.SetText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
+            AppButton.SetText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
+            AppButton.SetText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };
 
-        return UiControls.CreateCard(this._theme, pageGrid);
+        return SurfaceCard.Create(this._theme, pageGrid);
     }
 }

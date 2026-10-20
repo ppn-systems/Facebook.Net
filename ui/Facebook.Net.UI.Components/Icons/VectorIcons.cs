@@ -111,6 +111,9 @@ public static class VectorIcons
     /// <summary>Thumb-up / Like reaction icon asset file name.</summary>
     public const string ThumbUp = "thumb-up.svg";
 
+    /// <summary>Filter funnel icon asset file name for the Search &amp; Filter bar.</summary>
+    public const string Filter = "filter.svg";
+
     // ───────────────────────────── Create ─────────────────────────────
 
     /// <summary>

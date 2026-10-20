@@ -17,6 +17,7 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Independent Groups Catalog &amp; Target Campaign Groups Page (<c>GroupsPage.axaml</c>).
+/// Uses the unified <see cref="SearchFilterBar"/> (<c>[ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]</c>) to filter synced groups or discover new groups.
 /// </summary>
 public sealed partial class GroupsPage : UserControl
 {
@@ -68,61 +69,64 @@ public sealed partial class GroupsPage : UserControl
             RowSpacing = 8
         };
 
-        Grid header = UiControls.CreateSectionHeader(
+        Grid topHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Groups.Header"],
             this._i18n["Groups.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
 
-        Grid searchAndSyncRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        Button syncJoinedBtn = UiControls.CreateSecondaryButton(
+        Button syncJoinedBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnSyncJoined"],
             this._vm.SyncJoinedGroupsCommand,
             VectorIcons.Sync);
 
-        TextBox searchKeywordBox = UiControls.CreateTextBox(
-            this._theme,
-            this._i18n["Groups.SearchKeywordPlaceholder"]);
-        searchKeywordBox.TextChanged += (_, _) => this._vm.GroupSearchKeyword = searchKeywordBox.Text ?? string.Empty;
+        Grid.SetColumn(header, 0);
+        Grid.SetColumn(syncJoinedBtn, 1);
+        topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(syncJoinedBtn);
+        Grid.SetRow(topHeaderRow, 0);
+        catalogPane.Children.Add(topHeaderRow);
 
-        Button searchBtn = UiControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Groups.BtnSearchNew"],
-            this._vm.SearchGroupsByKeywordCommand,
-            VectorIcons.Search);
-
-        Grid.SetColumn(syncJoinedBtn, 0);
-        Grid.SetColumn(searchKeywordBox, 1);
-        Grid.SetColumn(searchBtn, 2);
-        searchAndSyncRow.Children.Add(syncJoinedBtn);
-        searchAndSyncRow.Children.Add(searchKeywordBox);
-        searchAndSyncRow.Children.Add(searchBtn);
-
-        StackPanel leftTopHeader = new() { Spacing = 8 };
-        leftTopHeader.Children.Add(header);
-        leftTopHeader.Children.Add(searchAndSyncRow);
-        Grid.SetRow(leftTopHeader, 0);
-        catalogPane.Children.Add(leftTopHeader);
-
-        TextBox localFilterBox = UiControls.CreateTextBox(
+        // Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ])
+        StackPanel filterPopoverStack = new() { Spacing = 8, Width = 260 };
+        TextBox localFilterBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Groups.FilterPlaceholder"]);
         localFilterBox.TextChanged += (_, _) => this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
-        Grid.SetRow(localFilterBox, 1);
-        catalogPane.Children.Add(localFilterBox);
+        filterPopoverStack.Children.Add(localFilterBox);
+        Border filterPopoverCard = SurfaceCard.Create(this._theme, filterPopoverStack, new Thickness(10));
 
-        ListBox groupsList = UiControls.CreateListBox<GroupSummary>(
+        SearchFilterBar searchFilterBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Groups.SearchKeywordPlaceholder"],
+            this._vm.GroupSearchKeyword,
+            filterPopoverCard,
+            this._vm.SearchGroupsByKeywordCommand);
+
+        searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
+        {
+            string text = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+            this._vm.GroupSearchKeyword = text;
+            this._vm.ApplyLocalGroupFilter(text);
+        };
+
+        Grid.SetRow(searchFilterBar, 1);
+        catalogPane.Children.Add(searchFilterBar);
+
+        ListBox groupsList = FormField.CreateListBox<GroupSummary>(
             this._theme,
             this._vm.JoinedGroups,
-            grp => UiControls.CreateGroupCatalogItemCard(this._theme, this._i18n, grp),
+            grp => GroupRowCard.CreateCatalogRow(this._theme, this._i18n, grp),
             selectedItem: this._vm.SelectedGroup,
             isVisible: this._vm.JoinedGroups.Count > 0);
 
@@ -134,7 +138,7 @@ public sealed partial class GroupsPage : UserControl
             }
         };
 
-        Border emptyGroupsBanner = UiControls.CreateEmptyState(
+        Border emptyGroupsBanner = EmptyStateBanner.Create(
             this._theme,
             this._i18n["Empty.Groups"],
             VectorIcons.Groups,
@@ -147,7 +151,7 @@ public sealed partial class GroupsPage : UserControl
             groupsList.IsVisible = !isEmpty;
         };
 
-        Grid groupsListHost = UiControls.CreateListWithEmptyStateHost(groupsList, emptyGroupsBanner);
+        Grid groupsListHost = EmptyStateBanner.CreateHost(groupsList, emptyGroupsBanner);
         Grid.SetRow(groupsListHost, 2);
         catalogPane.Children.Add(groupsListHost);
 
@@ -157,19 +161,19 @@ public sealed partial class GroupsPage : UserControl
             ColumnSpacing = 6
         };
 
-        Button saveTargetBtn = UiControls.CreatePrimaryButton(
+        Button saveTargetBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Groups.BtnSaveTarget"],
             this._vm.AddSelectedGroupToTargetsCommand,
             VectorIcons.Plus);
 
-        Button joinBtn = UiControls.CreateSecondaryButton(
+        Button joinBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnJoinSelected"],
             this._vm.JoinSelectedGroupCommand,
             VectorIcons.CheckCircle);
 
-        Button autoJoinAllBtn = UiControls.CreateSecondaryButton(
+        Button autoJoinAllBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnAutoJoinDiscovered"],
             this._vm.AutoJoinDiscoveredGroupsCommand,
@@ -184,7 +188,7 @@ public sealed partial class GroupsPage : UserControl
         Grid.SetRow(actionRow, 3);
         catalogPane.Children.Add(actionRow);
 
-        Border leftCard = UiControls.CreateCard(this._theme, catalogPane, new Thickness(12));
+        Border leftCard = SurfaceCard.Create(this._theme, catalogPane, new Thickness(12));
 
         // Right Column: Target Campaign Groups
         Grid targetsPane = new()
@@ -193,7 +197,7 @@ public sealed partial class GroupsPage : UserControl
             RowSpacing = 8
         };
 
-        StackPanel targetHeaderRow = UiControls.CreateSubSectionHeader(
+        StackPanel targetHeaderRow = SectionHeader.CreateSubHeader(
             this._theme,
             this._i18n["Groups.TargetListTitle"],
             VectorIcons.CheckCircle,
@@ -207,13 +211,13 @@ public sealed partial class GroupsPage : UserControl
             ColumnSpacing = 6
         };
 
-        Button selectAllTargetsBtn = UiControls.CreateSecondaryButton(
+        Button selectAllTargetsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnSelectAllTargets"],
             this._vm.EnableAllTargetGroupsCommand,
             VectorIcons.CheckCircle);
 
-        Button deselectAllTargetsBtn = UiControls.CreateSecondaryButton(
+        Button deselectAllTargetsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnDeselectAllTargets"],
             this._vm.DisableAllTargetGroupsCommand,
@@ -226,10 +230,10 @@ public sealed partial class GroupsPage : UserControl
         Grid.SetRow(bulkToggleRow, 1);
         targetsPane.Children.Add(bulkToggleRow);
 
-        ListBox targetList = UiControls.CreateListBox<SavedTargetGroup>(
+        ListBox targetList = FormField.CreateListBox<SavedTargetGroup>(
             this._theme,
             this._vm.TargetGroups,
-            tg => UiControls.CreateTargetGroupItemCard(
+            tg => GroupRowCard.CreateTargetRow(
                 this._theme,
                 tg,
                 nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)),
@@ -244,7 +248,7 @@ public sealed partial class GroupsPage : UserControl
             }
         };
 
-        Border emptyTargetsBanner = UiControls.CreateEmptyState(
+        Border emptyTargetsBanner = EmptyStateBanner.Create(
             this._theme,
             this._i18n["Empty.TargetGroups"],
             VectorIcons.CheckCircle,
@@ -257,11 +261,11 @@ public sealed partial class GroupsPage : UserControl
             targetList.IsVisible = !isEmpty;
         };
 
-        Grid targetListHost = UiControls.CreateListWithEmptyStateHost(targetList, emptyTargetsBanner);
+        Grid targetListHost = EmptyStateBanner.CreateHost(targetList, emptyTargetsBanner);
         Grid.SetRow(targetListHost, 2);
         targetsPane.Children.Add(targetListHost);
 
-        Button removeTargetBtn = UiControls.CreateDangerButton(
+        Button removeTargetBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Groups.BtnRemoveTarget"],
             this._vm.RemoveSelectedTargetGroupCommand,
@@ -269,7 +273,7 @@ public sealed partial class GroupsPage : UserControl
         Grid.SetRow(removeTargetBtn, 3);
         targetsPane.Children.Add(removeTargetBtn);
 
-        Border rightCard = UiControls.CreateCard(this._theme, targetsPane, new Thickness(12));
+        Border rightCard = SurfaceCard.Create(this._theme, targetsPane, new Thickness(12));
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -284,9 +288,9 @@ public sealed partial class GroupsPage : UserControl
                 targetList.SelectedItem = this._vm.SelectedTargetGroup;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.GroupSearchKeyword), StringComparison.Ordinal) &&
-                     !string.Equals(searchKeywordBox.Text, this._vm.GroupSearchKeyword, StringComparison.Ordinal))
+                     !string.Equals(searchFilterBar.SearchTextBox.Text, this._vm.GroupSearchKeyword, StringComparison.Ordinal))
             {
-                searchKeywordBox.Text = this._vm.GroupSearchKeyword;
+                searchFilterBar.SearchTextBox.Text = this._vm.GroupSearchKeyword;
             }
         };
 
@@ -296,17 +300,16 @@ public sealed partial class GroupsPage : UserControl
             descTb.Text = this._i18n["Groups.Desc"];
             emptyGroupsTb.Text = this._i18n["Empty.Groups"];
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
-            searchKeywordBox.PlaceholderText = this._i18n["Groups.SearchKeywordPlaceholder"];
+            searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.SearchKeywordPlaceholder"]);
             localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
             targetListTitle.Text = this._i18n["Groups.TargetListTitle"];
-            UiControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
-            UiControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
-            UiControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
-            UiControls.SetButtonText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
-            UiControls.SetButtonText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
-            UiControls.SetButtonText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
-            UiControls.SetButtonText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
-            UiControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
+            AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
+            AppButton.SetText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
+            AppButton.SetText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
+            AppButton.SetText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
+            AppButton.SetText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
+            AppButton.SetText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
+            AppButton.SetText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
         Grid.SetColumn(leftCard, 0);

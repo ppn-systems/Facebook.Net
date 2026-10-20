@@ -147,7 +147,7 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         i18n.SetLanguage(AppLanguage.ViVn);
         Assert.Equal("Chờ kết nối", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
         Assert.Equal("Đã tham gia", i18n.FormatGroupMembership(Facebook.Net.Contracts.Primitives.GroupMembershipState.Member));
-        Assert.Equal("Comment Sale", i18n.FormatAuditCategory(AuditCategory.SalesComment));
+        Assert.Equal("Bình luận", i18n.FormatAuditCategory(AuditCategory.SalesComment));
         Assert.Equal("Trong 24 giờ qua", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
     }
 
@@ -272,7 +272,7 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
     }
 
     [Fact]
-    public void VectorIcons_All27SvgIconAssetFiles_ExistAndContainValidPathGeometry()
+    public void VectorIcons_All28SvgIconAssetFiles_ExistAndContainValidPathGeometry()
     {
         string[] allIcons =
         [
@@ -302,10 +302,11 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
             Facebook.Net.UI.Components.Icons.VectorIcons.Download,
             Facebook.Net.UI.Components.Icons.VectorIcons.Warning,
             Facebook.Net.UI.Components.Icons.VectorIcons.ErrorCircle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.ThumbUp
+            Facebook.Net.UI.Components.Icons.VectorIcons.ThumbUp,
+            Facebook.Net.UI.Components.Icons.VectorIcons.Filter
         ];
 
-        Assert.Equal(27, allIcons.Length);
+        Assert.Equal(28, allIcons.Length);
         System.Reflection.Assembly compAsm = typeof(Facebook.Net.UI.Components.Icons.VectorIcons).Assembly;
         for (int i = 0; i < allIcons.Length; i++)
         {

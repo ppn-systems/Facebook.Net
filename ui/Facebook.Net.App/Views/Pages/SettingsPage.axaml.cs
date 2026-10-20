@@ -71,7 +71,7 @@ public sealed partial class SettingsPage : UserControl
         string CombinedSettingsInfo() =>
             $"{this._i18n["Settings.Desc"]}\n\n{this._i18n["Settings.GuideTitle"]}:\n{this._i18n["Settings.GuideBody"]}";
 
-        Grid header = UiControls.CreateSectionHeader(
+        Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Settings.Header"],
             CombinedSettingsInfo(),
@@ -86,12 +86,12 @@ public sealed partial class SettingsPage : UserControl
             ColumnSpacing = 12
         };
 
-        ComboBox themeCombo = UiControls.CreateComboBox<AppThemeMode>(
+        ComboBox themeCombo = FormField.CreateComboBox<AppThemeMode>(
             this._theme,
             new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
             m =>
             {
-                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
+                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatThemeMode(m);
                 return tb;
             },
@@ -104,16 +104,16 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        StackPanel themeCol = UiControls.CreateLabeledField(
+        StackPanel themeCol = FormField.CreateLabeled(
             this._theme,
             this._i18n["Settings.ThemeLabel"],
             themeCombo,
             out TextBlock themeLabel);
 
-        ComboBox langCombo = UiControls.CreateComboBox<AppLanguage>(
+        ComboBox langCombo = FormField.CreateComboBox<AppLanguage>(
             this._theme,
             new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
-            l => UiControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12),
+            l => SectionHeader.CreateLabel(this._theme, LocalizationService.FormatLanguage(l), 12),
             selectedItem: this._vm.SelectedLanguage);
         langCombo.SelectionChanged += (_, _) =>
         {
@@ -123,7 +123,7 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        StackPanel langCol = UiControls.CreateLabeledField(
+        StackPanel langCol = FormField.CreateLabeled(
             this._theme,
             this._i18n["Settings.LanguageLabel"],
             langCombo,
@@ -136,7 +136,7 @@ public sealed partial class SettingsPage : UserControl
         formStack.Children.Add(appearanceRow);
 
         // 2. Browser Engine Selector
-        ComboBox browserCombo = UiControls.CreateComboBox<PreferredBrowserKind>(
+        ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
             this._theme,
             new PreferredBrowserKind[]
             {
@@ -147,7 +147,7 @@ public sealed partial class SettingsPage : UserControl
             },
             k =>
             {
-                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
+                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatBrowserKind(k);
                 return tb;
             },
@@ -160,13 +160,13 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        StackPanel browserField = UiControls.CreateLabeledField(
+        StackPanel browserField = FormField.CreateLabeled(
             this._theme,
             this._i18n["Settings.BrowserEngineLabel"],
             browserCombo,
             out TextBlock browserLabel);
 
-        Grid customExeRow = UiControls.CreateFilePickerRow(
+        Grid customExeRow = FilePickerInput.Create(
             this._theme,
             this._i18n["Settings.BrowserCustomPathPlaceholder"],
             this._vm.CustomBrowserExecutablePath,
@@ -191,7 +191,7 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        CheckBox headlessCheck = UiControls.CreateCheckBox(
+        CheckBox headlessCheck = FormField.CreateCheckBox(
             this._theme,
             this._i18n["Settings.HeadlessLabel"],
             this._vm.RunBrowserHeadless,
@@ -206,7 +206,7 @@ public sealed partial class SettingsPage : UserControl
         };
 
         // 3. Anti-Checkpoint Delay Range Controls
-        Grid delayRow = UiControls.CreateDelayRangeRow(
+        Grid delayRow = DelayRangeSelector.Create(
             this._theme,
             this._i18n["Settings.MinDelayPrefix"],
             this._vm.MinDelaySeconds,
@@ -235,13 +235,13 @@ public sealed partial class SettingsPage : UserControl
             }
         };
 
-        StackPanel delayField = UiControls.CreateLabeledField(
+        StackPanel delayField = FormField.CreateLabeled(
             this._theme,
             this._i18n["Settings.DelayRangeLabel"],
             delayRow,
             out TextBlock delayRangeLabel);
 
-        Button saveBtn = UiControls.CreatePrimaryButton(
+        Button saveBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Settings.BtnSaveSettings"],
             this._vm.SaveSettingsCommand,
@@ -262,21 +262,21 @@ public sealed partial class SettingsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Border okPill = UiControls.CreateIconMetricPill(
+        Border okPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.CheckCircle,
             this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Success,
             out TextBlock okCountTb);
 
-        Border warnPill = UiControls.CreateIconMetricPill(
+        Border warnPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.Warning,
             this._vm.AuditDrawer.WarningCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Warning,
             out TextBlock warnCountTb);
 
-        Border errPill = UiControls.CreateIconMetricPill(
+        Border errPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.ErrorCircle,
             this._vm.AuditDrawer.ErrorCount.ToString(CultureInfo.InvariantCulture),
@@ -287,7 +287,7 @@ public sealed partial class SettingsPage : UserControl
         auditCounters.Children.Add(warnPill);
         auditCounters.Children.Add(errPill);
 
-        Button openAuditLogsBtn = UiControls.CreateSecondaryButton(
+        Button openAuditLogsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Settings.BtnOpenAuditLogs"],
             this._vm.NavigateAuditLogsCommand,
@@ -298,7 +298,7 @@ public sealed partial class SettingsPage : UserControl
         auditEntryRow.Children.Add(auditCounters);
         auditEntryRow.Children.Add(openAuditLogsBtn);
 
-        Border auditEntryWell = UiControls.CreateInsetWell(this._theme, auditEntryRow, new Thickness(12, 8));
+        Border auditEntryWell = SurfaceCard.CreateInset(this._theme, auditEntryRow, new Thickness(12, 8));
 
         this._vm.AuditDrawer.PropertyChanged += (_, _) =>
         {
@@ -355,16 +355,16 @@ public sealed partial class SettingsPage : UserControl
             langLabel.Text = this._i18n["Settings.LanguageLabel"];
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
-            UiControls.SetButtonText(browseExeBtn, this._i18n["Common.BrowseFile"]);
+            AppButton.SetText(browseExeBtn, this._i18n["Common.BrowseFile"]);
             headlessLabelTb.Text = this._i18n["Settings.HeadlessLabel"];
             delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
-            UiControls.SetButtonText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
-            UiControls.SetButtonText(openAuditLogsBtn, this._i18n["Settings.BtnOpenAuditLogs"]);
+            AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
+            AppButton.SetText(openAuditLogsBtn, this._i18n["Settings.BtnOpenAuditLogs"]);
         };
 
-        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = formStack });
+        return SurfaceCard.Create(this._theme, new ScrollViewer { Content = formStack });
     }
 
     private async Task<string?> PickSingleFileAsync(string title)

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -19,6 +20,7 @@ namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
 /// Independent Buyer Lead Scanner &amp; Sales Commenting Page (<c>SalesLeadsPage.axaml</c>).
+/// Uses the unified <see cref="SearchFilterBar"/> (<c>[ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ]</c>) to filter buyer keywords and scan group posts.
 /// </summary>
 public sealed partial class SalesLeadsPage : UserControl
 {
@@ -63,46 +65,63 @@ public sealed partial class SalesLeadsPage : UserControl
             RowSpacing = 8
         };
 
-        Grid header = UiControls.CreateSectionHeader(
+        Grid topHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Grid header = SectionHeader.Create(
             this._theme,
             this._i18n["Leads.Header"],
             this._i18n["Leads.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        Grid.SetRow(header, 0);
-        pageGrid.Children.Add(header);
 
-        // Top Filter & Scan Bar
-        Grid scanBar = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        TextBox buyerKwBox = UiControls.CreateTextBox(
-            this._theme,
-            this._i18n["Leads.BuyerKeywordPlaceholder"],
-            this._vm.BuyerIntentKeywords);
-        buyerKwBox.TextChanged += (_, _) => this._vm.BuyerIntentKeywords = buyerKwBox.Text ?? string.Empty;
-
-        Button scanBtn = UiControls.CreatePrimaryButton(
+        Button scanBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnScanGroupPosts"],
             this._vm.ScanGroupLeadsCommand,
             VectorIcons.Search);
 
-        Grid.SetColumn(buyerKwBox, 0);
+        Grid.SetColumn(header, 0);
         Grid.SetColumn(scanBtn, 1);
-        scanBar.Children.Add(buyerKwBox);
-        scanBar.Children.Add(scanBtn);
-        Grid.SetRow(scanBar, 1);
-        pageGrid.Children.Add(scanBar);
+        topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(scanBtn);
+        Grid.SetRow(topHeaderRow, 0);
+        pageGrid.Children.Add(topHeaderRow);
 
-        // Discovered Group Posts List using shared UiControls.CreateLeadPostItemCard with SVG icons
-        ListBox postsList = UiControls.CreateListBox<PostSummary>(
+        // Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc | 🔍 ])
+        CheckBox autoReactFilterCheck = FormField.CreateCheckBox(
+            this._theme,
+            this._i18n["Leads.AutoReactToggle"],
+            this._vm.AutoReactBeforeComment,
+            out TextBlock autoReactFilterLbl);
+        autoReactFilterCheck.IsCheckedChanged += (_, _) =>
+            this._vm.AutoReactBeforeComment = autoReactFilterCheck.IsChecked ?? false;
+
+        Border filterFlyoutCard = SurfaceCard.Create(this._theme, autoReactFilterCheck, new Thickness(12, 8));
+
+        SearchFilterBar searchFilterBar = new(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Leads.BuyerKeywordPlaceholder"],
+            this._vm.BuyerIntentKeywords,
+            filterFlyoutCard,
+            this._vm.ScanGroupLeadsCommand);
+
+        searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
+            this._vm.BuyerIntentKeywords = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+
+        Grid.SetRow(searchFilterBar, 1);
+        pageGrid.Children.Add(searchFilterBar);
+
+        // Discovered Group Posts List using shared LeadPostRowCard
+        ListBox postsList = FormField.CreateListBox<PostSummary>(
             this._theme,
             this._vm.ScrapedPosts,
-            post => UiControls.CreateLeadPostItemCard(
+            post => LeadPostRowCard.Create(
                 this._theme,
                 this._i18n,
                 post,
@@ -111,7 +130,7 @@ public sealed partial class SalesLeadsPage : UserControl
             selectedItem: this._vm.SelectedScrapedPost,
             isVisible: this._vm.ScrapedPosts.Count > 0);
 
-        Border emptyLeadsBanner = UiControls.CreateEmptyState(
+        Border emptyLeadsBanner = EmptyStateBanner.Create(
             this._theme,
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
@@ -124,12 +143,12 @@ public sealed partial class SalesLeadsPage : UserControl
             postsList.IsVisible = !isEmpty;
         };
 
-        Grid leadsListHost = UiControls.CreateListWithEmptyStateHost(postsList, emptyLeadsBanner);
+        Grid leadsListHost = EmptyStateBanner.CreateHost(postsList, emptyLeadsBanner);
         Grid.SetRow(leadsListHost, 2);
         pageGrid.Children.Add(leadsListHost);
 
         // Compact Sales Comment Composer below the list
-        TextBox commentBox = UiControls.CreateTextBox(
+        TextBox commentBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Leads.CommentContentPlaceholder"],
             this._vm.SalesCommentSpintaxText,
@@ -146,7 +165,7 @@ public sealed partial class SalesLeadsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        CheckBox autoReactCheck = UiControls.CreateCheckBox(
+        CheckBox autoReactCheck = FormField.CreateCheckBox(
             this._theme,
             this._i18n["Leads.AutoReactToggle"],
             this._vm.AutoReactBeforeComment,
@@ -154,7 +173,7 @@ public sealed partial class SalesLeadsPage : UserControl
         autoReactCheck.IsCheckedChanged += (_, _) =>
             this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
 
-        Grid commentPhotoPicker = UiControls.CreateFilePickerRow(
+        Grid commentPhotoPicker = FilePickerInput.Create(
             this._theme,
             this._i18n["Leads.CommentPhotoPlaceholder"],
             this._vm.SalesCommentPhotoPath,
@@ -185,19 +204,19 @@ public sealed partial class SalesLeadsPage : UserControl
             ColumnSpacing = 8
         };
 
-        Button sendSelectedBtn = UiControls.CreatePrimaryButton(
+        Button sendSelectedBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnSendCommentSelected"],
             this._vm.SendSalesCommentOnSelectedPostCommand,
             VectorIcons.SalesComment);
 
-        Button autoCommentAllBtn = UiControls.CreateSecondaryButton(
+        Button autoCommentAllBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnAutoCommentAllMatched"],
             this._vm.AutoCommentAllMatchedPostsCommand,
             VectorIcons.Publish);
 
-        Button openPostBtn = UiControls.CreateSecondaryButton(
+        Button openPostBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnOpenPostInBrowser"],
             this._vm.OpenSelectedPostInBrowserCommand,
@@ -244,18 +263,19 @@ public sealed partial class SalesLeadsPage : UserControl
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
             emptyLeadsTb.Text = this._i18n["Empty.Leads"];
-            buyerKwBox.PlaceholderText = this._i18n["Leads.BuyerKeywordPlaceholder"];
-            UiControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
+            searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
+            autoReactFilterLbl.Text = this._i18n["Leads.AutoReactToggle"];
+            AppButton.SetText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
             autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];
-            UiControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
-            UiControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
-            UiControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
-            UiControls.SetButtonText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
+            AppButton.SetText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
+            AppButton.SetText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
+            AppButton.SetText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
+            AppButton.SetText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
         };
 
-        return UiControls.CreateCard(this._theme, pageGrid);
+        return SurfaceCard.Create(this._theme, pageGrid);
     }
 
     private async Task<string?> PickSingleFileAsync(string title)

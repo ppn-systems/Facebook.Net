@@ -75,7 +75,7 @@ public sealed partial class MainWindow : Window
         topContextContainer.Child = this.BuildTopContextStrip();
         footerContainer.Child = this.BuildFooterRow();
 
-        // Subscribe to INavigationService to swap independent UserControl pages
+        // Subscribe to NavigationService to swap independent UserControl pages
         this._vm.Navigation.Navigated += (_, section) => this.NavigateToPage(section);
         this.NavigateToPage(this._vm.Navigation.CurrentSection);
     }
@@ -142,7 +142,7 @@ public sealed partial class MainWindow : Window
             Child = brandIcon
         };
 
-        Button collapseBtn = UiControls.CreateIconButton(
+        Button collapseBtn = AppButton.CreateIcon(
             this._theme,
             VectorIcons.SidebarToggle,
             this._i18n["Sidebar.Collapse"],
@@ -166,7 +166,7 @@ public sealed partial class MainWindow : Window
 
         void AddNavItem(string i18nKey, string svgFileName, NavigationSection section, System.Windows.Input.ICommand cmd)
         {
-            Button btn = UiControls.CreateSidebarNavButton(
+            Button btn = AppButton.CreateSidebarNav(
                 this._i18n[i18nKey],
                 svgFileName,
                 cmd,
@@ -273,7 +273,7 @@ public sealed partial class MainWindow : Window
             IsVisible = this._vm.IsBusy
         };
 
-        Button stopTaskBtn = UiControls.CreateDangerButton(
+        Button stopTaskBtn = AppButton.CreateDanger(
             this._theme,
             this._i18n["Common.BtnStopTask"],
             this._vm.StopActiveTaskCommand,
@@ -288,19 +288,19 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        TextBlock modeLbl = UiControls.CreateThemedLabel(
+        TextBlock modeLbl = SectionHeader.CreateLabel(
             this._theme,
             this._i18n["Overview.ModeLabel"],
             12,
             FontWeight.Medium,
             isSecondary: true);
 
-        ComboBox activeAccCombo = UiControls.CreateComboBox<AccountProfile>(
+        ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            acc => UiControls.CreateThemedLabel(
+            acc => SectionHeader.CreateLabel(
                 this._theme,
-                $"{acc.DisplayName} ({this._i18n.FormatAccountStatus(acc.Status)})",
+                $"{acc.DisplayName} — {this._i18n.FormatAccountStatus(acc.Status)}",
                 12,
                 FontWeight.Medium),
             selectedItem: this._vm.SelectedAccount,
@@ -334,7 +334,7 @@ public sealed partial class MainWindow : Window
         {
             modeLbl.Text = this._i18n["Overview.ModeLabel"];
             activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
-            UiControls.SetButtonText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
+            AppButton.SetText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
         };
 
         this._vm.PropertyChanged += (_, e) =>
@@ -364,7 +364,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 10, 0, 0)
         };
 
-        TextBlock footerTicker = UiControls.CreateThemedLabel(
+        TextBlock footerTicker = SectionHeader.CreateLabel(
             this._theme,
             this._vm.AuditDrawer.LatestTickerText,
             11,
@@ -373,7 +373,7 @@ public sealed partial class MainWindow : Window
         footerTicker.TextWrapping = TextWrapping.NoWrap;
         footerTicker.TextTrimming = TextTrimming.CharacterEllipsis;
 
-        TextBlock versionLabel = UiControls.CreateThemedLabel(
+        TextBlock versionLabel = SectionHeader.CreateLabel(
             this._theme,
             "Facebook.Net  |  v2026.10.0",
             11,

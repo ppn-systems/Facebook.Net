@@ -12,6 +12,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Shell;
@@ -19,8 +20,9 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App.Views.Pages;
 
 /// <summary>
-/// Independent Overview / Home Dashboard Page (<c>OverviewPage.axaml</c>).
-/// Displays live account connection status, quick actions, and 4 KPI summary cards.
+/// Smart Overview / Home Dashboard Page (<c>OverviewPage.axaml</c>).
+/// Displays 4 interactive KPI cards, an Active Session &amp; Campaign Readiness Checklist card with 1-click actions,
+/// and a real-time Recent Activity <see cref="DataTableView{T}"/>.
 /// </summary>
 public sealed partial class OverviewPage : UserControl
 {
@@ -59,112 +61,63 @@ public sealed partial class OverviewPage : UserControl
 
     private Control BuildLayout()
     {
-        StackPanel centerHero = new()
+        Grid pageGrid = new()
         {
-            Spacing = 14,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 560
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
+            RowSpacing = 10
         };
 
-        Grid headerRow = UiControls.CreateSectionHeader(
+        Grid headerRow = SectionHeader.Create(
             this._theme,
             this._i18n["Nav.Overview"],
             this._i18n["Overview.InfoTip"],
             out TextBlock titleTb,
             out TextBlock infoTb);
-        headerRow.HorizontalAlignment = HorizontalAlignment.Center;
+        Grid.SetRow(headerRow, 0);
+        pageGrid.Children.Add(headerRow);
 
-        Control heroIcon = VectorIcons.Create(VectorIcons.CheckCircle, 46, margin: new Thickness(0));
-        Border heroCircle = new()
-        {
-            Width = 88,
-            Height = 88,
-            CornerRadius = new CornerRadius(44),
-            BorderThickness = new Thickness(1),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Child = heroIcon
-        };
-
-        TextBlock statusHeading = new()
-        {
-            FontSize = 24,
-            FontWeight = FontWeight.Bold,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
-        TextBlock statusSub = UiControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Overview.SubtextDisconnected"],
-            13,
-            FontWeight.Normal,
-            isSecondary: true);
-        statusSub.TextAlignment = TextAlignment.Center;
-        statusSub.HorizontalAlignment = HorizontalAlignment.Center;
-
-        Grid actionRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
-            ColumnSpacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 6, 0, 0)
-        };
-
-        Button openBrowserBtn = UiControls.CreatePrimaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnOpenBrowserLogin"],
-            this._vm.OpenBrowserAndSyncCommand,
-            VectorIcons.Browser);
-
-        Button liveCheckBtn = UiControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnCheckHealth"],
-            this._vm.CheckAccountHealthCommand,
-            VectorIcons.CheckCircle);
-
-        Grid.SetColumn(openBrowserBtn, 0);
-        Grid.SetColumn(liveCheckBtn, 1);
-        actionRow.Children.Add(openBrowserBtn);
-        actionRow.Children.Add(liveCheckBtn);
-
+        // Row 1: 4 Interactive KPI Stat Cards (click to navigate directly to each page)
         Grid statsRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*,*"),
-            ColumnSpacing = 8,
-            Margin = new Thickness(0, 8, 0, 0)
+            ColumnSpacing = 8
         };
 
-        Border cardAcc = UiControls.CreateKpiStatCard(
+        Border cardAcc = KpiStatCard.Create(
             this._theme,
             this._i18n["Nav.Accounts"],
             "0",
             VectorIcons.Accounts,
             out TextBlock accTitleTb,
-            out TextBlock accValTb);
+            out TextBlock accValTb,
+            this._vm.NavigateAccountsCommand);
 
-        Border cardGrp = UiControls.CreateKpiStatCard(
+        Border cardGrp = KpiStatCard.Create(
             this._theme,
             this._i18n["Nav.Groups"],
             "0",
             VectorIcons.Groups,
             out TextBlock grpTitleTb,
-            out TextBlock grpValTb);
+            out TextBlock grpValTb,
+            this._vm.NavigateGroupsCommand);
 
-        Border cardLeads = UiControls.CreateKpiStatCard(
+        Border cardLeads = KpiStatCard.Create(
             this._theme,
             this._i18n["Nav.SalesLeads"],
             "0",
             VectorIcons.Search,
             out TextBlock leadsTitleTb,
-            out TextBlock leadsValTb);
+            out TextBlock leadsValTb,
+            this._vm.NavigateSalesLeadsCommand);
 
-        Border cardOk = UiControls.CreateKpiStatCard(
+        Border cardOk = KpiStatCard.Create(
             this._theme,
             this._i18n["Nav.AuditLogs"],
             "0",
             VectorIcons.CheckCircle,
             out TextBlock okTitleTb,
-            out TextBlock okValTb);
+            out TextBlock okValTb,
+            this._vm.NavigateAuditLogsCommand);
 
         Grid.SetColumn(cardAcc, 0);
         Grid.SetColumn(cardGrp, 1);
@@ -174,27 +127,176 @@ public sealed partial class OverviewPage : UserControl
         statsRow.Children.Add(cardGrp);
         statsRow.Children.Add(cardLeads);
         statsRow.Children.Add(cardOk);
-
-        centerHero.Children.Add(headerRow);
-        centerHero.Children.Add(heroCircle);
-        centerHero.Children.Add(statusHeading);
-        centerHero.Children.Add(statusSub);
-        centerHero.Children.Add(actionRow);
-
-        Border heroCard = UiControls.CreateCard(this._theme, centerHero, new Thickness(26, 20));
-        heroCard.VerticalAlignment = VerticalAlignment.Center;
-
-        Grid pageGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("*,Auto"),
-            RowSpacing = 12,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-        Grid.SetRow(heroCard, 0);
         Grid.SetRow(statsRow, 1);
-        pageGrid.Children.Add(heroCard);
         pageGrid.Children.Add(statsRow);
+
+        // Row 2: 2-Column Smart Dashboard Workspace
+        Grid mainSplit = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("1.05*,1.25*"),
+            ColumnSpacing = 10
+        };
+
+        // Left Card: Active Session Status, Readiness Checklist & Quick Actions
+        StackPanel leftStack = new() { Spacing = 10 };
+
+        StackPanel sessionHeader = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Overview.SessionCardTitle"],
+            VectorIcons.Shield,
+            out TextBlock sessionTitleTb);
+        leftStack.Children.Add(sessionHeader);
+
+        // Active Account Banner inside Left Card
+        Grid accountBannerGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Control heroIcon = VectorIcons.Create(VectorIcons.CheckCircle, 24, margin: new Thickness(0));
+        Border heroCircle = new()
+        {
+            Width = 44,
+            Height = 44,
+            CornerRadius = new CornerRadius(22),
+            BorderThickness = new Thickness(1),
+            Child = heroIcon,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel statusTextStack = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        TextBlock statusHeading = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.StatusDisconnected"], 15, FontWeight.Bold);
+        TextBlock statusSub = SectionHeader.CreateLabel(this._theme, this._i18n["Overview.SubtextDisconnected"], 11, FontWeight.Normal, isSecondary: true);
+        statusSub.MaxLines = 2;
+        statusTextStack.Children.Add(statusHeading);
+        statusTextStack.Children.Add(statusSub);
+
+        Border liveStatusPill = StatusPill.Create(this._theme, this._i18n["Overview.StatusDisconnected"], AuditSeverity.Warning);
+
+        Grid.SetColumn(heroCircle, 0);
+        Grid.SetColumn(statusTextStack, 1);
+        Grid.SetColumn(liveStatusPill, 2);
+        accountBannerGrid.Children.Add(heroCircle);
+        accountBannerGrid.Children.Add(statusTextStack);
+        accountBannerGrid.Children.Add(liveStatusPill);
+
+        Border accountBannerWell = SurfaceCard.CreateInset(this._theme, accountBannerGrid, new Thickness(12, 10));
+        leftStack.Children.Add(accountBannerWell);
+
+        // Campaign Readiness Checklist
+        StackPanel checklistStack = new() { Spacing = 6 };
+        Border accReadyPill = IconMetricPill.Create(
+            this._theme,
+            VectorIcons.CheckCircle,
+            this._i18n["Overview.CheckAccountMissing"],
+            AuditSeverity.Warning,
+            out TextBlock accReadyTb);
+        Border grpReadyPill = IconMetricPill.Create(
+            this._theme,
+            VectorIcons.Groups,
+            this._i18n["Overview.CheckGroupsMissing"],
+            AuditSeverity.Info,
+            out TextBlock grpReadyTb);
+        checklistStack.Children.Add(accReadyPill);
+        checklistStack.Children.Add(grpReadyPill);
+        leftStack.Children.Add(checklistStack);
+
+        // Quick Actions 2x2 Grid
+        StackPanel quickActionsHeader = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Overview.QuickActionsTitle"],
+            VectorIcons.BrandMark,
+            out TextBlock quickActionsTitleTb);
+        leftStack.Children.Add(quickActionsHeader);
+
+        Grid quickActionsGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto"),
+            ColumnSpacing = 8,
+            RowSpacing = 8
+        };
+
+        Button openBrowserBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Accounts.BtnOpenBrowserLogin"],
+            this._vm.OpenBrowserAndSyncCommand,
+            VectorIcons.Browser);
+
+        Button liveCheckBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Accounts.BtnCheckHealth"],
+            this._vm.CheckAccountHealthCommand,
+            VectorIcons.CheckCircle);
+
+        Button syncGroupsBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Groups.BtnSyncJoined"],
+            this._vm.SyncJoinedGroupsCommand,
+            VectorIcons.Sync);
+
+        Button warmUpBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Accounts.BtnWarmUp"],
+            this._vm.WarmUpAccountCommand,
+            VectorIcons.ThumbUp);
+
+        Grid.SetColumn(openBrowserBtn, 0);
+        Grid.SetRow(openBrowserBtn, 0);
+        Grid.SetColumn(liveCheckBtn, 1);
+        Grid.SetRow(liveCheckBtn, 0);
+        Grid.SetColumn(syncGroupsBtn, 0);
+        Grid.SetRow(syncGroupsBtn, 1);
+        Grid.SetColumn(warmUpBtn, 1);
+        Grid.SetRow(warmUpBtn, 1);
+
+        quickActionsGrid.Children.Add(openBrowserBtn);
+        quickActionsGrid.Children.Add(liveCheckBtn);
+        quickActionsGrid.Children.Add(syncGroupsBtn);
+        quickActionsGrid.Children.Add(warmUpBtn);
+        leftStack.Children.Add(quickActionsGrid);
+
+        Border leftCard = SurfaceCard.Create(this._theme, leftStack, new Thickness(14));
+
+        // Right Card: Live Recent Activity Table (DataTableView<AuditLogRecord>)
+        Grid rightGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 8
+        };
+
+        StackPanel recentLogsHeader = SectionHeader.CreateSubHeader(
+            this._theme,
+            this._i18n["Overview.RecentLogsTitle"],
+            VectorIcons.AuditLog,
+            out TextBlock recentLogsTitleTb);
+        Grid.SetRow(recentLogsHeader, 0);
+        rightGrid.Children.Add(recentLogsHeader);
+
+        DataTableView<AuditLogRecord> recentLogsTable = new(
+            this._theme,
+            [
+                new DataTableColumn("64", this._i18n["Table.ColTime"]),
+                new DataTableColumn("95", this._i18n["Table.ColCategory"]),
+                new DataTableColumn("*", this._i18n["Table.ColMessage"])
+            ],
+            this._vm.AuditDrawer.FilteredLogs,
+            rec => AuditLogTableRow.CreateCompact(this._theme, this._i18n, rec),
+            this._i18n["Empty.AuditLogs"],
+            VectorIcons.AuditLog);
+        Grid.SetRow(recentLogsTable, 1);
+        rightGrid.Children.Add(recentLogsTable);
+
+        Border rightCard = SurfaceCard.Create(this._theme, rightGrid, new Thickness(14));
+
+        Grid.SetColumn(leftCard, 0);
+        Grid.SetColumn(rightCard, 1);
+        mainSplit.Children.Add(leftCard);
+        mainSplit.Children.Add(rightCard);
+        Grid.SetRow(mainSplit, 2);
+        pageGrid.Children.Add(mainSplit);
 
         void RefreshOverviewState()
         {
@@ -210,30 +312,52 @@ public sealed partial class OverviewPage : UserControl
                 heroCircle.BorderBrush = p.BrandPrimary;
                 VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._vm.AuditDrawer.LatestTickerText;
+                StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusRunning"]);
             }
             else if (isConnected && acc is not null)
             {
-                statusHeading.Text = this._i18n["Overview.StatusConnected"];
+                statusHeading.Text = acc.DisplayName;
                 statusHeading.Foreground = p.SuccessText;
                 heroCircle.Background = p.SuccessFill;
                 heroCircle.BorderBrush = p.SuccessBorder;
                 VectorIcons.SetForeground(heroIcon, p.SuccessText);
-                statusSub.Text = $"{acc.DisplayName} — {this._i18n["Overview.SubtextConnected"]}";
+                statusSub.Text = this._i18n["Overview.SubtextConnected"];
+                StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusConnected"]);
             }
             else
             {
                 statusHeading.Text = acc is not null
-                    ? this._i18n.FormatAccountStatus(acc.Status)
+                    ? acc.DisplayName
                     : this._i18n["Overview.StatusDisconnected"];
                 statusHeading.Foreground = p.TextPrimary;
                 heroCircle.Background = p.SecondarySurface;
                 heroCircle.BorderBrush = p.SubtleBorder;
                 VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._i18n["Overview.SubtextDisconnected"];
+                StatusPill.SetText(
+                    liveStatusPill,
+                    acc is not null ? this._i18n.FormatAccountStatus(acc.Status) : this._i18n["Overview.StatusDisconnected"]);
             }
 
+            int enabledTargets = 0;
+            for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+            {
+                if (this._vm.TargetGroups[i].IsEnabled)
+                {
+                    enabledTargets++;
+                }
+            }
+
+            accReadyTb.Text = acc is not null
+                ? $"{this._i18n["Overview.CheckAccountReady"]}: {acc.DisplayName}"
+                : this._i18n["Overview.CheckAccountMissing"];
+
+            grpReadyTb.Text = enabledTargets > 0
+                ? $"{this._i18n["Overview.CheckGroupsReady"]}: {enabledTargets}/{this._vm.TargetGroups.Count}"
+                : this._i18n["Overview.CheckGroupsMissing"];
+
             accValTb.Text = this._vm.Accounts.Count.ToString(CultureInfo.InvariantCulture);
-            grpValTb.Text = this._vm.TargetGroups.Count.ToString(CultureInfo.InvariantCulture);
+            grpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
             leadsValTb.Text = this._vm.ScrapedPosts.Count.ToString(CultureInfo.InvariantCulture);
             okValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
         }
@@ -254,8 +378,20 @@ public sealed partial class OverviewPage : UserControl
             grpTitleTb.Text = this._i18n["Nav.Groups"];
             leadsTitleTb.Text = this._i18n["Nav.SalesLeads"];
             okTitleTb.Text = this._i18n["Nav.AuditLogs"];
-            UiControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            UiControls.SetButtonText(liveCheckBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            sessionTitleTb.Text = this._i18n["Overview.SessionCardTitle"];
+            quickActionsTitleTb.Text = this._i18n["Overview.QuickActionsTitle"];
+            recentLogsTitleTb.Text = this._i18n["Overview.RecentLogsTitle"];
+            recentLogsTable.UpdateHeadersAndEmptyText(
+                [
+                    this._i18n["Table.ColTime"],
+                    this._i18n["Table.ColCategory"],
+                    this._i18n["Table.ColMessage"]
+                ],
+                this._i18n["Empty.AuditLogs"]);
+            AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            AppButton.SetText(liveCheckBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            AppButton.SetText(syncGroupsBtn, this._i18n["Groups.BtnSyncJoined"]);
+            AppButton.SetText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
             RefreshOverviewState();
         };
 
