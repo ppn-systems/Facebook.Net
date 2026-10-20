@@ -312,6 +312,47 @@ public sealed partial class UiComponentArchitectureGuardTests
         Assert.True(violations.Count == 0, string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void Rule6_DddAndSolidArchitecture_DomainServicesAndInterfacesMustBeImplementedAndInjected()
+    {
+        // Verify SOLID Dependency Inversion Principle (DIP) & Interface Segregation Principle (ISP) contracts
+        Assert.True(typeof(Facebook.Net.UI.Core.Theming.IThemeService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Theming.ThemeService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Localization.ILocalizationService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Localization.LocalizationService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Configuration.IAppSettingsService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.AppSettingsService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Configuration.IStorageUsageService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.StorageUsageService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Leads.ILeadScoringService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Leads.LeadScoringService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Accounts.IAccountVaultDomainService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Accounts.AccountVaultDomainService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Groups.IGroupTagDomainService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Groups.GroupTagDomainService)));
+
+        // Verify DDD Domain Services behavior
+        Core.Leads.LeadScoringService leadScoring = Core.Leads.LeadScoringService.Instance;
+        Assert.Equal("Can tim mua can ho quan 2", leadScoring.RemoveVietnameseDiacritics("Cần tìm mua căn hộ quận 2"));
+        Assert.True(leadScoring.CalculateBuyerIntentScore("Cần tìm mua căn hộ giá tốt?", "căn hộ, đất nền") >= 75);
+
+        Core.Groups.GroupTagDomainService groupTagSvc = Core.Groups.GroupTagDomainService.Instance;
+        Facebook.Net.Contracts.Models.SavedTargetGroup sampleGroup = new("g1", "Group 1", IsEnabled: true, Notes: null, AvatarUrl: null, TagsCsv: null);
+        (Facebook.Net.Contracts.Models.SavedTargetGroup tagged, bool changed) = groupTagSvc.ApplyTagChange(sampleGroup, "tag_vip", assignTag: true);
+        Assert.True(changed);
+        Assert.Equal("tag_vip", tagged.TagsCsv);
+
+        // Verify ShellViewModel delegates to Bounded Context Domain Services instead of embedding raw domain algorithms
+        string repoRoot = FindRepositoryRoot();
+        string shellDir = Path.Combine(repoRoot, "ui", "Facebook.Net.UI.ViewModels", "Shell");
+        string salesLeadsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.SalesLeads.cs"));
+        string accountsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Accounts.cs"));
+        string groupsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Groups.cs"));
+        string settingsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Settings.cs"));
+
+        Assert.Contains("_context.LeadScoring.", salesLeadsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NormalizationForm.FormD", salesLeadsSource, StringComparison.Ordinal);
+
+        Assert.Contains("_context.AccountVault.", accountsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileMode.Open", accountsSource, StringComparison.Ordinal);
+
+        Assert.Contains("_context.GroupTagService.", groupsSource, StringComparison.Ordinal);
+        Assert.Contains("_context.StorageUsage.", settingsSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? dir = new(AppContext.BaseDirectory);

@@ -25,6 +25,70 @@ public sealed record StorageUsageSnapshot(
     IReadOnlyList<(string ProfileName, long SizeBytes)> ProfileBreakdown);
 
 /// <summary>
+/// Domain service contract for analyzing application disk/RAM usage, validating managed
+/// profile path boundaries, and cleaning transient Chromium cache directories.
+/// </summary>
+public interface IStorageUsageService
+{
+    /// <summary>Formats a byte count into a concise human-readable string (<c>KB</c>, <c>MB</c>, or <c>GB</c>).</summary>
+    string FormatByteSize(long bytes);
+
+    /// <summary>Invalidates all cached profile directory size entries so subsequent queries re-scan disk.</summary>
+    void InvalidateCache();
+
+    /// <summary>Computes the total disk size in bytes of a specific profile folder using an in-memory TTL cache.</summary>
+    long GetProfileDirectorySizeBytes(string? directoryPath, bool forceRefresh = false);
+
+    /// <summary>Checks whether the specified <paramref name="directoryPath"/> is strictly inside the application's managed <c>Profiles</c> root directory.</summary>
+    bool IsProfileInsideManagedRoot(string? directoryPath, string? profilesRootDirectory);
+
+    /// <summary>Scans the application's local data directory and isolated Chromium profile folders to compute a <see cref="StorageUsageSnapshot"/>.</summary>
+    StorageUsageSnapshot CalculateSnapshot(
+        string dataDir,
+        string profilesRoot,
+        Func<string, string, string>? resolveFriendlyProfileLabel = null);
+
+    /// <summary>Deletes transient Chromium disk caches across all managed profile folders under <paramref name="profilesRoot"/>.</summary>
+    void CleanProfileCaches(string? profilesRoot);
+}
+
+/// <summary>
+/// Default injectable implementation of <see cref="IStorageUsageService"/> delegating to <see cref="StorageUsageAnalyzer"/>.
+/// </summary>
+public sealed class StorageUsageService : IStorageUsageService
+{
+    /// <summary>Gets the shared stateless instance of <see cref="StorageUsageService"/>.</summary>
+    public static StorageUsageService Instance { get; } = new();
+
+    /// <inheritdoc />
+    public string FormatByteSize(long bytes) =>
+        StorageUsageAnalyzer.FormatByteSize(bytes);
+
+    /// <inheritdoc />
+    public void InvalidateCache() =>
+        StorageUsageAnalyzer.InvalidateCache();
+
+    /// <inheritdoc />
+    public long GetProfileDirectorySizeBytes(string? directoryPath, bool forceRefresh = false) =>
+        StorageUsageAnalyzer.GetProfileDirectorySizeBytes(directoryPath, forceRefresh);
+
+    /// <inheritdoc />
+    public bool IsProfileInsideManagedRoot(string? directoryPath, string? profilesRootDirectory) =>
+        StorageUsageAnalyzer.IsProfileInsideManagedRoot(directoryPath, profilesRootDirectory);
+
+    /// <inheritdoc />
+    public StorageUsageSnapshot CalculateSnapshot(
+        string dataDir,
+        string profilesRoot,
+        Func<string, string, string>? resolveFriendlyProfileLabel = null) =>
+        StorageUsageAnalyzer.CalculateSnapshot(dataDir, profilesRoot, resolveFriendlyProfileLabel);
+
+    /// <inheritdoc />
+    public void CleanProfileCaches(string? profilesRoot) =>
+        StorageUsageAnalyzer.CleanProfileCaches(profilesRoot);
+}
+
+/// <summary>
 /// Single-responsibility domain service for analyzing application disk/RAM usage, validating managed
 /// profile path boundaries, cleaning transient Chromium cache directories, and caching directory sizes
 /// with a short TTL to prevent UI-thread disk I/O during real-time list filtering.

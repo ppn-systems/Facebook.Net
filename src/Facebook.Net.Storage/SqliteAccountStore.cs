@@ -37,7 +37,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             Pooling = true,
             DefaultTimeout = 5
         };
-        this._connectionString = builder.ToString();
+        _connectionString = builder.ToString();
     }
 
     /// <inheritdoc />
@@ -147,7 +147,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_scraped_at ON scraped_posts(scraped_at DESC);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -224,7 +224,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             ORDER BY uid ASC;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -252,7 +252,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             LIMIT 1;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -288,7 +288,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 avatar_url = COALESCE(excluded.avatar_url, accounts.avatar_url);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -316,7 +316,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(uid);
 
         const string sql = "DELETE FROM accounts WHERE uid = $uid;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;

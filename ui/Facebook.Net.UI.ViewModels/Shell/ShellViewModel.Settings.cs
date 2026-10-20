@@ -271,7 +271,7 @@ public sealed partial class ShellViewModel
     /// Scans the application's local data directory and isolated Chromium profile folders to compute real-time storage usage.
     /// </summary>
     public StorageUsageSnapshot CalculateStorageUsageSnapshot() =>
-        StorageUsageAnalyzer.CalculateSnapshot(
+        this._context.StorageUsage.CalculateSnapshot(
             this._context.DataDirectory,
             this._context.ProfilesRootDirectory,
             this.ResolveFriendlyProfileLabel);
@@ -282,7 +282,7 @@ public sealed partial class ShellViewModel
     public async Task<long> CleanBrowserProfilesCacheAsync()
     {
         StorageUsageSnapshot before = this.CalculateStorageUsageSnapshot();
-        StorageUsageAnalyzer.CleanProfileCaches(this._context.ProfilesRootDirectory);
+        this._context.StorageUsage.CleanProfileCaches(this._context.ProfilesRootDirectory);
         StorageUsageSnapshot after = this.CalculateStorageUsageSnapshot();
         long freedBytes = Math.Max(0, before.TotalUsedBytes - after.TotalUsedBytes);
 
@@ -341,7 +341,7 @@ public sealed partial class ShellViewModel
     /// Checks whether the specified <paramref name="directoryPath"/> is strictly inside the application's managed <c>Profiles</c> root directory.
     /// </summary>
     public bool IsProfileInsideManagedRoot(string? directoryPath) =>
-        StorageUsageAnalyzer.IsProfileInsideManagedRoot(directoryPath, this._context.ProfilesRootDirectory);
+        this._context.StorageUsage.IsProfileInsideManagedRoot(directoryPath, this._context.ProfilesRootDirectory);
 
     /// <summary>
     /// Computes the total disk size in bytes of a specific profile folder using the fast TTL cache.
@@ -382,7 +382,7 @@ public sealed partial class ShellViewModel
             }
         }
 
-        StorageUsageAnalyzer.InvalidateCache();
+        this._context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
@@ -424,7 +424,7 @@ public sealed partial class ShellViewModel
 
         string newProfileDir = Path.Combine(this._context.ProfilesRootDirectory, safeFolderName);
         _ = Directory.CreateDirectory(newProfileDir);
-        StorageUsageAnalyzer.InvalidateCache();
+        this._context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
@@ -479,7 +479,7 @@ public sealed partial class ShellViewModel
             string ua = OperatingSystem.IsMacOS()
                 ? ProtocolConstants.Protocol.DefaultMacOsUserAgent
                 : ProtocolConstants.Protocol.DefaultWindowsUserAgent;
-            bool hasCookies = HasProfileAuthenticatedCookieStore(fullPath);
+            bool hasCookies = this.HasProfileAuthenticatedCookieStore(fullPath);
 
             AccountProfile created = new(
                 Uid: newUid,

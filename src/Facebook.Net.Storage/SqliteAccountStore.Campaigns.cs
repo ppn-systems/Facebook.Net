@@ -23,7 +23,7 @@ public sealed partial class SqliteAccountStore
     {
         const string sql = "SELECT group_id, group_name, is_enabled, notes, avatar_url, tags_csv FROM target_groups ORDER BY group_name ASC;";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -54,7 +54,7 @@ public sealed partial class SqliteAccountStore
                 tags_csv = COALESCE(excluded.tags_csv, target_groups.tags_csv);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -74,7 +74,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
         const string sql = "DELETE FROM target_groups WHERE group_id = $group_id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -93,7 +93,7 @@ public sealed partial class SqliteAccountStore
             ORDER BY title ASC;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -123,7 +123,7 @@ public sealed partial class SqliteAccountStore
                 is_comment_template = excluded.is_comment_template;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -142,7 +142,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(templateId);
 
         const string sql = "DELETE FROM campaign_templates WHERE id = $id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -166,7 +166,7 @@ public sealed partial class SqliteAccountStore
             LIMIT 1;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -191,7 +191,7 @@ public sealed partial class SqliteAccountStore
                 executed_at = excluded.executed_at;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -214,7 +214,7 @@ public sealed partial class SqliteAccountStore
             LIMIT $limit;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -269,7 +269,7 @@ public sealed partial class SqliteAccountStore
 
         string nowIso = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
 
@@ -349,7 +349,7 @@ public sealed partial class SqliteAccountStore
             ? null
             : $"%{searchKeyword.Trim()}%";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -377,7 +377,7 @@ public sealed partial class SqliteAccountStore
 
         string? normalizedGroup = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -391,7 +391,7 @@ public sealed partial class SqliteAccountStore
     {
         const string sql = "SELECT id, name, color_hex FROM group_tags ORDER BY name ASC;";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -422,7 +422,7 @@ public sealed partial class SqliteAccountStore
                 color_hex = excluded.color_hex;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -439,7 +439,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(tagId);
 
         const string sql = "DELETE FROM group_tags WHERE id = $id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -478,7 +478,7 @@ public sealed partial class SqliteAccountStore
 
         string? normalizedUid = string.IsNullOrWhiteSpace(accountUid) ? null : accountUid.Trim();
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -528,7 +528,7 @@ public sealed partial class SqliteAccountStore
                 comment_count = MAX(published_posts.comment_count, excluded.comment_count);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -557,7 +557,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(postId);
 
         const string sql = "DELETE FROM published_posts WHERE post_id = $post_id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;

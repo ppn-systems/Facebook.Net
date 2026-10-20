@@ -10,8 +10,11 @@ using Facebook.Net.Client;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Storage;
+using Facebook.Net.UI.Core.Accounts;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Groups;
+using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.Core.Threading;
@@ -25,36 +28,36 @@ namespace Facebook.Net.UI.ViewModels.Services;
 public sealed class ConfigurableBrowserAdapter : IBrowserAdapter
 {
     private readonly IBrowserAdapter _inner;
-    private readonly AppSettingsService _settings;
+    private readonly IAppSettingsService _settings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfigurableBrowserAdapter"/> class.
     /// </summary>
-    public ConfigurableBrowserAdapter(IBrowserAdapter inner, AppSettingsService settings)
+    public ConfigurableBrowserAdapter(IBrowserAdapter inner, IAppSettingsService settings)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(settings);
-        this._inner = inner;
-        this._settings = settings;
+        _inner = inner;
+        _settings = settings;
     }
 
     /// <inheritdoc />
-    public string PlatformName => this._inner.PlatformName;
+    public string PlatformName => _inner.PlatformName;
 
     /// <inheritdoc />
     public string? LocateExecutablePath() =>
-        this._settings.ResolvePreferredBrowserExecutable() ?? this._inner.LocateExecutablePath();
+        _settings.ResolvePreferredBrowserExecutable() ?? _inner.LocateExecutablePath();
 
     /// <inheritdoc />
     public Task<IBrowserProcess> LaunchProcessAsync(BrowserLaunchOptions options, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(options);
-        string? preferredExe = this._settings.ResolvePreferredBrowserExecutable();
+        string? preferredExe = _settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions effectiveOptions = !string.IsNullOrWhiteSpace(preferredExe) && string.IsNullOrWhiteSpace(options.ExecutablePath)
             ? options with { ExecutablePath = preferredExe }
             : options;
 
-        return this._inner.LaunchProcessAsync(effectiveOptions, ct);
+        return _inner.LaunchProcessAsync(effectiveOptions, ct);
     }
 }
 
@@ -77,6 +80,10 @@ public sealed class UiServiceContext : IDisposable
     /// <param name="auditStore">Optional custom audit log store implementation (for testing).</param>
     /// <param name="sessionManager">Optional custom browser session manager implementation (for testing).</param>
     /// <param name="cometClient">Optional custom Comet GraphQL client implementation (for testing).</param>
+    /// <param name="storageUsage"></param>
+    /// <param name="leadScoring"></param>
+    /// <param name="accountVault"></param>
+    /// <param name="groupTagService"></param>
     public UiServiceContext(
         IBrowserAdapter platformBrowserAdapter,
         string? customDataDir = null,
@@ -84,7 +91,11 @@ public sealed class UiServiceContext : IDisposable
         IAccountStore? accountStore = null,
         IAuditLogStore? auditStore = null,
         IBrowserManager? sessionManager = null,
-        ICometClient? cometClient = null)
+        ICometClient? cometClient = null,
+        IStorageUsageService? storageUsage = null,
+        ILeadScoringService? leadScoring = null,
+        IAccountVaultDomainService? accountVault = null,
+        IGroupTagDomainService? groupTagService = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
 
@@ -115,6 +126,11 @@ public sealed class UiServiceContext : IDisposable
         string auditDbPath = Path.Combine(rootDir, "facebook_audit.db");
         this.AuditStore = auditStore ?? new SqliteAuditLogStore(auditDbPath);
 
+        this.StorageUsage = storageUsage ?? StorageUsageService.Instance;
+        this.LeadScoring = leadScoring ?? LeadScoringService.Instance;
+        this.AccountVault = accountVault ?? AccountVaultDomainService.Instance;
+        this.GroupTagService = groupTagService ?? GroupTagDomainService.Instance;
+
         this.BrowserAdapter = new ConfigurableBrowserAdapter(platformBrowserAdapter, this.Settings);
         this.SessionManager = sessionManager ?? new BrowserSessionManager(this.BrowserAdapter);
         this.CometClient = cometClient ?? new CometClient();
@@ -143,6 +159,18 @@ public sealed class UiServiceContext : IDisposable
 
     /// <summary>Gets the dedicated audit log store (<c>facebook_audit.db</c>).</summary>
     public IAuditLogStore AuditStore { get; }
+
+    /// <summary>Gets the disk and profile storage usage domain service.</summary>
+    public IStorageUsageService StorageUsage { get; }
+
+    /// <summary>Gets the buyer-intent lead scoring and Vietnamese diacritic normalization domain service.</summary>
+    public ILeadScoringService LeadScoring { get; }
+
+    /// <summary>Gets the account vault and cookie store authentication domain service.</summary>
+    public IAccountVaultDomainService AccountVault { get; }
+
+    /// <summary>Gets the group color tag and anti-spam group selection domain service.</summary>
+    public IGroupTagDomainService GroupTagService { get; }
 
     /// <summary>Gets the configurable browser adapter.</summary>
     public IBrowserAdapter BrowserAdapter { get; }

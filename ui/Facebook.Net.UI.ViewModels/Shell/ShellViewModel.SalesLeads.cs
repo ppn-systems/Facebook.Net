@@ -12,6 +12,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Leads;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
 
@@ -162,34 +163,34 @@ public sealed partial class ShellViewModel
     /// Returns whether the specified <paramref name="postId"/> has already been commented on by any account in the local action history.
     /// </summary>
     public bool IsPostCommented(string? postId) =>
-        !string.IsNullOrWhiteSpace(postId) && this._commentedPostIds.Contains(postId);
+        !string.IsNullOrWhiteSpace(postId) && _commentedPostIds.Contains(postId);
 
     /// <summary>
     /// Queries stored posts from the local SQLite database (<c>scraped_posts</c>) and applies the local search/filter without calling Facebook.
     /// </summary>
     public async Task QueryLocalScrapedPostsAsync(CancellationToken ct = default)
     {
-        IReadOnlyList<ActionHistoryEntry> recentActions = await this._context.AccountStore
+        IReadOnlyList<ActionHistoryEntry> recentActions = await _context.AccountStore
             .GetRecentActionsAsync(500, ct)
             .ConfigureAwait(true);
 
-        this._commentedPostIds.Clear();
+        _commentedPostIds.Clear();
         for (int i = 0; i < recentActions.Count; i++)
         {
             ActionHistoryEntry entry = recentActions[i];
             if (string.Equals(entry.ActionKind, "COMMENT", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(entry.TargetId))
             {
-                _ = this._commentedPostIds.Add(entry.TargetId);
+                _ = _commentedPostIds.Add(entry.TargetId);
             }
         }
 
-        IReadOnlyList<PostSummary> dbPosts = await this._context.AccountStore
+        IReadOnlyList<PostSummary> dbPosts = await _context.AccountStore
             .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
             .ConfigureAwait(true);
 
-        this._allScrapedPosts.Clear();
-        this._allScrapedPosts.AddRange(dbPosts);
+        _allScrapedPosts.Clear();
+        _allScrapedPosts.AddRange(dbPosts);
         this.FilterCachedPostsFromDb();
     }
 
@@ -208,10 +209,10 @@ public sealed partial class ShellViewModel
             ? Array.Empty<string>()
             : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        List<PostSummary> matched = new(this._allScrapedPosts.Count);
-        for (int i = 0; i < this._allScrapedPosts.Count; i++)
+        List<PostSummary> matched = new(_allScrapedPosts.Count);
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
         {
-            PostSummary post = this._allScrapedPosts[i];
+            PostSummary post = _allScrapedPosts[i];
             if (!string.IsNullOrWhiteSpace(this.FilterScrapedGroupId) &&
                 !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
             {
@@ -229,7 +230,7 @@ public sealed partial class ShellViewModel
                 continue;
             }
 
-            if (MatchesPostOrAuthorKeywords(post, keywords))
+            if (_context.LeadScoring.MatchesPostOrAuthorKeywords(post, keywords))
             {
                 matched.Add(post);
             }
@@ -238,8 +239,9 @@ public sealed partial class ShellViewModel
         if (keywords.Length > 0)
         {
             matched.Sort((a, b) =>
-                CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
-                    .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+                _context.LeadScoring.CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
+                                    .CompareTo(_context.LeadScoring
+                                    .CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
         }
 
         this.ScrapedPosts.ReplaceAll(matched);
@@ -255,16 +257,16 @@ public sealed partial class ShellViewModel
         }
 
         CancellationTokenSource cts = new();
-        this._backgroundScrapeCts = cts;
+        _backgroundScrapeCts = cts;
         int intervalMin = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 10 : this.AutoScrapeIntervalMinutes, 1, 120);
         _ = this.RunBackgroundScraperLoopAsync(TimeSpan.FromMinutes(intervalMin), cts.Token);
     }
 
     private void StopBackgroundScraperLoop()
     {
-        this._backgroundScrapeCts?.Cancel();
-        this._backgroundScrapeCts?.Dispose();
-        this._backgroundScrapeCts = null;
+        _backgroundScrapeCts?.Cancel();
+        _backgroundScrapeCts?.Dispose();
+        _backgroundScrapeCts = null;
     }
 
     private async Task RunBackgroundScraperLoopAsync(TimeSpan interval, CancellationToken ct)
@@ -288,7 +290,7 @@ public sealed partial class ShellViewModel
 
     private async Task ClearScrapedPostsDbAsync()
     {
-        int removed = await this._context.AccountStore
+        int removed = await _context.AccountStore
             .ClearScrapedPostsAsync(this.FilterScrapedGroupId)
             .ConfigureAwait(true);
 
@@ -297,8 +299,8 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
-            this._context.Localization["Audit.Cat.Scrape"],
-            this._context.Localization.Format("Log.ScrapedPostsCleared", removed)).ConfigureAwait(true);
+            _context.Localization["Audit.Cat.Scrape"],
+            _context.Localization.Format("Log.ScrapedPostsCleared", removed)).ConfigureAwait(true);
     }
 
     private async Task ScanGroupLeadsAsync()
@@ -324,7 +326,7 @@ public sealed partial class ShellViewModel
         if (targets.Count == 0)
         {
             string? singleId = this.SelectedTargetGroup?.GroupId ?? this.SelectedGroup?.GroupId;
-            string singleName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"];
+            string singleName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? _context.Localization["Audit.Cat.Group"];
             string? singleAvatar = this.SelectedTargetGroup?.AvatarUrl ?? this.SelectedGroup?.AvatarUrl;
             if (!string.IsNullOrWhiteSpace(singleId))
             {
@@ -337,8 +339,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Scrape"],
-                this._context.Localization["Log.NoTargetGroupsForScrape"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Scrape"],
+                _context.Localization["Log.NoTargetGroupsForScrape"]).ConfigureAwait(true);
             return;
         }
 
@@ -349,16 +351,16 @@ public sealed partial class ShellViewModel
             List<(string GroupId, string GroupName, string? GroupAvatarUrl)> batch = new(maxPerCycle);
             for (int i = 0; i < maxPerCycle; i++)
             {
-                int idx = (this._nextScrapeGroupOffset + i) % targets.Count;
+                int idx = (_nextScrapeGroupOffset + i) % targets.Count;
                 batch.Add(targets[idx]);
             }
 
-            this._nextScrapeGroupOffset = (this._nextScrapeGroupOffset + maxPerCycle) % targets.Count;
+            _nextScrapeGroupOffset = (_nextScrapeGroupOffset + maxPerCycle) % targets.Count;
             targets = batch;
         }
         else
         {
-            this._nextScrapeGroupOffset = 0;
+            _nextScrapeGroupOffset = 0;
         }
 
         string firstGroupName = targets[0].GroupName;
@@ -392,9 +394,9 @@ public sealed partial class ShellViewModel
                     AuditCategory.Scrape,
                     AuditSeverity.Info,
                     groupName,
-                    this._context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
+                    _context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
 
-                PagedResult<PostSummary> feed = await this._context.CometClient
+                PagedResult<PostSummary> feed = await _context.CometClient
                     .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
                     .ConfigureAwait(true);
 
@@ -407,7 +409,7 @@ public sealed partial class ShellViewModel
                         GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
                     };
 
-                    if (MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                    if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
                     {
                         collectedForDb.Add(post);
                     }
@@ -416,7 +418,7 @@ public sealed partial class ShellViewModel
 
             if (collectedForDb.Count > 0)
             {
-                await this._context.AccountStore
+                await _context.AccountStore
                     .UpsertScrapedPostsAsync(collectedForDb, ct)
                     .ConfigureAwait(true);
             }
@@ -426,18 +428,18 @@ public sealed partial class ShellViewModel
             // Backwards-compatible fallback when running in-memory tests where QueryScrapedPostsAsync isn't seeded by a mock store
             if (this.ScrapedPosts.Count == 0 && collectedForDb.Count > 0 && string.IsNullOrWhiteSpace(this.BuyerIntentKeywords))
             {
-                this._allScrapedPosts.Clear();
-                this._allScrapedPosts.AddRange(collectedForDb);
+                _allScrapedPosts.Clear();
+                _allScrapedPosts.AddRange(collectedForDb);
                 this.FilterCachedPostsFromDb();
             }
 
             string summaryTarget = targets.Count == 1
                 ? firstGroupName
-                : this._context.Localization.Format("Log.TargetGroupsSummaryCount", targets.Count);
+                : _context.Localization.Format("Log.TargetGroupsSummaryCount", targets.Count);
 
             string logMessage = selectiveKeywords.Length > 0
-                ? this._context.Localization.Format("Log.ScrapedSelectiveSuccess", collectedForDb.Count, this.ScrapeFilterKeywords, summaryTarget, this.ScrapedPosts.Count)
-                : this._context.Localization.Format("Log.ScrapedLatestSuccess", collectedForDb.Count, summaryTarget, this.ScrapedPosts.Count);
+                ? _context.Localization.Format("Log.ScrapedSelectiveSuccess", collectedForDb.Count, this.ScrapeFilterKeywords, summaryTarget, this.ScrapedPosts.Count)
+                : _context.Localization.Format("Log.ScrapedLatestSuccess", collectedForDb.Count, summaryTarget, this.ScrapedPosts.Count);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
@@ -451,7 +453,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Scrape,
                 AuditSeverity.Warning,
                 firstGroupName,
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -459,7 +461,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Scrape,
                 AuditSeverity.Error,
                 firstGroupName,
-                this._context.Localization.Format("Log.ScrapeFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization.Format("Log.ScrapeFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -474,8 +476,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.SalesComment"],
-                this._context.Localization["Log.SelectScrapedPostFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.SalesComment"],
+                _context.Localization["Log.SelectScrapedPostFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -495,16 +497,16 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.SalesComment"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.SalesComment"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
-                this.SelectedScrapedPost.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"],
-                this._context.Localization.Format("Log.SalesCommentFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                this.SelectedScrapedPost.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
+                _context.Localization.Format("Log.SalesCommentFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -519,8 +521,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.SalesComment"],
-                this._context.Localization["Log.ScrapedListEmpty"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.SalesComment"],
+                _context.Localization["Log.ScrapedListEmpty"]).ConfigureAwait(true);
             return;
         }
 
@@ -538,7 +540,7 @@ public sealed partial class ShellViewModel
                 ct.ThrowIfCancellationRequested();
                 if (i > 0)
                 {
-                    await this.WaitAntiCheckpointDelayAsync(this.ScrapedPosts[i].AuthorName ?? this._context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
+                    await this.WaitAntiCheckpointDelayAsync(this.ScrapedPosts[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
                 }
 
                 await this.ExecuteSingleSalesCommentAsync(session, this.ScrapedPosts[i], ct).ConfigureAwait(true);
@@ -549,12 +551,12 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.SalesComment"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.SalesComment"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.SalesComment, this._context.Localization["Audit.Cat.SalesComment"], ex, ct).ConfigureAwait(true);
+            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.SalesComment, _context.Localization["Audit.Cat.SalesComment"], ex, ct).ConfigureAwait(true);
         }
         finally
         {
@@ -572,7 +574,7 @@ public sealed partial class ShellViewModel
         if (errorCategory == AutomationErrorCategory.CheckpointOrAuthFailure && this.SelectedAccount is not null)
         {
             AccountProfile updated = this.SelectedAccount with { Status = AccountStatus.Checkpoint };
-            await this._context.AccountStore
+            await _context.AccountStore
                 .UpsertAccountAsync(updated, CancellationToken.None)
                 .ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
@@ -581,7 +583,7 @@ public sealed partial class ShellViewModel
                 category,
                 AuditSeverity.Error,
                 targetName,
-                this._context.Localization["Log.CircuitBreakerAuthFailure"]).ConfigureAwait(true);
+                _context.Localization["Log.CircuitBreakerAuthFailure"]).ConfigureAwait(true);
             return;
         }
 
@@ -591,7 +593,7 @@ public sealed partial class ShellViewModel
                 category,
                 AuditSeverity.Error,
                 targetName,
-                this._context.Localization["Log.CircuitBreakerRateLimit"]).ConfigureAwait(true);
+                _context.Localization["Log.CircuitBreakerRateLimit"]).ConfigureAwait(true);
             return;
         }
 
@@ -599,7 +601,7 @@ public sealed partial class ShellViewModel
             category,
             AuditSeverity.Error,
             targetName,
-            this._context.Localization.Format("Log.TaskError", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+            _context.Localization.Format("Log.TaskError", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         _ = ct;
     }
 
@@ -620,8 +622,8 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Scrape,
             AuditSeverity.Info,
-            this.SelectedScrapedPost.AuthorName ?? this._context.Localization["Leads.DefaultAuthor"],
-            this._context.Localization["Log.PostOpenedInBrowser"]).ConfigureAwait(true);
+            this.SelectedScrapedPost.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
+            _context.Localization["Log.PostOpenedInBrowser"]).ConfigureAwait(true);
     }
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)
@@ -637,7 +639,7 @@ public sealed partial class ShellViewModel
             AuditCategory.System,
             AuditSeverity.Info,
             nextTargetName,
-            this._context.Localization.Format("Log.WaitingSafeDelay", totalSec, nextTargetName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.WaitingSafeDelay", totalSec, nextTargetName)).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
@@ -657,7 +659,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Scrape,
             AuditSeverity.Info,
             nextGroupName,
-            this._context.Localization.Format("Log.WaitingScraperDelay", totalSec, nextGroupName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.WaitingScraperDelay", totalSec, nextGroupName)).ConfigureAwait(true);
 
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
@@ -665,28 +667,28 @@ public sealed partial class ShellViewModel
     private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
     {
         string targetLabel = !string.IsNullOrWhiteSpace(post.AuthorName)
-            ? this._context.Localization.Format("Log.PostAuthorLabel", post.AuthorName)
-            : this._context.Localization["Leads.DefaultAuthor"];
+            ? _context.Localization.Format("Log.PostAuthorLabel", post.AuthorName)
+            : _context.Localization["Leads.DefaultAuthor"];
 
-        bool alreadyCommented = await this._context.AccountStore
+        bool alreadyCommented = await _context.AccountStore
             .HasExecutedActionAsync(session.AccountUid, "COMMENT", post.PostId, ct)
             .ConfigureAwait(true);
 
         if (alreadyCommented)
         {
-            _ = this._commentedPostIds.Add(post.PostId);
+            _ = _commentedPostIds.Add(post.PostId);
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
                 targetLabel,
-                this._context.Localization.Format("Log.SkippedDuplicateComment", targetLabel)).ConfigureAwait(true);
+                _context.Localization.Format("Log.SkippedDuplicateComment", targetLabel)).ConfigureAwait(true);
             return;
         }
 
         if (this.AutoReactBeforeComment)
         {
             ReactionKind reaction = Random.Shared.NextDouble() < 0.75 ? ReactionKind.Like : ReactionKind.Love;
-            _ = await this._context.CometClient
+            _ = await _context.CometClient
                 .ReactToPostAsync(session, post.PostId, reaction, ct)
                 .ConfigureAwait(true);
         }
@@ -694,19 +696,19 @@ public sealed partial class ShellViewModel
         string? attachmentFbid = null;
         if (!string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) && File.Exists(this.SalesCommentPhotoPath.Trim()))
         {
-            attachmentFbid = await this._context.CometClient
+            attachmentFbid = await _context.CometClient
                 .UploadUfiPhotoAsync(session, this.SalesCommentPhotoPath.Trim(), ct)
                 .ConfigureAwait(true);
         }
 
-        string? commentId = await this._context.CometClient
+        string? commentId = await _context.CometClient
             .CreateCommentAsync(session, post.PostId, this.SalesCommentSpintaxText, attachmentFbid, ct: ct)
             .ConfigureAwait(true);
 
         if (!string.IsNullOrWhiteSpace(commentId))
         {
-            _ = this._commentedPostIds.Add(post.PostId);
-            await this._context.AccountStore.RecordActionAsync(
+            _ = _commentedPostIds.Add(post.PostId);
+            await _context.AccountStore.RecordActionAsync(
                 new ActionHistoryEntry(
                     session.AccountUid,
                     "COMMENT",
@@ -721,48 +723,16 @@ public sealed partial class ShellViewModel
             AuditCategory.SalesComment,
             AuditSeverity.Success,
             targetLabel,
-            this._context.Localization.Format("Log.SalesCommentSent", targetLabel),
+            _context.Localization.Format("Log.SalesCommentSent", targetLabel),
             post.PermalinkUrl).ConfigureAwait(true);
     }
 
     /// <summary>
     /// Computes a buyer-intent score (0..100) for a scraped group post based on matched keywords and question/inquiry signals.
+    /// Delegates to <see cref="LeadScoringService"/>.
     /// </summary>
-    public static int CalculateBuyerIntentScore(string? messageText, string? rawKeywords)
-    {
-        if (string.IsNullOrWhiteSpace(messageText))
-        {
-            return 25;
-        }
-
-        int score = 40;
-        string[] keywords = string.IsNullOrWhiteSpace(rawKeywords)
-            ? Array.Empty<string>()
-            : rawKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        int matchedCount = 0;
-        for (int i = 0; i < keywords.Length; i++)
-        {
-            if (messageText.Contains(keywords[i], StringComparison.OrdinalIgnoreCase))
-            {
-                matchedCount++;
-            }
-        }
-
-        score += Math.Min(45, matchedCount * 20);
-        if (messageText.Contains('?', StringComparison.Ordinal) ||
-            messageText.Contains("cần", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("tìm", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("mua", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("tư vấn", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("looking for", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("price", StringComparison.OrdinalIgnoreCase))
-        {
-            score += 15;
-        }
-
-        return Math.Clamp(score, 0, 100);
-    }
+    public static int CalculateBuyerIntentScore(string? messageText, string? rawKeywords) =>
+        LeadScoringService.Instance.CalculateBuyerIntentScore(messageText, rawKeywords);
 
     /// <summary>
     /// Formats a localized buyer-intent badge label for a scraped post card.
@@ -770,88 +740,10 @@ public sealed partial class ShellViewModel
     public string FormatBuyerIntentBadge(PostSummary post)
     {
         ArgumentNullException.ThrowIfNull(post);
-        int score = CalculateBuyerIntentScore(post.MessageText, this.BuyerIntentKeywords);
+        int score = _context.LeadScoring.CalculateBuyerIntentScore(post.MessageText, this.BuyerIntentKeywords);
         string prefix = score >= 75
-            ? this._context.Localization["Leads.IntentHigh"]
-            : this._context.Localization["Leads.IntentWarm"];
+            ? _context.Localization["Leads.IntentHigh"]
+            : _context.Localization["Leads.IntentWarm"];
         return $"{prefix} • {score}%";
-    }
-
-    private static bool MatchesBuyerKeywords(string? messageText, string[] keywords)
-    {
-        if (keywords.Length == 0)
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(messageText))
-        {
-            return false;
-        }
-
-        string normalizedMsg = RemoveVietnameseDiacritics(messageText);
-        for (int i = 0; i < keywords.Length; i++)
-        {
-            string kw = keywords[i];
-            if (messageText.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
-                normalizedMsg.Contains(RemoveVietnameseDiacritics(kw), StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool MatchesPostOrAuthorKeywords(PostSummary post, string[] keywords)
-    {
-        if (keywords.Length == 0)
-        {
-            return true;
-        }
-
-        string normMsg = !string.IsNullOrWhiteSpace(post.MessageText) ? RemoveVietnameseDiacritics(post.MessageText) : string.Empty;
-        string normAuthor = !string.IsNullOrWhiteSpace(post.AuthorName) ? RemoveVietnameseDiacritics(post.AuthorName) : string.Empty;
-        string normGroup = !string.IsNullOrWhiteSpace(post.GroupName) ? RemoveVietnameseDiacritics(post.GroupName) : string.Empty;
-
-        for (int i = 0; i < keywords.Length; i++)
-        {
-            string kw = keywords[i];
-            string normKw = RemoveVietnameseDiacritics(kw);
-            if ((!string.IsNullOrWhiteSpace(post.MessageText) && (post.MessageText.Contains(kw, StringComparison.OrdinalIgnoreCase) || normMsg.Contains(normKw, StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrWhiteSpace(post.AuthorName) && (post.AuthorName.Contains(kw, StringComparison.OrdinalIgnoreCase) || normAuthor.Contains(normKw, StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrWhiteSpace(post.GroupName) && (post.GroupName.Contains(kw, StringComparison.OrdinalIgnoreCase) || normGroup.Contains(normKw, StringComparison.OrdinalIgnoreCase))))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string RemoveVietnameseDiacritics(string input)
-    {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            return string.Empty;
-        }
-
-        string normalized = input.Normalize(System.Text.NormalizationForm.FormD);
-        System.Text.StringBuilder sb = new(normalized.Length);
-        for (int i = 0; i < normalized.Length; i++)
-        {
-            char c = normalized[i];
-            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
-            {
-                _ = sb.Append(c switch
-                {
-                    'đ' => 'd',
-                    'Đ' => 'D',
-                    _ => c
-                });
-            }
-        }
-
-        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
     }
 }

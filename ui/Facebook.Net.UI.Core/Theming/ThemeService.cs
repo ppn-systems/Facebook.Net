@@ -60,10 +60,41 @@ public sealed record ThemePalette(
     IBrush InfoBorder);
 
 /// <summary>
+/// Contract for the reactive cross-platform theme service providing Dark, Light, and OS System Default palettes.
+/// Enables Dependency Inversion (DIP) and unit-testable theme orchestration.
+/// </summary>
+public interface IThemeService : INotifyPropertyChanged
+{
+    /// <summary>Occurs whenever the active <see cref="AppThemeMode"/> or OS system theme changes.</summary>
+    event EventHandler<AppThemeMode>? ThemeChanged;
+
+    /// <summary>Gets the user-configured theme mode (<see cref="AppThemeMode.Dark"/>, <see cref="AppThemeMode.Light"/>, or <see cref="AppThemeMode.System"/>).</summary>
+    AppThemeMode CurrentMode { get; }
+
+    /// <summary>Gets the effective resolved theme (<see cref="AppThemeMode.Dark"/> or <see cref="AppThemeMode.Light"/>).</summary>
+    AppThemeMode EffectiveMode { get; }
+
+    /// <summary>Gets the active <see cref="ThemePalette"/> for the resolved <see cref="EffectiveMode"/>.</summary>
+    ThemePalette Palette { get; }
+
+    /// <summary>Attaches Avalonia's cross-platform <see cref="IPlatformSettings"/> so live OS theme changes are tracked automatically.</summary>
+    void AttachPlatformSettings(IPlatformSettings? platformSettings);
+
+    /// <summary>Detects the operating system's current Dark/Light theme across Windows, macOS, and Linux.</summary>
+    AppThemeMode DetectSystemThemeMode();
+
+    /// <summary>Switches the application theme and notifies all bound UI controls on the UI thread.</summary>
+    void SetTheme(AppThemeMode mode);
+
+    /// <summary>Toggles between Dark and Light mode.</summary>
+    void ToggleTheme();
+}
+
+/// <summary>
 /// Reactive cross-platform theme service providing Dark, Light, and OS System Default palettes
 /// and synchronizing Avalonia's <see cref="ThemeVariant"/> and <see cref="IPlatformSettings"/>.
 /// </summary>
-public sealed partial class ThemeService : INotifyPropertyChanged
+public sealed partial class ThemeService : IThemeService
 {
     private static readonly ThemePalette s_darkPalette = new(
         BrandPrimary: new ImmutableSolidColorBrush(Color.Parse("#F6821F")),

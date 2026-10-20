@@ -114,9 +114,34 @@ public partial class UiCoreJsonContext : JsonSerializerContext
 }
 
 /// <summary>
+/// Contract for loading, normalizing, and persisting <see cref="AppConfig"/> as well as resolving
+/// installed Chromium browser engines and profiles.
+/// </summary>
+public interface IAppSettingsService
+{
+    /// <summary>Gets the current active configuration.</summary>
+    AppConfig Current { get; }
+
+    /// <summary>Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.</summary>
+    void Save(AppConfig updated);
+
+    /// <summary>Asynchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.</summary>
+    Task SaveAsync(AppConfig updated, CancellationToken ct = default);
+
+    /// <summary>Resolves the browser executable path based on the user's <see cref="PreferredBrowserKind"/> or custom path.</summary>
+    string? ResolvePreferredBrowserExecutable();
+
+    /// <summary>Scans the machine for installed Chromium browsers.</summary>
+    List<PreferredBrowserKind> GetInstalledBrowsers();
+
+    /// <summary>Determines the effective <see cref="PreferredBrowserKind"/> currently in use.</summary>
+    PreferredBrowserKind ResolveEffectiveBrowserKind();
+}
+
+/// <summary>
 /// Loads and saves <see cref="AppConfig"/> atomically and resolves the user's preferred Chromium executable path.
 /// </summary>
-public sealed class AppSettingsService
+public sealed class AppSettingsService : IAppSettingsService
 {
     private readonly string _settingsFilePath;
 
@@ -127,7 +152,7 @@ public sealed class AppSettingsService
     public AppSettingsService(string settingsFilePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsFilePath);
-        this._settingsFilePath = settingsFilePath;
+        _settingsFilePath = settingsFilePath;
         this.Current = this.LoadOrDefault();
     }
 
@@ -145,16 +170,16 @@ public sealed class AppSettingsService
         AppConfig normalized = updated.Normalize();
         this.Current = normalized;
 
-        string? dir = Path.GetDirectoryName(this._settingsFilePath);
+        string? dir = Path.GetDirectoryName(_settingsFilePath);
         if (!string.IsNullOrWhiteSpace(dir))
         {
             _ = Directory.CreateDirectory(dir);
         }
 
         string json = JsonSerializer.Serialize(normalized, UiCoreJsonContext.Default.AppConfig);
-        string tempPath = $"{this._settingsFilePath}.{Guid.NewGuid():N}.tmp";
+        string tempPath = $"{_settingsFilePath}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(tempPath, json, Encoding.UTF8);
-        File.Move(tempPath, this._settingsFilePath, overwrite: true);
+        File.Move(tempPath, _settingsFilePath, overwrite: true);
     }
 
     /// <summary>
@@ -166,16 +191,16 @@ public sealed class AppSettingsService
         AppConfig normalized = updated.Normalize();
         this.Current = normalized;
 
-        string? dir = Path.GetDirectoryName(this._settingsFilePath);
+        string? dir = Path.GetDirectoryName(_settingsFilePath);
         if (!string.IsNullOrWhiteSpace(dir))
         {
             _ = Directory.CreateDirectory(dir);
         }
 
         string json = JsonSerializer.Serialize(normalized, UiCoreJsonContext.Default.AppConfig);
-        string tempPath = $"{this._settingsFilePath}.{Guid.NewGuid():N}.tmp";
+        string tempPath = $"{_settingsFilePath}.{Guid.NewGuid():N}.tmp";
         await File.WriteAllTextAsync(tempPath, json, Encoding.UTF8, ct).ConfigureAwait(false);
-        File.Move(tempPath, this._settingsFilePath, overwrite: true);
+        File.Move(tempPath, _settingsFilePath, overwrite: true);
     }
 
     /// <summary>
@@ -441,9 +466,9 @@ public sealed class AppSettingsService
     {
         try
         {
-            if (File.Exists(this._settingsFilePath))
+            if (File.Exists(_settingsFilePath))
             {
-                string json = File.ReadAllText(this._settingsFilePath);
+                string json = File.ReadAllText(_settingsFilePath);
                 AppConfig? loaded = JsonSerializer.Deserialize(json, UiCoreJsonContext.Default.AppConfig);
                 if (loaded is not null)
                 {

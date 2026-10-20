@@ -56,11 +56,11 @@ public sealed partial class ShellViewModel
     /// </summary>
     public void ApplyLocalGroupFilter(string? filterText, GroupMembershipState? stateFilter = null, string? tagIdFilter = "__KEEP__")
     {
-        if (this._allCatalogGroups.Count == 0 && this.JoinedGroups.Count > 0)
+        if (_allCatalogGroups.Count == 0 && this.JoinedGroups.Count > 0)
         {
             for (int i = 0; i < this.JoinedGroups.Count; i++)
             {
-                this._allCatalogGroups.Add(this.JoinedGroups[i]);
+                _allCatalogGroups.Add(this.JoinedGroups[i]);
             }
         }
 
@@ -71,7 +71,7 @@ public sealed partial class ShellViewModel
 
         if (stateFilter.HasValue || filterText is null)
         {
-            this._activeStateFilter = stateFilter;
+            _activeStateFilter = stateFilter;
         }
 
         if (!string.Equals(tagIdFilter, "__KEEP__", StringComparison.Ordinal))
@@ -80,19 +80,19 @@ public sealed partial class ShellViewModel
         }
 
         string kw = this.GroupFilterText.Trim();
-        GroupMembershipState? state = this._activeStateFilter;
+        GroupMembershipState? state = _activeStateFilter;
         string? tagId = this.ActiveTagFilterId;
 
         if (string.IsNullOrWhiteSpace(kw) && state is null && string.IsNullOrWhiteSpace(tagId))
         {
-            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
+            this.JoinedGroups.ReplaceAll(_allCatalogGroups);
             return;
         }
 
-        System.Collections.Generic.List<GroupSummary> filtered = new(this._allCatalogGroups.Count);
-        for (int i = 0; i < this._allCatalogGroups.Count; i++)
+        System.Collections.Generic.List<GroupSummary> filtered = new(_allCatalogGroups.Count);
+        for (int i = 0; i < _allCatalogGroups.Count; i++)
         {
-            GroupSummary grp = this._allCatalogGroups[i];
+            GroupSummary grp = _allCatalogGroups[i];
             if (state.HasValue)
             {
                 if (state.Value == GroupMembershipState.Member && grp.MembershipState != GroupMembershipState.Member)
@@ -136,14 +136,14 @@ public sealed partial class ShellViewModel
             return null;
         }
 
-        if (this._targetGroupIndex.Count == this.TargetGroups.Count &&
-            this._targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? fastHit))
+        if (_targetGroupIndex.Count == this.TargetGroups.Count &&
+            _targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? fastHit))
         {
             return fastHit;
         }
 
         this.RebuildTargetGroupIndex();
-        return this._targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? val) ? val : null;
+        return _targetGroupIndex.TryGetValue(groupId, out SavedTargetGroup? val) ? val : null;
     }
 
     /// <summary>
@@ -156,38 +156,38 @@ public sealed partial class ShellViewModel
             return null;
         }
 
-        if (this._groupTagIndex.Count == this.GroupTags.Count &&
-            this._groupTagIndex.TryGetValue(tagId, out GroupTag? fastHit))
+        if (_groupTagIndex.Count == this.GroupTags.Count &&
+            _groupTagIndex.TryGetValue(tagId, out GroupTag? fastHit))
         {
             return fastHit;
         }
 
         this.RebuildGroupTagIndex();
-        return this._groupTagIndex.TryGetValue(tagId, out GroupTag? val) ? val : null;
+        return _groupTagIndex.TryGetValue(tagId, out GroupTag? val) ? val : null;
     }
 
     private void RebuildTargetGroupIndex()
     {
-        this._targetGroupIndex.Clear();
+        _targetGroupIndex.Clear();
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
             SavedTargetGroup tg = this.TargetGroups[i];
             if (!string.IsNullOrWhiteSpace(tg.GroupId))
             {
-                this._targetGroupIndex[tg.GroupId] = tg;
+                _targetGroupIndex[tg.GroupId] = tg;
             }
         }
     }
 
     private void RebuildGroupTagIndex()
     {
-        this._groupTagIndex.Clear();
+        _groupTagIndex.Clear();
         for (int i = 0; i < this.GroupTags.Count; i++)
         {
             GroupTag tag = this.GroupTags[i];
             if (!string.IsNullOrWhiteSpace(tag.Id))
             {
-                this._groupTagIndex[tag.Id] = tag;
+                _groupTagIndex[tag.Id] = tag;
             }
         }
     }
@@ -233,13 +233,9 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string color = string.IsNullOrWhiteSpace(this.NewGroupTagColorHex) ? "#F6821F" : this.NewGroupTagColorHex.Trim();
-        GroupTag tag = new(
-            Id: $"tag_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-            Name: name,
-            ColorHex: color);
+        GroupTag tag = _context.GroupTagService.CreateTag(name, this.NewGroupTagColorHex);
 
-        await this._context.AccountStore.UpsertGroupTagAsync(tag).ConfigureAwait(true);
+        await _context.AccountStore.UpsertGroupTagAsync(tag).ConfigureAwait(true);
         this.NewGroupTagName = string.Empty;
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
 
@@ -247,7 +243,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Success,
             tag.Name,
-            this._context.Localization.Format("Log.Personal.TagCreated", tag.Name)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.TagCreated", tag.Name)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -263,14 +259,14 @@ public sealed partial class ShellViewModel
         string trimmedName = newName.Trim();
         string color = string.IsNullOrWhiteSpace(newColorHex) ? "#F6821F" : newColorHex.Trim();
         GroupTag updated = new(tagId, trimmedName, color);
-        await this._context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
+        await _context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
             trimmedName,
-            this._context.Localization.Format("Log.Personal.TagUpdated", trimmedName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.TagUpdated", trimmedName)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -291,45 +287,10 @@ public sealed partial class ShellViewModel
                 continue;
             }
 
-            System.Collections.Generic.List<string> ids = [.. grp.GetTagIds()];
-            bool changed = false;
-            if (assignTag)
-            {
-                bool exists = false;
-                for (int i = 0; i < ids.Count; i++)
-                {
-                    if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        exists = true;
-                        break;
-                    }
-                }
-
-                if (!exists)
-                {
-                    ids.Add(tagId);
-                    changed = true;
-                }
-            }
-            else
-            {
-                for (int i = ids.Count - 1; i >= 0; i--)
-                {
-                    if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        ids.RemoveAt(i);
-                        changed = true;
-                    }
-                }
-            }
-
+            (SavedTargetGroup updated, bool changed) = _context.GroupTagService.ApplyTagChange(grp, tagId, assignTag);
             if (changed)
             {
-                SavedTargetGroup updated = grp with
-                {
-                    TagsCsv = ids.Count > 0 ? string.Join(',', ids) : null
-                };
-                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
                 modifiedCount++;
             }
         }
@@ -341,7 +302,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Success,
             tagName,
-            this._context.Localization.Format(
+            _context.Localization.Format(
                 assignTag ? "Log.Personal.BatchTagAssigned" : "Log.Personal.BatchTagRemoved",
                 tagName,
                 modifiedCount)).ConfigureAwait(true);
@@ -357,25 +318,17 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        _ = await this._context.AccountStore.DeleteGroupTagAsync(tag.Id).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeleteGroupTagAsync(tag.Id).ConfigureAwait(true);
 
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
-            SavedTargetGroup tg = this.TargetGroups[i];
-            if (tg.HasTag(tag.Id))
+            (SavedTargetGroup updated, bool changed) = _context.GroupTagService.ApplyTagChange(
+                this.TargetGroups[i],
+                tag.Id,
+                assignTag: false);
+            if (changed)
             {
-                System.Collections.Generic.List<string> remaining = new();
-                System.Collections.Generic.IReadOnlyList<string> currentIds = tg.GetTagIds();
-                for (int j = 0; j < currentIds.Count; j++)
-                {
-                    if (!string.Equals(currentIds[j], tag.Id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        remaining.Add(currentIds[j]);
-                    }
-                }
-
-                SavedTargetGroup updated = tg with { TagsCsv = remaining.Count > 0 ? string.Join(',', remaining) : null };
-                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
                 this.TargetGroups[i] = updated;
             }
         }
@@ -392,7 +345,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Info,
             tag.Name,
-            this._context.Localization.Format("Log.Personal.TagDeleted", tag.Name)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.TagDeleted", tag.Name)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -408,30 +361,13 @@ public sealed partial class ShellViewModel
         SavedTargetGroup existing = this.FindTargetGroupById(groupId)
             ?? new SavedTargetGroup(groupId, groupName, IsEnabled: true, Notes: null, AvatarUrl: avatarUrl, TagsCsv: null);
 
-        System.Collections.Generic.List<string> ids = [.. existing.GetTagIds()];
-        bool removed = false;
-        for (int i = ids.Count - 1; i >= 0; i--)
-        {
-            if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
-            {
-                ids.RemoveAt(i);
-                removed = true;
-            }
-        }
+        (SavedTargetGroup updated, bool removed) = _context.GroupTagService.ToggleTagOnGroup(
+            existing,
+            groupName,
+            avatarUrl,
+            tagId);
 
-        if (!removed)
-        {
-            ids.Add(tagId);
-        }
-
-        SavedTargetGroup updated = existing with
-        {
-            GroupName = !string.IsNullOrWhiteSpace(groupName) ? groupName : existing.GroupName,
-            AvatarUrl = existing.AvatarUrl ?? avatarUrl,
-            TagsCsv = ids.Count > 0 ? string.Join(',', ids) : null
-        };
-
-        await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+        await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
 
         bool foundInList = false;
         for (int i = 0; i < this.TargetGroups.Count; i++)
@@ -449,13 +385,13 @@ public sealed partial class ShellViewModel
             this.TargetGroups.Add(updated);
         }
 
-        this._targetGroupIndex[groupId] = updated;
+        _targetGroupIndex[groupId] = updated;
         string tagName = this.FindGroupTagById(tagId)?.Name ?? tagId;
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
             updated.GroupName,
-            this._context.Localization.Format(
+            _context.Localization.Format(
                 removed ? "Log.Personal.TagRemovedFromGroup" : "Log.Personal.TagAssignedToGroup",
                 tagName,
                 updated.GroupName)).ConfigureAwait(true);
@@ -487,8 +423,8 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
-            this._context.Localization["Audit.Cat.Group"],
-            this._context.Localization.Format("Log.BatchTaggedGroups", taggedCount)).ConfigureAwait(true);
+            _context.Localization["Audit.Cat.Group"],
+            _context.Localization.Format("Log.BatchTaggedGroups", taggedCount)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -529,7 +465,7 @@ public sealed partial class ShellViewModel
             if (tg.HasTag(tagId) && tg.IsEnabled != targetState)
             {
                 SavedTargetGroup updated = tg with { IsEnabled = targetState };
-                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
                 nextList.Add(updated);
             }
             else
@@ -552,24 +488,8 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        int count = Math.Clamp(randomCount, 1, this.TargetGroups.Count);
-        System.Collections.Generic.List<int> indices = new(this.TargetGroups.Count);
-        for (int i = 0; i < this.TargetGroups.Count; i++)
-        {
-            indices.Add(i);
-        }
-
-        for (int i = indices.Count - 1; i > 0; i--)
-        {
-            int swapIdx = Random.Shared.Next(i + 1);
-            (indices[i], indices[swapIdx]) = (indices[swapIdx], indices[i]);
-        }
-
-        System.Collections.Generic.HashSet<int> chosen = new();
-        for (int i = 0; i < count; i++)
-        {
-            _ = chosen.Add(indices[i]);
-        }
+        System.Collections.Generic.HashSet<int> chosen =
+            _context.GroupTagService.SelectRandomIndices(this.TargetGroups.Count, randomCount);
 
         System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
         for (int i = 0; i < this.TargetGroups.Count; i++)
@@ -579,7 +499,7 @@ public sealed partial class ShellViewModel
             if (tg.IsEnabled != shouldEnable)
             {
                 SavedTargetGroup updated = tg with { IsEnabled = shouldEnable };
-                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
                 nextList.Add(updated);
             }
             else
@@ -595,7 +515,7 @@ public sealed partial class ShellViewModel
     private async Task ReloadGroupTagsOnlyAsync()
     {
         System.Collections.Generic.IReadOnlyList<GroupTag> tags =
-            await this._context.AccountStore.GetAllGroupTagsAsync().ConfigureAwait(true);
+            await _context.AccountStore.GetAllGroupTagsAsync().ConfigureAwait(true);
         this.GroupTags.ReplaceAll(tags);
         this.RebuildGroupTagIndex();
     }
@@ -607,7 +527,7 @@ public sealed partial class ShellViewModel
     {
         ArgumentNullException.ThrowIfNull(group);
         SavedTargetGroup updated = group with { IsEnabled = isEnabled };
-        await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+        await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
 
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
@@ -618,16 +538,16 @@ public sealed partial class ShellViewModel
             }
         }
 
-        this._targetGroupIndex[group.GroupId] = updated;
+        _targetGroupIndex[group.GroupId] = updated;
         string stateWord = isEnabled
-            ? this._context.Localization["Log.Personal.StateEnabled"]
-            : this._context.Localization["Log.Personal.StateDisabled"];
+            ? _context.Localization["Log.Personal.StateEnabled"]
+            : _context.Localization["Log.Personal.StateDisabled"];
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
             updated.GroupName,
-            this._context.Localization.Format("Log.Personal.TargetGroupToggled", stateWord, updated.GroupName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.TargetGroupToggled", stateWord, updated.GroupName)).ConfigureAwait(true);
     }
 
     private async Task SetAllTargetGroupsEnabledAsync(bool isEnabled)
@@ -635,7 +555,7 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
             SavedTargetGroup updated = this.TargetGroups[i] with { IsEnabled = isEnabled };
-            await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+            await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
             this.TargetGroups[i] = updated;
         }
 
@@ -644,10 +564,10 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
-            this._context.Localization["Audit.Cat.Group"],
+            _context.Localization["Audit.Cat.Group"],
             isEnabled
-                ? this._context.Localization.Format("Log.TargetGroupsEnabledAll", this.TargetGroups.Count)
-                : this._context.Localization.Format("Log.TargetGroupsDisabledAll", this.TargetGroups.Count)).ConfigureAwait(true);
+                ? _context.Localization.Format("Log.TargetGroupsEnabledAll", this.TargetGroups.Count)
+                : _context.Localization.Format("Log.TargetGroupsDisabledAll", this.TargetGroups.Count)).ConfigureAwait(true);
     }
 
     private async Task SyncJoinedGroupsAsync()
@@ -668,16 +588,16 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Error,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization.Format("Log.GroupsSyncFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization.Format("Log.GroupsSyncFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -687,7 +607,7 @@ public sealed partial class ShellViewModel
 
     private async Task SyncJoinedGroupsCoreAsync(IBrowserSession session, System.Threading.CancellationToken ct = default)
     {
-        PagedResult<GroupSummary> result = await this._context.CometClient
+        PagedResult<GroupSummary> result = await _context.CometClient
             .GetJoinedGroupsAsync(session, count: 500, ct: ct)
             .ConfigureAwait(true);
 
@@ -714,7 +634,7 @@ public sealed partial class ShellViewModel
                     DisplayName = nextName,
                     AvatarUrl = nextAvatar
                 };
-                await this._context.AccountStore.UpsertAccountAsync(updatedAcc, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertAccountAsync(updatedAcc, ct).ConfigureAwait(true);
                 this.SelectedAccount = updatedAcc;
             }
         }
@@ -725,12 +645,12 @@ public sealed partial class ShellViewModel
             existingTargets[this.TargetGroups[i].GroupId] = this.TargetGroups[i];
         }
 
-        this._allCatalogGroups.Clear();
+        _allCatalogGroups.Clear();
         System.Collections.Generic.List<GroupSummary> nextCatalog = new(result.Items.Count);
         for (int i = 0; i < result.Items.Count; i++)
         {
             GroupSummary group = result.Items[i];
-            this._allCatalogGroups.Add(group);
+            _allCatalogGroups.Add(group);
             nextCatalog.Add(group);
 
             bool hasExisting = existingTargets.TryGetValue(group.GroupId, out SavedTargetGroup? prev);
@@ -741,7 +661,7 @@ public sealed partial class ShellViewModel
                 Notes: hasExisting ? prev!.Notes : null,
                 AvatarUrl: group.AvatarUrl ?? prev?.AvatarUrl,
                 TagsCsv: hasExisting ? prev!.TagsCsv : null);
-            await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+            await _context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
         }
 
         this.JoinedGroups.ReplaceAll(nextCatalog);
@@ -756,8 +676,8 @@ public sealed partial class ShellViewModel
         _ = await this.LogAuditAsync(
             AuditCategory.Group,
             AuditSeverity.Success,
-            this._context.Localization["Audit.Cat.Group"],
-            this._context.Localization.Format("Log.GroupsSyncedCount", this.JoinedGroups.Count)).ConfigureAwait(true);
+            _context.Localization["Audit.Cat.Group"],
+            _context.Localization.Format("Log.GroupsSyncedCount", this.JoinedGroups.Count)).ConfigureAwait(true);
     }
 
     private async Task SearchGroupsByKeywordAsync()
@@ -767,8 +687,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.EnterGroupKeyword"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.EnterGroupKeyword"]).ConfigureAwait(true);
             return;
         }
 
@@ -786,19 +706,19 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Info,
                 keyword,
-                this._context.Localization.Format("Log.SearchingGroups", keyword)).ConfigureAwait(true);
+                _context.Localization.Format("Log.SearchingGroups", keyword)).ConfigureAwait(true);
 
-            PagedResult<GroupSummary> result = await this._context.CometClient
+            PagedResult<GroupSummary> result = await _context.CometClient
                 .SearchGroupsAsync(session, keyword, count: 35, ct: ct)
                 .ConfigureAwait(true);
 
-            this._allCatalogGroups.Clear();
+            _allCatalogGroups.Clear();
             for (int i = 0; i < result.Items.Count; i++)
             {
-                this._allCatalogGroups.Add(result.Items[i]);
+                _allCatalogGroups.Add(result.Items[i]);
             }
 
-            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
+            this.JoinedGroups.ReplaceAll(_allCatalogGroups);
 
             if (this.JoinedGroups.Count > 0)
             {
@@ -809,15 +729,15 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 keyword,
-                this._context.Localization.Format("Log.GroupsSearchFound", this.JoinedGroups.Count, keyword)).ConfigureAwait(true);
+                _context.Localization.Format("Log.GroupsSearchFound", this.JoinedGroups.Count, keyword)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -825,7 +745,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Group,
                 AuditSeverity.Error,
                 this.GroupSearchKeyword,
-                this._context.Localization.Format("Log.GroupsSearchFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization.Format("Log.GroupsSearchFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -883,14 +803,14 @@ public sealed partial class ShellViewModel
         }
 
         SavedTargetGroup target = new(this.SelectedGroup.GroupId, this.SelectedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: this.SelectedGroup.AvatarUrl);
-        await this._context.AccountStore.UpsertTargetGroupAsync(target).ConfigureAwait(true);
+        await _context.AccountStore.UpsertTargetGroupAsync(target).ConfigureAwait(true);
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
             target.GroupName,
-            this._context.Localization.Format("Log.TargetGroupAdded", target.GroupName)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TargetGroupAdded", target.GroupName)).ConfigureAwait(true);
     }
 
     private async Task RemoveSelectedTargetGroupAsync()
@@ -901,14 +821,14 @@ public sealed partial class ShellViewModel
         }
 
         string name = this.SelectedTargetGroup.GroupName;
-        _ = await this._context.AccountStore.DeleteTargetGroupAsync(this.SelectedTargetGroup.GroupId).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeleteTargetGroupAsync(this.SelectedTargetGroup.GroupId).ConfigureAwait(true);
         await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
             name,
-            this._context.Localization.Format("Log.TargetGroupRemoved", name)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TargetGroupRemoved", name)).ConfigureAwait(true);
     }
 
     private async Task JoinSelectedGroupAsync()
@@ -928,7 +848,7 @@ public sealed partial class ShellViewModel
             }
 
             GroupSummary group = this.SelectedGroup;
-            GroupMembershipState state = await this._context.CometClient
+            GroupMembershipState state = await _context.CometClient
                 .JoinGroupAsync(session, group.GroupId, ct: ct)
                 .ConfigureAwait(true);
 
@@ -939,32 +859,32 @@ public sealed partial class ShellViewModel
             if (state == GroupMembershipState.Member)
             {
                 SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: updatedGroup.AvatarUrl);
-                await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
                 await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
             }
 
-            string friendlyState = this._context.Localization.FormatGroupMembership(state);
+            string friendlyState = _context.Localization.FormatGroupMembership(state);
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Success,
                 group.Name,
-                this._context.Localization.Format("Log.GroupJoinRequested", group.Name, friendlyState)).ConfigureAwait(true);
+                _context.Localization.Format("Log.GroupJoinRequested", group.Name, friendlyState)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Error,
-                this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization.Format("Log.GroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                this.SelectedGroup?.Name ?? _context.Localization["Audit.Cat.Group"],
+                _context.Localization.Format("Log.GroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -993,8 +913,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.NoUnjoinedGroups"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.NoUnjoinedGroups"]).ConfigureAwait(true);
             return;
         }
 
@@ -1017,7 +937,7 @@ public sealed partial class ShellViewModel
                 }
 
                 GroupSummary group = candidates[i];
-                GroupMembershipState state = await this._context.CometClient
+                GroupMembershipState state = await _context.CometClient
                     .JoinGroupAsync(session, group.GroupId, ct: ct)
                     .ConfigureAwait(true);
 
@@ -1028,15 +948,15 @@ public sealed partial class ShellViewModel
                 if (state == GroupMembershipState.Member)
                 {
                     SavedTargetGroup target = new(updatedGroup.GroupId, updatedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: updatedGroup.AvatarUrl);
-                    await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+                    await _context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
                 }
 
-                string friendlyState = this._context.Localization.FormatGroupMembership(state);
+                string friendlyState = _context.Localization.FormatGroupMembership(state);
                 _ = await this.LogAuditAsync(
                     AuditCategory.Group,
                     AuditSeverity.Success,
                     group.Name,
-                    this._context.Localization.Format("Log.BatchGroupJoined", joinedOrRequested, candidates.Count, group.Name, friendlyState)).ConfigureAwait(true);
+                    _context.Localization.Format("Log.BatchGroupJoined", joinedOrRequested, candidates.Count, group.Name, friendlyState)).ConfigureAwait(true);
             }
 
             await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
@@ -1046,16 +966,16 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Group,
                 AuditSeverity.Error,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization.Format("Log.BatchGroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization.Format("Log.BatchGroupJoinFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -1065,11 +985,11 @@ public sealed partial class ShellViewModel
 
     private void UpdateCatalogGroupState(GroupSummary updated)
     {
-        for (int i = 0; i < this._allCatalogGroups.Count; i++)
+        for (int i = 0; i < _allCatalogGroups.Count; i++)
         {
-            if (string.Equals(this._allCatalogGroups[i].GroupId, updated.GroupId, StringComparison.Ordinal))
+            if (string.Equals(_allCatalogGroups[i].GroupId, updated.GroupId, StringComparison.Ordinal))
             {
-                this._allCatalogGroups[i] = updated;
+                _allCatalogGroups[i] = updated;
                 break;
             }
         }
@@ -1087,7 +1007,7 @@ public sealed partial class ShellViewModel
     private async Task ReloadTargetGroupsOnlyAsync()
     {
         System.Collections.Generic.IReadOnlyList<SavedTargetGroup> stored =
-            await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+            await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
 
         this.TargetGroups.ReplaceAll(stored);
         this.RebuildTargetGroupIndex();

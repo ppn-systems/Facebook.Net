@@ -29,7 +29,7 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
     /// <summary>
     /// Gets a value indicating whether the underlying CDP WebSocket is currently open.
     /// </summary>
-    public bool IsConnected => this._webSocket.State == WebSocketState.Open && !this._isDisposed;
+    public bool IsConnected => _webSocket.State == WebSocketState.Open && !_isDisposed;
 
     /// <summary>
     /// Connects to the specified CDP WebSocket endpoint and starts the background response multiplexer.
@@ -38,11 +38,11 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
     /// <param name="ct">Cancellation token.</param>
     public async Task ConnectAsync(Uri webSocketUri, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentNullException.ThrowIfNull(webSocketUri);
 
-        await this._webSocket.ConnectAsync(webSocketUri, ct).ConfigureAwait(false);
-        this._receiveLoopTask = Task.Run(() => this.ReceiveLoopAsync(this._disposeCts.Token), CancellationToken.None);
+        await _webSocket.ConnectAsync(webSocketUri, ct).ConfigureAwait(false);
+        _receiveLoopTask = Task.Run(() => this.ReceiveLoopAsync(_disposeCts.Token), CancellationToken.None);
     }
 
     /// <summary>
@@ -54,12 +54,12 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
     /// <returns>The parsed <see cref="JsonDocument"/> containing the <c>result</c> payload.</returns>
     public async Task<JsonDocument> SendCommandAsync(string method, object? parameters = null, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
 
-        int id = Interlocked.Increment(ref this._nextCommandId);
+        int id = Interlocked.Increment(ref _nextCommandId);
         TaskCompletionSource<JsonDocument> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        this._pendingRequests[id] = tcs;
+        _pendingRequests[id] = tcs;
 
         using CancellationTokenRegistration ctr = ct.Register(
             static state =>
@@ -71,16 +71,16 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
                     _ = pending.TrySetCanceled();
                 }
             },
-            (this._pendingRequests, id));
+            (_pendingRequests, id));
 
         try
         {
             byte[] payloadBytes = SerializeCommand(id, method, parameters);
 
-            await this._sendLock.WaitAsync(ct).ConfigureAwait(false);
+            await _sendLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                await this._webSocket.SendAsync(
+                await _webSocket.SendAsync(
                     payloadBytes.AsMemory(),
                     WebSocketMessageType.Text,
                     endOfMessage: true,
@@ -88,14 +88,14 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
             }
             finally
             {
-                _ = this._sendLock.Release();
+                _ = _sendLock.Release();
             }
 
             return await tcs.Task.ConfigureAwait(false);
         }
         catch
         {
-            _ = this._pendingRequests.TryRemove(id, out _);
+            _ = _pendingRequests.TryRemove(id, out _);
             throw;
         }
     }
@@ -103,20 +103,20 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (this._isDisposed)
+        if (_isDisposed)
         {
             return;
         }
 
-        this._isDisposed = true;
-        await this._disposeCts.CancelAsync().ConfigureAwait(false);
+        _isDisposed = true;
+        await _disposeCts.CancelAsync().ConfigureAwait(false);
 
-        if (this._webSocket.State == WebSocketState.Open)
+        if (_webSocket.State == WebSocketState.Open)
         {
             try
             {
                 using CancellationTokenSource closeCts = new(TimeSpan.FromSeconds(2));
-                await this._webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", closeCts.Token).ConfigureAwait(false);
+                await _webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", closeCts.Token).ConfigureAwait(false);
             }
             catch
             {
@@ -124,11 +124,11 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
             }
         }
 
-        if (this._receiveLoopTask is not null)
+        if (_receiveLoopTask is not null)
         {
             try
             {
-                await this._receiveLoopTask.ConfigureAwait(false);
+                await _receiveLoopTask.ConfigureAwait(false);
             }
             catch
             {
@@ -137,25 +137,25 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
         }
 
         this.FailAllPending("CDP connection disposed.");
-        this._webSocket.Dispose();
-        this._sendLock.Dispose();
-        this._disposeCts.Dispose();
+        _webSocket.Dispose();
+        _sendLock.Dispose();
+        _disposeCts.Dispose();
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        if (this._isDisposed)
+        if (_isDisposed)
         {
             return;
         }
 
-        this._isDisposed = true;
-        this._disposeCts.Cancel();
+        _isDisposed = true;
+        _disposeCts.Cancel();
         this.FailAllPending("CDP connection disposed.");
-        this._webSocket.Dispose();
-        this._sendLock.Dispose();
-        this._disposeCts.Dispose();
+        _webSocket.Dispose();
+        _sendLock.Dispose();
+        _disposeCts.Dispose();
     }
 
     private static byte[] SerializeCommand(int id, string method, object? parameters)
@@ -213,14 +213,14 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
 
         try
         {
-            while (!ct.IsCancellationRequested && this._webSocket.State == WebSocketState.Open)
+            while (!ct.IsCancellationRequested && _webSocket.State == WebSocketState.Open)
             {
                 messageStream.SetLength(0);
                 ValueWebSocketReceiveResult result;
 
                 do
                 {
-                    result = await this._webSocket.ReceiveAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
+                    result = await _webSocket.ReceiveAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         this.FailAllPending("CDP WebSocket closed by remote peer.");
@@ -263,7 +263,7 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
             return;
         }
 
-        if (!this._pendingRequests.TryRemove(id, out TaskCompletionSource<JsonDocument>? tcs))
+        if (!_pendingRequests.TryRemove(id, out TaskCompletionSource<JsonDocument>? tcs))
         {
             doc.Dispose();
             return;
@@ -287,9 +287,9 @@ public sealed class CdpConnection : IAsyncDisposable, IDisposable
 
     private void FailAllPending(string reason)
     {
-        foreach (int key in this._pendingRequests.Keys)
+        foreach (int key in _pendingRequests.Keys)
         {
-            if (this._pendingRequests.TryRemove(key, out TaskCompletionSource<JsonDocument>? tcs))
+            if (_pendingRequests.TryRemove(key, out TaskCompletionSource<JsonDocument>? tcs))
             {
                 _ = tcs.TrySetException(new ProtocolException(reason));
             }

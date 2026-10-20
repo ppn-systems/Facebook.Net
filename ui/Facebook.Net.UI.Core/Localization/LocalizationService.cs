@@ -29,10 +29,53 @@ public enum AppLanguage
 }
 
 /// <summary>
+/// Contract for the centralized bilingual (`vi-VN` / `en-US`) localization service.
+/// Enables Dependency Inversion (DIP) and unit-testable i18n formatting across Bounded Contexts.
+/// </summary>
+public interface ILocalizationService : INotifyPropertyChanged
+{
+    /// <summary>Occurs whenever the active UI language is switched.</summary>
+    event EventHandler<AppLanguage>? LanguageChanged;
+
+    /// <summary>Gets the current active UI language.</summary>
+    AppLanguage CurrentLanguage { get; }
+
+    /// <summary>Gets the localized string for the specified key.</summary>
+    string this[string key] { get; }
+
+    /// <summary>Retrieves the localized string for the specified key in the active language.</summary>
+    string GetString(string key);
+
+    /// <summary>Formats a parameterized localized string (<c>{0}</c>, <c>{1}</c>, ...) in the active language.</summary>
+    string Format(string key, params object?[] args);
+
+    /// <summary>Switches the active UI language and notifies all bound controls and listeners.</summary>
+    void SetLanguage(AppLanguage language);
+
+    /// <summary>Formats an <see cref="AccountStatus"/> into a friendly, localized user label.</summary>
+    string FormatAccountStatus(AccountStatus status);
+
+    /// <summary>Formats a <see cref="GroupMembershipState"/> into a friendly, localized user label.</summary>
+    string FormatGroupMembership(GroupMembershipState state);
+
+    /// <summary>Formats an <see cref="AuditCategory"/> (or <c>null</c> for "All") into a friendly, localized label.</summary>
+    string FormatAuditCategory(AuditCategory? category);
+
+    /// <summary>Formats an <see cref="AuditTimeRange"/> into a friendly, localized label.</summary>
+    string FormatAuditTimeRange(AuditTimeRange range);
+
+    /// <summary>Formats a <see cref="PreferredBrowserKind"/> into a friendly, localized label.</summary>
+    string FormatBrowserKind(PreferredBrowserKind kind);
+
+    /// <summary>Formats an <see cref="AppThemeMode"/> into a friendly, localized label.</summary>
+    string FormatThemeMode(AppThemeMode mode);
+}
+
+/// <summary>
 /// Centralized, Native-AOT-safe i18n localization service that loads language catalogs from
 /// embedded JSON locale files (<c>Assets/Locales/vi-VN.json</c>, <c>Assets/Locales/en-US.json</c>).
 /// </summary>
-public sealed class LocalizationService : INotifyPropertyChanged
+public sealed class LocalizationService : ILocalizationService
 {
     private static readonly Dictionary<AppLanguage, Dictionary<string, string>> s_catalogs = new()
     {
@@ -53,7 +96,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
     /// <summary>
     /// Gets the current active UI language.
     /// </summary>
-    public AppLanguage CurrentLanguage => this._currentLanguage;
+    public AppLanguage CurrentLanguage => _currentLanguage;
 
     /// <summary>
     /// Gets the localized string for the specified key.
@@ -61,6 +104,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
     /// <param name="key">The translation key.</param>
     /// <returns>The localized text, or the key itself if not found.</returns>
     public string this[string key] => this.Get(key);
+
+    /// <inheritdoc />
+    public string GetString(string key) => this.Get(key);
 
     /// <summary>
     /// Retrieves the localized string for the specified key in the active language, falling back to <see cref="AppLanguage.ViVn"/> if missing.
@@ -74,7 +120,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
             return string.Empty;
         }
 
-        if (s_catalogs.TryGetValue(this._currentLanguage, out Dictionary<string, string>? primary) &&
+        if (s_catalogs.TryGetValue(_currentLanguage, out Dictionary<string, string>? primary) &&
             primary.TryGetValue(key, out string? value))
         {
             return value;
@@ -112,12 +158,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
     /// <param name="language">The target language.</param>
     public void SetLanguage(AppLanguage language)
     {
-        if (this._currentLanguage == language)
+        if (_currentLanguage == language)
         {
             return;
         }
 
-        this._currentLanguage = language;
+        _currentLanguage = language;
         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentLanguage)));
         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
         this.LanguageChanged?.Invoke(this, language);

@@ -50,7 +50,7 @@ public sealed partial class CometClient : ICometClient
         {
             ct.ThrowIfCancellationRequested();
 
-            int reqNum = Interlocked.Increment(ref this._requestSequence);
+            int reqNum = Interlocked.Increment(ref _requestSequence);
             Dictionary<string, string> headers = PayloadBuilder.BuildGraphQlHeaders(material, request.FriendlyName);
             string formBody = PayloadBuilder.BuildGraphQlFormBody(material, request, reqNum);
 

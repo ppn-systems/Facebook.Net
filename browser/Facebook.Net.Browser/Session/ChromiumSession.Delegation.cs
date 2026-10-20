@@ -32,12 +32,12 @@ public sealed partial class ChromiumSession
         string formUrlEncodedBody,
         CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(formUrlEncodedBody);
 
-        if (this._isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached)
         {
             return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
         }
@@ -110,7 +110,7 @@ public sealed partial class ChromiumSession
         IReadOnlyDictionary<string, string>? additionalFields = null,
         CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(this._isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadUrl);
         ArgumentException.ThrowIfNullOrWhiteSpace(localFilePath);
 
@@ -119,7 +119,7 @@ public sealed partial class ChromiumSession
             throw new FileNotFoundException("Local file for DOM bridge upload was not found.", localFilePath);
         }
 
-        if (this._isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached)
         {
             return await this.ExecuteDetachedMultipartUploadAsync(uploadUrl, localFilePath, fileFieldName, additionalFields, ct).ConfigureAwait(false);
         }
@@ -137,7 +137,7 @@ public sealed partial class ChromiumSession
             })()
             """;
 
-        _ = await this._cdp.SendCommandAsync(
+        _ = await _cdp.SendCommandAsync(
             "Runtime.evaluate",
             new CdpEvaluateParams(createInputJs, AwaitPromise: false, ReturnByValue: true),
             ct).ConfigureAwait(false);
@@ -148,7 +148,7 @@ public sealed partial class ChromiumSession
             int inputNodeId = await this.QuerySelectorNodeIdAsync(rootNodeId, string.Concat("#", bridgeId), ct).ConfigureAwait(false);
 
             List<string> fileList = new(1) { Path.GetFullPath(localFilePath) };
-            using JsonDocument setFilesDoc = await this._cdp.SendCommandAsync(
+            using JsonDocument setFilesDoc = await _cdp.SendCommandAsync(
                 "DOM.setFileInputFiles",
                 new CdpSetFileInputFilesParams(fileList, inputNodeId),
                 ct).ConfigureAwait(false);
@@ -190,7 +190,7 @@ public sealed partial class ChromiumSession
             string cleanupJs = $"(() => {{ const el = document.getElementById('{bridgeId}'); if (el) el.remove(); return true; }})()";
             try
             {
-                using JsonDocument cleanupDoc = await this._cdp.SendCommandAsync(
+                using JsonDocument cleanupDoc = await _cdp.SendCommandAsync(
                     "Runtime.evaluate",
                     new CdpEvaluateParams(cleanupJs, AwaitPromise: false, ReturnByValue: true),
                     CancellationToken.None).ConfigureAwait(false);
@@ -204,7 +204,7 @@ public sealed partial class ChromiumSession
 
     private async Task<string> EvaluateStringAsync(string expression, bool awaitPromise, CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "Runtime.evaluate",
             new CdpEvaluateParams(expression, awaitPromise, ReturnByValue: true),
             ct).ConfigureAwait(false);
@@ -240,7 +240,7 @@ public sealed partial class ChromiumSession
 
     private async Task<int> GetDocumentRootNodeIdAsync(CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "DOM.getDocument",
             new CdpGetDocumentParams(Depth: 1),
             ct).ConfigureAwait(false);
@@ -258,7 +258,7 @@ public sealed partial class ChromiumSession
 
     private async Task<int> QuerySelectorNodeIdAsync(int rootNodeId, string selector, CancellationToken ct)
     {
-        using JsonDocument doc = await this._cdp.SendCommandAsync(
+        using JsonDocument doc = await _cdp.SendCommandAsync(
             "DOM.querySelector",
             new CdpQuerySelectorParams(rootNodeId, selector),
             ct).ConfigureAwait(false);
@@ -276,9 +276,9 @@ public sealed partial class ChromiumSession
 
     private HttpClient GetOrCreateDetachedHttpClient()
     {
-        if (this._detachedHttpClient is not null)
+        if (_detachedHttpClient is not null)
         {
-            return this._detachedHttpClient;
+            return _detachedHttpClient;
         }
 
         SocketsHttpHandler handler = new()
@@ -288,7 +288,7 @@ public sealed partial class ChromiumSession
             PooledConnectionLifetime = TimeSpan.FromMinutes(10)
         };
 
-        if (this._options?.Proxy is { } proxy)
+        if (_options?.Proxy is { } proxy)
         {
             string scheme = proxy.Protocol == ProxyProtocol.Socks5 ? "socks5" : "http";
             Uri proxyUri = new(string.Create(CultureInfo.InvariantCulture, $"{scheme}://{proxy.Host}:{proxy.Port}"));
@@ -302,17 +302,17 @@ public sealed partial class ChromiumSession
             handler.UseProxy = true;
         }
 
-        this._detachedHttpClient = new HttpClient(handler, disposeHandler: true)
+        _detachedHttpClient = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = TimeSpan.FromSeconds(30)
         };
-        return this._detachedHttpClient;
+        return _detachedHttpClient;
     }
 
     private void DisposeDetachedHttpClient()
     {
-        this._detachedHttpClient?.Dispose();
-        this._detachedHttpClient = null;
+        _detachedHttpClient?.Dispose();
+        _detachedHttpClient = null;
     }
 
     private async Task<string> ExecuteDetachedHttpPostAsync(

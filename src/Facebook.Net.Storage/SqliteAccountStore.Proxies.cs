@@ -21,7 +21,7 @@ public sealed partial class SqliteAccountStore
     {
         const string sql = "SELECT id, host, port, protocol, username, password FROM proxies ORDER BY id ASC;";
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -52,7 +52,7 @@ public sealed partial class SqliteAccountStore
                 password = excluded.password;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -72,7 +72,7 @@ public sealed partial class SqliteAccountStore
         ArgumentException.ThrowIfNullOrWhiteSpace(proxyId);
 
         const string sql = "DELETE FROM proxies WHERE id = $id;";
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
