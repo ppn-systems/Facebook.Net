@@ -13,21 +13,21 @@ using Facebook.Net.UI.Core.Threading;
 namespace Facebook.Net.UI.Core.Theming;
 
 /// <summary>
-/// Supported application color themes modeled after the Cloudflare Kumo / Stratus Dashboard design language.
+/// Supported application color themes (Dark and Light mode).
 /// </summary>
 public enum AppThemeMode
 {
-    /// <summary>Cloudflare Dark Mode (Charcoal/Zinc canvas with Cloudflare Orange accents).</summary>
+    /// <summary>Dark Mode (Charcoal/Zinc canvas with warm orange accents).</summary>
     Dark,
 
-    /// <summary>Cloudflare Light Mode (Crisp Slate/White canvas with Cloudflare Orange accents).</summary>
+    /// <summary>Light Mode (Crisp Slate/White canvas with warm orange accents).</summary>
     Light
 }
 
 /// <summary>
-/// Immutable palette snapshot of Cloudflare Dashboard color tokens for either Dark or Light mode.
+/// Immutable palette snapshot of UI color tokens for either Dark or Light mode.
 /// </summary>
-public sealed record CloudflarePalette(
+public sealed record ThemePalette(
     IBrush BrandPrimary,
     IBrush BrandHover,
     IBrush BrandSubtleFill,
@@ -54,11 +54,11 @@ public sealed record CloudflarePalette(
     IBrush InfoBorder);
 
 /// <summary>
-/// Reactive theme service providing Cloudflare Dark and Light palettes and synchronizing Avalonia's <see cref="ThemeVariant"/>.
+/// Reactive theme service providing Dark and Light palettes and synchronizing Avalonia's <see cref="ThemeVariant"/>.
 /// </summary>
 public sealed class ThemeService : INotifyPropertyChanged
 {
-    private static readonly CloudflarePalette s_darkPalette = new(
+    private static readonly ThemePalette s_darkPalette = new(
         BrandPrimary: new ImmutableSolidColorBrush(Color.Parse("#F6821F")),
         BrandHover: new ImmutableSolidColorBrush(Color.Parse("#FF7A4D")),
         BrandSubtleFill: new ImmutableSolidColorBrush(Color.FromArgb(36, 246, 130, 31)),
@@ -84,7 +84,7 @@ public sealed class ThemeService : INotifyPropertyChanged
         InfoFill: new ImmutableSolidColorBrush(Color.FromArgb(32, 14, 165, 233)),
         InfoBorder: new ImmutableSolidColorBrush(Color.FromArgb(64, 56, 189, 248)));
 
-    private static readonly CloudflarePalette s_lightPalette = new(
+    private static readonly ThemePalette s_lightPalette = new(
         BrandPrimary: new ImmutableSolidColorBrush(Color.Parse("#F6821F")),
         BrandHover: new ImmutableSolidColorBrush(Color.Parse("#E06D10")),
         BrandSubtleFill: new ImmutableSolidColorBrush(Color.Parse("#FFF3E8")),
@@ -133,9 +133,9 @@ public sealed class ThemeService : INotifyPropertyChanged
     public AppThemeMode CurrentMode => this._currentMode;
 
     /// <summary>
-    /// Gets the active <see cref="CloudflarePalette"/> for the current mode.
+    /// Gets the active <see cref="ThemePalette"/> for the current mode.
     /// </summary>
-    public CloudflarePalette Palette =>
+    public ThemePalette Palette =>
         this._currentMode == AppThemeMode.Light ? s_lightPalette : s_darkPalette;
 
     /// <summary>

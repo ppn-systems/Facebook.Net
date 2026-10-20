@@ -15,7 +15,7 @@ using Facebook.Net.UI.ViewModels.Shell;
 namespace Facebook.Net.App;
 
 /// <summary>
-/// Root Avalonia application class wiring OS-specific services, Cloudflare theme, i18n, and the multi-screen Shell window.
+/// Root Avalonia application class wiring OS-specific services, theme, i18n, and the multi-screen Shell window.
 /// </summary>
 public sealed class App : Application
 {

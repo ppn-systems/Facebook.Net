@@ -17,7 +17,7 @@ using Facebook.Net.UI.ViewModels.Services;
 namespace Facebook.Net.UI.ViewModels.Shell;
 
 /// <summary>
-/// Navigation tabs in the Cloudflare-styled sidebar.
+/// Navigation pages in the collapsible left sidebar.
 /// </summary>
 public enum NavigationSection
 {
@@ -34,18 +34,24 @@ public enum NavigationSection
     SalesLeads = 3,
 
     /// <summary>Theme, i18n Language, Browser Engine, and Anti-Checkpoint Settings.</summary>
-    Settings = 4
+    Settings = 4,
+
+    /// <summary>Home / Overview status card and quick session controls.</summary>
+    Overview = 5,
+
+    /// <summary>Full-page Activity &amp; Audit Logs viewer.</summary>
+    AuditLogs = 6
 }
 
 /// <summary>
 /// Root Shell ViewModel coordinating multi-screen navigation, active account selection,
-/// visual target groups, scraped group posts, and the collapsible bottom Audit Log drawer.
+/// visual target groups, scraped group posts, and activity audit logs.
 /// Split into partial files by domain screen:
 /// - <c>ShellViewModel.cs</c> (Core navigation &amp; state)
 /// - <c>ShellViewModel.Accounts.cs</c> (Zero-UID account vault, J2Team import &amp; 1-click browser login)
 /// - <c>ShellViewModel.Groups.cs</c> (Auto group sync, visual selection &amp; group search/join)
 /// - <c>ShellViewModel.PublisherAndLeads.cs</c> (Group/Timeline publishing, keyword lead scanner &amp; sales commenting)
-/// - <c>ShellViewModel.Settings.cs</c> (Cloudflare Dark/Light theme, vi-VN/en-US language &amp; browser selection)
+/// - <c>ShellViewModel.Settings.cs</c> (Dark/Light theme, vi-VN/en-US language &amp; browser selection)
 /// </summary>
 public sealed partial class ShellViewModel : ObservableObject, IDisposable
 {
@@ -67,12 +73,18 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.SavedTemplates = new BulkObservableCollection<CampaignTemplate>();
         this.ScrapedPosts = new BulkObservableCollection<PostSummary>();
 
+        // Load persisted settings synchronously BEFORE the UI window constructs controls
+        this.LoadSettingsIntoProperties();
+
         // Navigation & global commands
+        this.NavigateOverviewCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Overview);
         this.NavigateAccountsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Accounts);
         this.NavigateGroupsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Groups);
         this.NavigatePublisherCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Publisher);
         this.NavigateSalesLeadsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.SalesLeads);
         this.NavigateSettingsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.Settings);
+        this.NavigateAuditLogsCommand = new RelayCommand(() => this.CurrentSection = NavigationSection.AuditLogs);
+        this.ToggleSidebarCommand = new RelayCommand(() => this.IsSidebarCollapsed = !this.IsSidebarCollapsed);
         this.ToggleThemeQuickCommand = new RelayCommand(this.ToggleThemeQuick);
         this.ToggleLanguageQuickCommand = new RelayCommand(this.ToggleLanguageQuick);
         this.StopActiveTaskCommand = new RelayCommand(this.StopActiveTask);
@@ -145,6 +157,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the collection of scraped group posts (selected visually as cards).</summary>
     public BulkObservableCollection<PostSummary> ScrapedPosts { get; }
 
+    /// <summary>Gets the command to navigate to the Home / Overview screen.</summary>
+    public IRelayCommand NavigateOverviewCommand { get; }
+
     /// <summary>Gets the command to navigate to Accounts screen.</summary>
     public IRelayCommand NavigateAccountsCommand { get; }
 
@@ -159,6 +174,12 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to navigate to Settings screen.</summary>
     public IRelayCommand NavigateSettingsCommand { get; }
+
+    /// <summary>Gets the command to navigate to Activity / Audit Logs screen.</summary>
+    public IRelayCommand NavigateAuditLogsCommand { get; }
+
+    /// <summary>Gets the command to collapse or expand the left navigation sidebar.</summary>
+    public IRelayCommand ToggleSidebarCommand { get; }
 
     /// <summary>Gets the command to toggle Dark/Light theme from the top bar.</summary>
     public IRelayCommand ToggleThemeQuickCommand { get; }
@@ -276,6 +297,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        this.FlushSettingsToDisk();
         this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
         this._activeTaskCts?.Cancel();
         this._activeTaskCts?.Dispose();

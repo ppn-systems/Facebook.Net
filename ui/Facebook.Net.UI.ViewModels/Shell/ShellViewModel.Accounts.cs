@@ -38,6 +38,11 @@ public sealed partial class ShellViewModel
 
     partial void OnSelectedAccountChanged(AccountProfile? value)
     {
+        if (value is not null && !this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+
         if (value is null || string.IsNullOrWhiteSpace(value.ProxyId))
         {
             this.AccountProxyInput = string.Empty;
@@ -64,7 +69,9 @@ public sealed partial class ShellViewModel
 
     private async Task ReloadAllStoredDataAsync(string? preferredUid = null)
     {
-        string? targetUid = preferredUid ?? this.SelectedAccount?.Uid;
+        string? targetUid = preferredUid
+            ?? this.SelectedAccount?.Uid
+            ?? this._context.Settings.Current.LastSelectedAccountUid;
         IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
         this.Accounts.ReplaceAll(storedAccounts);
 

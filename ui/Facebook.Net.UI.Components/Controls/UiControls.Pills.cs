@@ -15,58 +15,128 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Partial implementation of <see cref="CloudflareControls"/> providing status pills, avatar chips,
-/// section headers, and styled text inputs.
+/// Partial implementation of <see cref="UiControls"/> providing status pills, avatar chips,
+/// compact section headers with click-to-view SVG Info (`i`) flyouts, and styled text inputs.
 /// </summary>
-public static partial class CloudflareControls
+public static partial class UiControls
 {
     /// <summary>
-    /// Creates a Cloudflare section header with a primary title and muted subtitle.
+    /// Creates a compact section header with a primary title and a clickable SVG Info (`i`) icon button
+    /// that opens a clean popover Flyout when clicked instead of cluttering the page with multi-line explanations.
     /// </summary>
-    public static StackPanel CreateSectionHeader(
+    public static Grid CreateSectionHeader(
         ThemeService theme,
         string initialTitle,
-        string initialSubtitle,
+        string initialInfoText,
         out TextBlock titleBlock,
-        out TextBlock subtitleBlock)
+        out TextBlock infoFlyoutBlock)
     {
         ArgumentNullException.ThrowIfNull(theme);
 
         TextBlock title = new()
         {
             Text = initialTitle,
-            FontSize = 16,
+            FontSize = 18,
             FontWeight = FontWeight.SemiBold,
-            TextWrapping = TextWrapping.Wrap
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
-        TextBlock sub = new()
-        {
-            Text = initialSubtitle,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap
-        };
+        Button infoBtn = CreateInfoFlyoutButton(theme, initialInfoText, out TextBlock flyoutText);
 
-        void ApplyColors()
+        Grid headerRow = new()
         {
-            CloudflarePalette p = theme.Palette;
-            title.Foreground = p.TextPrimary;
-            sub.Foreground = p.TextSecondary;
-        }
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(title, 0);
+        Grid.SetColumn(infoBtn, 1);
+        headerRow.Children.Add(title);
+        headerRow.Children.Add(infoBtn);
+
+        void ApplyColors() => title.Foreground = theme.Palette.TextPrimary;
 
         ApplyColors();
-        titleBlock = title;
-        subtitleBlock = sub;
+        BindThemeLifecycle(headerRow, theme, ApplyColors);
 
-        StackPanel stack = new() { Spacing = 3 };
-        stack.Children.Add(title);
-        stack.Children.Add(sub);
-        BindThemeLifecycle(stack, theme, ApplyColors);
-        return stack;
+        titleBlock = title;
+        infoFlyoutBlock = flyoutText;
+        return headerRow;
     }
 
     /// <summary>
-    /// Creates a semantic Cloudflare Status Pill (`Success`, `Warning`, `Error`, `Info`) with a 6px dot and 1px tinted border.
+    /// Creates a compact circular SVG `i` (Info) button that displays an explanatory Flyout card when clicked.
+    /// </summary>
+    public static Button CreateInfoFlyoutButton(
+        ThemeService theme,
+        string initialInfoText,
+        out TextBlock flyoutTextBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock infoBody = new()
+        {
+            Text = initialInfoText,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 320,
+            LineHeight = 18
+        };
+
+        Border flyoutCard = new()
+        {
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(12, 10),
+            Child = infoBody
+        };
+
+        Flyout flyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = flyoutCard
+        };
+
+        PathIcon infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
+
+        Button btn = new()
+        {
+            Width = 26,
+            Height = 26,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(13),
+            BorderThickness = new Thickness(1),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = infoIcon,
+            Flyout = flyout,
+            Focusable = true
+        };
+        AutomationProperties.SetName(btn, initialInfoText);
+        ToolTip.SetTip(btn, initialInfoText);
+
+        void ApplyColors()
+        {
+            ThemePalette p = theme.Palette;
+            btn.Background = p.SecondarySurface;
+            btn.BorderBrush = p.SubtleBorder;
+            infoIcon.Foreground = p.BrandPrimary;
+            flyoutCard.Background = p.ElevatedSurface;
+            flyoutCard.BorderBrush = p.InteractiveBorder;
+            infoBody.Foreground = p.TextPrimary;
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(btn, theme, ApplyColors);
+        flyoutTextBlock = infoBody;
+        return btn;
+    }
+
+    /// <summary>
+    /// Creates a semantic Status Pill (`Success`, `Warning`, `Error`, `Info`) with a 6px dot and 1px tinted border.
     /// </summary>
     public static Border CreateStatusPill(ThemeService theme, string text, AuditSeverity severity)
     {
@@ -119,7 +189,7 @@ public static partial class CloudflareControls
         return pill;
     }
 
-    private static void ApplyPillColors(Border pill, Ellipse dot, TextBlock label, CloudflarePalette p, AuditSeverity severity)
+    private static void ApplyPillColors(Border pill, Ellipse dot, TextBlock label, ThemePalette p, AuditSeverity severity)
     {
         switch (severity)
         {
@@ -211,7 +281,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             tb.Foreground = isBrand
                 ? p.BrandPrimary
                 : (isSecondary ? p.TextSecondary : p.TextPrimary);
@@ -251,7 +321,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             circle.Background = p.BrandSubtleFill;
             circle.BorderBrush = p.BrandSubtleBorder;
             text.Foreground = p.BrandPrimary;
@@ -263,7 +333,7 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
-    /// Creates a Cloudflare-styled <see cref="TextBox"/> with 6px corner radius and subtle border.
+    /// Creates a styled <see cref="TextBox"/> with 8px corner radius and subtle border.
     /// </summary>
     public static TextBox CreateTextBox(
         ThemeService theme,
@@ -278,9 +348,9 @@ public static partial class CloudflareControls
         {
             PlaceholderText = placeholder,
             Text = initialText,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(10, 7),
+            Padding = new Thickness(10, 8),
             FontSize = 13,
             AcceptsReturn = multiline,
             TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
@@ -296,7 +366,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             box.Background = p.SecondarySurface;
             box.BorderBrush = p.InteractiveBorder;
             box.Foreground = p.TextPrimary;
@@ -308,7 +378,7 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
-    /// Creates a Cloudflare Dashboard KPI Stat Card displaying a label, a large monospace/tabular metric value,
+    /// Creates a KPI Stat Card displaying a label, a large monospace/tabular metric value,
     /// and a vector icon badge.
     /// </summary>
     public static Border CreateKpiStatCard(
@@ -369,9 +439,9 @@ public static partial class CloudflareControls
 
         Border card = new()
         {
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(14, 10),
+            Padding = new Thickness(14, 12),
             Child = row
         };
         AutomationProperties.SetName(card, initialTitle);
@@ -379,7 +449,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             card.Background = p.ElevatedSurface;
             card.BorderBrush = p.SubtleBorder;
             title.Foreground = p.TextSecondary;
@@ -397,7 +467,7 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
-    /// Creates a subtle Cloudflare empty-state banner shown when a list or collection is empty.
+    /// Creates a subtle empty-state banner shown when a list or collection is empty.
     /// </summary>
     public static Border CreateEmptyState(
         ThemeService theme,
@@ -429,7 +499,7 @@ public static partial class CloudflareControls
 
         Border box = new()
         {
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(12, 10),
             Child = row
@@ -437,7 +507,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             box.Background = p.SecondarySurface;
             box.BorderBrush = p.SubtleBorder;
             icon.Foreground = p.BrandPrimary;

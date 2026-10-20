@@ -1,6 +1,7 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -16,64 +17,69 @@ using Facebook.Net.UI.Core.Audit;
 namespace Facebook.Net.App.Views;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Accounts Screen and Groups Screen.
-/// Enforces the Zero-UID Visual Selection paradigm (only friendly names, avatars, and status pills are shown).
+/// Partial implementation of <see cref="MainWindow"/> building the single-focus Accounts Page and Groups Page.
+/// Uses compact headers with SVG Info (`i`) flyouts and clean popovers/segmented views so each page stays uncluttered.
 /// </summary>
 public sealed partial class MainWindow
 {
     private Control BuildAccountsScreen()
     {
-        Grid grid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("380,*"),
-            ColumnSpacing = 16
-        };
+        StackPanel pageStack = new() { Spacing = 14 };
 
-        // Left Card: 1-Click Session Import & Browser Login
-        StackPanel leftStack = new() { Spacing = 10 };
-        StackPanel header = CloudflareControls.CreateSectionHeader(
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Accounts.Header"],
             this._i18n["Accounts.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        leftStack.Children.Add(header);
+        pageStack.Children.Add(header);
 
-        TextBox nameBox = CloudflareControls.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
+        // Quick Import Flyout Card (opened only when the user clicks the Import Session button)
+        TextBox nameBox = UiControls.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
         nameBox.TextChanged += (_, _) => this._vm.AccountFriendlyNameInput = nameBox.Text ?? string.Empty;
 
-        TextBox cookieBox = CloudflareControls.CreateTextBox(
+        TextBox cookieBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Accounts.CookiePlaceholder"],
             multiline: true,
-            height: 95);
+            height: 85);
         cookieBox.TextChanged += (_, _) => this._vm.SessionImportRawInput = cookieBox.Text ?? string.Empty;
 
-        TextBox proxyBox = CloudflareControls.CreateTextBox(
+        Button confirmImportBtn = UiControls.CreatePrimaryButton(
             this._theme,
-            this._i18n["Accounts.ProxyPlaceholder"]);
-        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
+            this._i18n["Accounts.BtnQuickImport"],
+            this._vm.QuickImportSessionCommand,
+            VectorIcons.Accounts);
 
-        this._vm.PropertyChanged += (_, e) =>
+        StackPanel importFlyoutStack = new()
         {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountFriendlyNameInput), System.StringComparison.Ordinal) &&
-                !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, System.StringComparison.Ordinal))
-            {
-                nameBox.Text = this._vm.AccountFriendlyNameInput;
-            }
-            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SessionImportRawInput), System.StringComparison.Ordinal) &&
-                     !string.Equals(cookieBox.Text, this._vm.SessionImportRawInput, System.StringComparison.Ordinal))
-            {
-                cookieBox.Text = this._vm.SessionImportRawInput;
-            }
-            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountProxyInput), System.StringComparison.Ordinal) &&
-                     !string.Equals(proxyBox.Text, this._vm.AccountProxyInput, System.StringComparison.Ordinal))
-            {
-                proxyBox.Text = this._vm.AccountProxyInput;
-            }
+            Spacing = 8,
+            Width = 340
+        };
+        importFlyoutStack.Children.Add(nameBox);
+        importFlyoutStack.Children.Add(cookieBox);
+        importFlyoutStack.Children.Add(confirmImportBtn);
+
+        Flyout importFlyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = UiControls.CreateCard(this._theme, importFlyoutStack, new Thickness(14))
         };
 
-        Button pasteClipboardBtn = CloudflareControls.CreateSecondaryButton(
+        // Top 1-Click Action Bar
+        Grid topActionBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*"),
+            ColumnSpacing = 8
+        };
+
+        Button openBrowserBtn = UiControls.CreatePrimaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnOpenBrowserLogin"],
+            this._vm.OpenBrowserAndSyncCommand,
+            VectorIcons.Browser);
+
+        Button pasteClipboardBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Accounts.BtnPasteClipboard"],
             iconSvg: VectorIcons.Sync);
@@ -93,59 +99,25 @@ public sealed partial class MainWindow
             }
         };
 
-        Button quickImportBtn = CloudflareControls.CreateSecondaryButton(
+        Button openImportFlyoutBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Accounts.BtnQuickImport"],
-            this._vm.QuickImportSessionCommand,
-            VectorIcons.Accounts);
+            iconSvg: VectorIcons.Accounts);
+        openImportFlyoutBtn.Flyout = importFlyout;
 
-        Button openBrowserBtn = CloudflareControls.CreatePrimaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnOpenBrowserLogin"],
-            this._vm.OpenBrowserAndSyncCommand,
-            VectorIcons.Browser);
+        Grid.SetColumn(openBrowserBtn, 0);
+        Grid.SetColumn(pasteClipboardBtn, 1);
+        Grid.SetColumn(openImportFlyoutBtn, 2);
+        topActionBar.Children.Add(openBrowserBtn);
+        topActionBar.Children.Add(pasteClipboardBtn);
+        topActionBar.Children.Add(openImportFlyoutBtn);
+        pageStack.Children.Add(topActionBar);
 
-        Button checkHealthBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnCheckHealth"],
-            this._vm.CheckAccountHealthCommand,
-            VectorIcons.CheckCircle);
-
-        Button warmUpBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnWarmUp"],
-            this._vm.WarmUpAccountCommand,
-            VectorIcons.Sync);
-
-        Button saveProxyBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnSaveProxy"],
-            this._vm.SaveAccountProxyCommand,
-            VectorIcons.Settings);
-
-        Button deleteBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Accounts.BtnDelete"],
-            this._vm.DeleteSelectedAccountCommand);
-
-        leftStack.Children.Add(nameBox);
-        leftStack.Children.Add(cookieBox);
-        leftStack.Children.Add(proxyBox);
-        leftStack.Children.Add(pasteClipboardBtn);
-        leftStack.Children.Add(quickImportBtn);
-        leftStack.Children.Add(openBrowserBtn);
-        leftStack.Children.Add(checkHealthBtn);
-        leftStack.Children.Add(warmUpBtn);
-        leftStack.Children.Add(saveProxyBtn);
-        leftStack.Children.Add(deleteBtn);
-
-        Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
-        Grid.SetColumn(leftCard, 0);
-        grid.Children.Add(leftCard);
-
-        // Right Card: Visual Account Vault (Avatar + DisplayName + Proxy Status + Status Pill, NO raw UID)
+        // Visual Account List (Single-focus center card)
         ListBox accountList = new()
         {
+            MinHeight = 300,
+            MaxHeight = 380,
             ItemsSource = this._vm.Accounts,
             SelectedItem = this._vm.SelectedAccount,
             ItemTemplate = new FuncDataTemplate<AccountProfile>((item, _) =>
@@ -159,10 +131,10 @@ public sealed partial class MainWindow
                 {
                     ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 12,
-                    Margin = new Thickness(4, 6)
+                    Margin = new Thickness(4, 5)
                 };
 
-                Border avatar = CloudflareControls.CreateAvatarBadge(this._theme, item.DisplayName, 36);
+                Border avatar = UiControls.CreateAvatarBadge(this._theme, item.DisplayName, 36);
                 Grid.SetColumn(avatar, 0);
 
                 string FormatSubInfo()
@@ -177,8 +149,8 @@ public sealed partial class MainWindow
                 }
 
                 StackPanel info = new() { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
-                TextBlock displayName = CloudflareControls.CreateThemedLabel(this._theme, item.DisplayName, 14, FontWeight.SemiBold);
-                TextBlock subInfo = CloudflareControls.CreateThemedLabel(
+                TextBlock displayName = UiControls.CreateThemedLabel(this._theme, item.DisplayName, 14, FontWeight.SemiBold);
+                TextBlock subInfo = UiControls.CreateThemedLabel(
                     this._theme,
                     FormatSubInfo(),
                     11,
@@ -191,7 +163,7 @@ public sealed partial class MainWindow
                 AuditSeverity sev = item.Status == AccountStatus.Active
                     ? AuditSeverity.Success
                     : (item.Status == AccountStatus.Checkpoint ? AuditSeverity.Error : AuditSeverity.Warning);
-                Border statusPill = CloudflareControls.CreateStatusPill(
+                Border statusPill = UiControls.CreateStatusPill(
                     this._theme,
                     this._i18n.FormatAccountStatus(item.Status),
                     sev);
@@ -200,13 +172,13 @@ public sealed partial class MainWindow
                 this._i18n.LanguageChanged += (_, _) =>
                 {
                     subInfo.Text = FormatSubInfo();
-                    CloudflareControls.SetPillText(statusPill, this._i18n.FormatAccountStatus(item.Status));
+                    UiControls.SetPillText(statusPill, this._i18n.FormatAccountStatus(item.Status));
                 };
 
                 row.Children.Add(avatar);
                 row.Children.Add(info);
                 row.Children.Add(statusPill);
-                return CloudflareControls.CreateInsetWell(this._theme, row, new Thickness(10, 6));
+                return UiControls.CreateInsetWell(this._theme, row, new Thickness(10, 6));
             })
         };
 
@@ -218,16 +190,7 @@ public sealed partial class MainWindow
             }
         };
 
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedAccount), System.StringComparison.Ordinal) &&
-                !ReferenceEquals(accountList.SelectedItem, this._vm.SelectedAccount))
-            {
-                accountList.SelectedItem = this._vm.SelectedAccount;
-            }
-        };
-
-        Border emptyAccountsBanner = CloudflareControls.CreateEmptyState(
+        Border emptyAccountsBanner = UiControls.CreateEmptyState(
             this._theme,
             this._i18n["Empty.Accounts"],
             VectorIcons.Accounts,
@@ -236,13 +199,79 @@ public sealed partial class MainWindow
         this._vm.Accounts.CollectionChanged += (_, _) =>
             emptyAccountsBanner.IsVisible = this._vm.Accounts.Count == 0;
 
-        StackPanel rightAccStack = new() { Spacing = 8 };
-        rightAccStack.Children.Add(emptyAccountsBanner);
-        rightAccStack.Children.Add(accountList);
+        // Bottom Selected Account Actions & Proxy Bar
+        Grid selectedAccBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
+            ColumnSpacing = 8
+        };
 
-        Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightAccStack });
-        Grid.SetColumn(rightCard, 1);
-        grid.Children.Add(rightCard);
+        TextBox proxyBox = UiControls.CreateTextBox(
+            this._theme,
+            this._i18n["Accounts.ProxyPlaceholder"]);
+        proxyBox.TextChanged += (_, _) => this._vm.AccountProxyInput = proxyBox.Text ?? string.Empty;
+
+        Button saveProxyBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnSaveProxy"],
+            this._vm.SaveAccountProxyCommand,
+            VectorIcons.Settings);
+
+        Button checkHealthBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnCheckHealth"],
+            this._vm.CheckAccountHealthCommand,
+            VectorIcons.CheckCircle);
+
+        Button warmUpBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnWarmUp"],
+            this._vm.WarmUpAccountCommand,
+            VectorIcons.Sync);
+
+        Button deleteBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Accounts.BtnDelete"],
+            this._vm.DeleteSelectedAccountCommand);
+
+        Grid.SetColumn(proxyBox, 0);
+        Grid.SetColumn(saveProxyBtn, 1);
+        Grid.SetColumn(checkHealthBtn, 2);
+        Grid.SetColumn(warmUpBtn, 3);
+        Grid.SetColumn(deleteBtn, 4);
+        selectedAccBar.Children.Add(proxyBox);
+        selectedAccBar.Children.Add(saveProxyBtn);
+        selectedAccBar.Children.Add(checkHealthBtn);
+        selectedAccBar.Children.Add(warmUpBtn);
+        selectedAccBar.Children.Add(deleteBtn);
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedAccount), StringComparison.Ordinal) &&
+                !ReferenceEquals(accountList.SelectedItem, this._vm.SelectedAccount))
+            {
+                accountList.SelectedItem = this._vm.SelectedAccount;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountFriendlyNameInput), StringComparison.Ordinal) &&
+                     !string.Equals(nameBox.Text, this._vm.AccountFriendlyNameInput, StringComparison.Ordinal))
+            {
+                nameBox.Text = this._vm.AccountFriendlyNameInput;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SessionImportRawInput), StringComparison.Ordinal) &&
+                     !string.Equals(cookieBox.Text, this._vm.SessionImportRawInput, StringComparison.Ordinal))
+            {
+                cookieBox.Text = this._vm.SessionImportRawInput;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.AccountProxyInput), StringComparison.Ordinal) &&
+                     !string.Equals(proxyBox.Text, this._vm.AccountProxyInput, StringComparison.Ordinal))
+            {
+                proxyBox.Text = this._vm.AccountProxyInput;
+            }
+        };
+
+        pageStack.Children.Add(emptyAccountsBanner);
+        pageStack.Children.Add(accountList);
+        pageStack.Children.Add(selectedAccBar);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -252,72 +281,97 @@ public sealed partial class MainWindow
             nameBox.PlaceholderText = this._i18n["Accounts.NamePlaceholder"];
             cookieBox.PlaceholderText = this._i18n["Accounts.CookiePlaceholder"];
             proxyBox.PlaceholderText = this._i18n["Accounts.ProxyPlaceholder"];
-            CloudflareControls.SetButtonText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
-            CloudflareControls.SetButtonText(quickImportBtn, this._i18n["Accounts.BtnQuickImport"]);
-            CloudflareControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            CloudflareControls.SetButtonText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
-            CloudflareControls.SetButtonText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
-            CloudflareControls.SetButtonText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
-            CloudflareControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
+            UiControls.SetButtonText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
+            UiControls.SetButtonText(openImportFlyoutBtn, this._i18n["Accounts.BtnQuickImport"]);
+            UiControls.SetButtonText(confirmImportBtn, this._i18n["Accounts.BtnQuickImport"]);
+            UiControls.SetButtonText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
+            UiControls.SetButtonText(checkHealthBtn, this._i18n["Accounts.BtnCheckHealth"]);
+            UiControls.SetButtonText(warmUpBtn, this._i18n["Accounts.BtnWarmUp"]);
+            UiControls.SetButtonText(saveProxyBtn, this._i18n["Accounts.BtnSaveProxy"]);
+            UiControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };
 
-        return grid;
+        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
     }
 
     private Control BuildGroupsScreen()
     {
-        Grid grid = new()
+        StackPanel pageStack = new() { Spacing = 12 };
+
+        // Header + Segmented View Switcher (Catalog vs Target Campaign Groups) on one clean single page
+        Grid topBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
-            ColumnSpacing = 16
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Left: Synced & Discovered Groups Catalog
-        StackPanel leftStack = new() { Spacing = 10 };
-        StackPanel header = CloudflareControls.CreateSectionHeader(
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Groups.Header"],
             this._i18n["Groups.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        leftStack.Children.Add(header);
 
-        Button syncJoinedBtn = CloudflareControls.CreatePrimaryButton(
+        Button tabCatalogBtn = UiControls.CreatePrimaryButton(
+            this._theme,
+            this._i18n["Nav.Groups"],
+            iconSvg: VectorIcons.Groups);
+
+        Button tabTargetsBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Groups.TargetListTitle"],
+            iconSvg: VectorIcons.CheckCircle);
+
+        Grid.SetColumn(header, 0);
+        Grid.SetColumn(tabCatalogBtn, 1);
+        Grid.SetColumn(tabTargetsBtn, 2);
+        topBar.Children.Add(header);
+        topBar.Children.Add(tabCatalogBtn);
+        topBar.Children.Add(tabTargetsBtn);
+        pageStack.Children.Add(topBar);
+
+        // View 1: Group Catalog & Discovery
+        StackPanel catalogPane = new() { Spacing = 10 };
+
+        Grid searchAndSyncRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 8
+        };
+
+        Button syncJoinedBtn = UiControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Groups.BtnSyncJoined"],
             this._vm.SyncJoinedGroupsCommand,
             VectorIcons.Sync);
 
-        Grid searchRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        TextBox searchKeywordBox = CloudflareControls.CreateTextBox(
+        TextBox searchKeywordBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Groups.SearchKeywordPlaceholder"]);
         searchKeywordBox.TextChanged += (_, _) => this._vm.GroupSearchKeyword = searchKeywordBox.Text ?? string.Empty;
 
-        Button searchBtn = CloudflareControls.CreateSecondaryButton(
+        Button searchBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnSearchNew"],
             this._vm.SearchGroupsByKeywordCommand,
             VectorIcons.Search);
 
-        Grid.SetColumn(searchKeywordBox, 0);
-        Grid.SetColumn(searchBtn, 1);
-        searchRow.Children.Add(searchKeywordBox);
-        searchRow.Children.Add(searchBtn);
+        Grid.SetColumn(syncJoinedBtn, 0);
+        Grid.SetColumn(searchKeywordBox, 1);
+        Grid.SetColumn(searchBtn, 2);
+        searchAndSyncRow.Children.Add(syncJoinedBtn);
+        searchAndSyncRow.Children.Add(searchKeywordBox);
+        searchAndSyncRow.Children.Add(searchBtn);
 
-        TextBox localFilterBox = CloudflareControls.CreateTextBox(
+        TextBox localFilterBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Groups.FilterPlaceholder"]);
         localFilterBox.TextChanged += (_, _) => this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
 
         ListBox groupsList = new()
         {
-            Height = 250,
+            Height = 290,
             ItemsSource = this._vm.JoinedGroups,
             SelectedItem = this._vm.SelectedGroup,
             ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
@@ -334,20 +388,20 @@ public sealed partial class MainWindow
                     Margin = new Thickness(4)
                 };
 
-                Border badge = CloudflareControls.CreateAvatarBadge(this._theme, grp.Name, 30);
+                Border badge = UiControls.CreateAvatarBadge(this._theme, grp.Name, 30);
                 Grid.SetColumn(badge, 0);
 
-                TextBlock nameTb = CloudflareControls.CreateThemedLabel(this._theme, grp.Name, 13, FontWeight.Medium);
+                TextBlock nameTb = UiControls.CreateThemedLabel(this._theme, grp.Name, 13, FontWeight.Medium);
                 Grid.SetColumn(nameTb, 1);
 
-                Border statePill = CloudflareControls.CreateStatusPill(
+                Border statePill = UiControls.CreateStatusPill(
                     this._theme,
                     this._i18n.FormatGroupMembership(grp.MembershipState),
                     grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
                 Grid.SetColumn(statePill, 2);
 
                 this._i18n.LanguageChanged += (_, _) =>
-                    CloudflareControls.SetPillText(statePill, this._i18n.FormatGroupMembership(grp.MembershipState));
+                    UiControls.SetPillText(statePill, this._i18n.FormatGroupMembership(grp.MembershipState));
 
                 row.Children.Add(badge);
                 row.Children.Add(nameTb);
@@ -366,32 +420,34 @@ public sealed partial class MainWindow
 
         Grid actionRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
             ColumnSpacing = 8
         };
 
-        Button saveTargetBtn = CloudflareControls.CreatePrimaryButton(
+        Button saveTargetBtn = UiControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Groups.BtnSaveTarget"],
             this._vm.AddSelectedGroupToTargetsCommand);
 
-        Button joinBtn = CloudflareControls.CreateSecondaryButton(
+        Button joinBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnJoinSelected"],
             this._vm.JoinSelectedGroupCommand);
 
-        Grid.SetColumn(saveTargetBtn, 0);
-        Grid.SetColumn(joinBtn, 1);
-        actionRow.Children.Add(saveTargetBtn);
-        actionRow.Children.Add(joinBtn);
-
-        Button autoJoinAllBtn = CloudflareControls.CreateSecondaryButton(
+        Button autoJoinAllBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnAutoJoinDiscovered"],
             this._vm.AutoJoinDiscoveredGroupsCommand,
             VectorIcons.Groups);
 
-        Border emptyGroupsBanner = CloudflareControls.CreateEmptyState(
+        Grid.SetColumn(saveTargetBtn, 0);
+        Grid.SetColumn(joinBtn, 1);
+        Grid.SetColumn(autoJoinAllBtn, 2);
+        actionRow.Children.Add(saveTargetBtn);
+        actionRow.Children.Add(joinBtn);
+        actionRow.Children.Add(autoJoinAllBtn);
+
+        Border emptyGroupsBanner = UiControls.CreateEmptyState(
             this._theme,
             this._i18n["Empty.Groups"],
             VectorIcons.Groups,
@@ -400,47 +456,47 @@ public sealed partial class MainWindow
         this._vm.JoinedGroups.CollectionChanged += (_, _) =>
             emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
 
-        leftStack.Children.Add(syncJoinedBtn);
-        leftStack.Children.Add(searchRow);
-        leftStack.Children.Add(localFilterBox);
-        leftStack.Children.Add(emptyGroupsBanner);
-        leftStack.Children.Add(groupsList);
-        leftStack.Children.Add(actionRow);
-        leftStack.Children.Add(autoJoinAllBtn);
+        catalogPane.Children.Add(searchAndSyncRow);
+        catalogPane.Children.Add(localFilterBox);
+        catalogPane.Children.Add(emptyGroupsBanner);
+        catalogPane.Children.Add(groupsList);
+        catalogPane.Children.Add(actionRow);
 
-        Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
-        Grid.SetColumn(leftCard, 0);
-        grid.Children.Add(leftCard);
-
-        // Right: Selected Target Campaign Groups with CheckBox toggles
-        StackPanel rightStack = new() { Spacing = 10 };
-        TextBlock targetListHeader = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Groups.TargetListTitle"],
-            15,
-            FontWeight.SemiBold);
+        // View 2: Target Campaign Groups Pane
+        StackPanel targetsPane = new()
+        {
+            Spacing = 10,
+            IsVisible = false
+        };
 
         Grid bulkToggleRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
             ColumnSpacing = 8
         };
 
-        Button selectAllTargetsBtn = CloudflareControls.CreateSecondaryButton(
+        Button selectAllTargetsBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnSelectAllTargets"],
             this._vm.EnableAllTargetGroupsCommand,
             VectorIcons.CheckCircle);
 
-        Button deselectAllTargetsBtn = CloudflareControls.CreateSecondaryButton(
+        Button deselectAllTargetsBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Groups.BtnDeselectAllTargets"],
             this._vm.DisableAllTargetGroupsCommand);
 
+        Button removeTargetBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Groups.BtnRemoveTarget"],
+            this._vm.RemoveSelectedTargetGroupCommand);
+
         Grid.SetColumn(selectAllTargetsBtn, 0);
         Grid.SetColumn(deselectAllTargetsBtn, 1);
+        Grid.SetColumn(removeTargetBtn, 2);
         bulkToggleRow.Children.Add(selectAllTargetsBtn);
         bulkToggleRow.Children.Add(deselectAllTargetsBtn);
+        bulkToggleRow.Children.Add(removeTargetBtn);
 
         ListBox targetList = new()
         {
@@ -476,8 +532,8 @@ public sealed partial class MainWindow
                 };
 
                 sp.Children.Add(enabledCheck);
-                sp.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, tg.GroupName, 28));
-                sp.Children.Add(CloudflareControls.CreateThemedLabel(this._theme, tg.GroupName, 13, FontWeight.SemiBold));
+                sp.Children.Add(UiControls.CreateAvatarBadge(this._theme, tg.GroupName, 28));
+                sp.Children.Add(UiControls.CreateThemedLabel(this._theme, tg.GroupName, 13, FontWeight.SemiBold));
                 return sp;
             })
         };
@@ -490,26 +546,7 @@ public sealed partial class MainWindow
             }
         };
 
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedGroup), System.StringComparison.Ordinal) &&
-                !ReferenceEquals(groupsList.SelectedItem, this._vm.SelectedGroup))
-            {
-                groupsList.SelectedItem = this._vm.SelectedGroup;
-            }
-            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedTargetGroup), System.StringComparison.Ordinal) &&
-                     !ReferenceEquals(targetList.SelectedItem, this._vm.SelectedTargetGroup))
-            {
-                targetList.SelectedItem = this._vm.SelectedTargetGroup;
-            }
-        };
-
-        Button removeTargetBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Groups.BtnRemoveTarget"],
-            this._vm.RemoveSelectedTargetGroupCommand);
-
-        Border emptyTargetsBanner = CloudflareControls.CreateEmptyState(
+        Border emptyTargetsBanner = UiControls.CreateEmptyState(
             this._theme,
             this._i18n["Empty.TargetGroups"],
             VectorIcons.CheckCircle,
@@ -518,35 +555,58 @@ public sealed partial class MainWindow
         this._vm.TargetGroups.CollectionChanged += (_, _) =>
             emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
 
-        rightStack.Children.Add(targetListHeader);
-        rightStack.Children.Add(bulkToggleRow);
-        rightStack.Children.Add(emptyTargetsBanner);
-        rightStack.Children.Add(targetList);
-        rightStack.Children.Add(removeTargetBtn);
+        targetsPane.Children.Add(bulkToggleRow);
+        targetsPane.Children.Add(emptyTargetsBanner);
+        targetsPane.Children.Add(targetList);
 
-        Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightStack });
-        Grid.SetColumn(rightCard, 1);
-        grid.Children.Add(rightCard);
+        tabCatalogBtn.Click += (_, _) =>
+        {
+            catalogPane.IsVisible = true;
+            targetsPane.IsVisible = false;
+        };
+        tabTargetsBtn.Click += (_, _) =>
+        {
+            catalogPane.IsVisible = false;
+            targetsPane.IsVisible = true;
+        };
+
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedGroup), StringComparison.Ordinal) &&
+                !ReferenceEquals(groupsList.SelectedItem, this._vm.SelectedGroup))
+            {
+                groupsList.SelectedItem = this._vm.SelectedGroup;
+            }
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedTargetGroup), StringComparison.Ordinal) &&
+                     !ReferenceEquals(targetList.SelectedItem, this._vm.SelectedTargetGroup))
+            {
+                targetList.SelectedItem = this._vm.SelectedTargetGroup;
+            }
+        };
+
+        pageStack.Children.Add(catalogPane);
+        pageStack.Children.Add(targetsPane);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Groups.Header"];
             descTb.Text = this._i18n["Groups.Desc"];
+            UiControls.SetButtonText(tabCatalogBtn, this._i18n["Nav.Groups"]);
+            UiControls.SetButtonText(tabTargetsBtn, this._i18n["Groups.TargetListTitle"]);
             emptyGroupsTb.Text = this._i18n["Empty.Groups"];
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
             searchKeywordBox.PlaceholderText = this._i18n["Groups.SearchKeywordPlaceholder"];
             localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
-            CloudflareControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
-            CloudflareControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
-            CloudflareControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
-            CloudflareControls.SetButtonText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
-            CloudflareControls.SetButtonText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
-            targetListHeader.Text = this._i18n["Groups.TargetListTitle"];
-            CloudflareControls.SetButtonText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
-            CloudflareControls.SetButtonText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
-            CloudflareControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
+            UiControls.SetButtonText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
+            UiControls.SetButtonText(searchBtn, this._i18n["Groups.BtnSearchNew"]);
+            UiControls.SetButtonText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
+            UiControls.SetButtonText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
+            UiControls.SetButtonText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
+            UiControls.SetButtonText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
+            UiControls.SetButtonText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
+            UiControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
-        return grid;
+        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
     }
 }

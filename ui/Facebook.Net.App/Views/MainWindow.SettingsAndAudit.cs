@@ -17,12 +17,13 @@ using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Audit;
+using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App.Views;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the System Settings Screen
-/// and the Collapsible Bottom Audit Log Taskbar / Drawer.
+/// Partial implementation of <see cref="MainWindow"/> building the clean single-card System Settings Page
+/// and the dedicated full-page Activity &amp; Audit Logs Screen.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -36,23 +37,34 @@ public sealed partial class MainWindow
 
     private Control BuildSettingsScreen()
     {
-        Grid grid = new()
+        StackPanel formStack = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
-            ColumnSpacing = 16
+            Spacing = 12,
+            MaxWidth = 640,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
-        StackPanel leftStack = new() { Spacing = 10 };
-        StackPanel header = CloudflareControls.CreateSectionHeader(
+        // Header with SVG Info (`i`) Flyout containing both the description and quick start guide
+        string CombinedSettingsInfo() =>
+            $"{this._i18n["Settings.Desc"]}\n\n{this._i18n["Settings.GuideTitle"]}:\n{this._i18n["Settings.GuideBody"]}";
+
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Settings.Header"],
-            this._i18n["Settings.Desc"],
+            CombinedSettingsInfo(),
             out TextBlock titleTb,
             out TextBlock descTb);
-        leftStack.Children.Add(header);
+        formStack.Children.Add(header);
 
-        // 1. Theme Selector
-        TextBlock themeLabel = CloudflareControls.CreateThemedLabel(
+        // 1. Theme & Language in a clean 2-column row
+        Grid appearanceRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 12
+        };
+
+        StackPanel themeCol = new() { Spacing = 6 };
+        TextBlock themeLabel = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.ThemeLabel"],
             12,
@@ -66,21 +78,23 @@ public sealed partial class MainWindow
             SelectedItem = this._vm.SelectedThemeMode,
             ItemTemplate = new FuncDataTemplate<AppThemeMode>((m, _) =>
             {
-                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
+                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatThemeMode(m);
                 return tb;
             })
         };
         themeCombo.SelectionChanged += (_, _) =>
         {
-            if (themeCombo.SelectedItem is AppThemeMode mode)
+            if (themeCombo.SelectedItem is AppThemeMode mode && this._vm.SelectedThemeMode != mode)
             {
                 this._vm.SelectedThemeMode = mode;
             }
         };
+        themeCol.Children.Add(themeLabel);
+        themeCol.Children.Add(themeCombo);
 
-        // 2. Language Selector
-        TextBlock langLabel = CloudflareControls.CreateThemedLabel(
+        StackPanel langCol = new() { Spacing = 6 };
+        TextBlock langLabel = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.LanguageLabel"],
             12,
@@ -93,30 +107,26 @@ public sealed partial class MainWindow
             ItemsSource = new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
             SelectedItem = this._vm.SelectedLanguage,
             ItemTemplate = new FuncDataTemplate<AppLanguage>((l, _) =>
-                CloudflareControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12))
+                UiControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12))
         };
         langCombo.SelectionChanged += (_, _) =>
         {
-            if (langCombo.SelectedItem is AppLanguage lang)
+            if (langCombo.SelectedItem is AppLanguage lang && this._vm.SelectedLanguage != lang)
             {
                 this._vm.SelectedLanguage = lang;
             }
         };
+        langCol.Children.Add(langLabel);
+        langCol.Children.Add(langCombo);
 
-        this._vm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedThemeMode), StringComparison.Ordinal))
-            {
-                themeCombo.SelectedItem = this._vm.SelectedThemeMode;
-            }
-            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedLanguage), StringComparison.Ordinal))
-            {
-                langCombo.SelectedItem = this._vm.SelectedLanguage;
-            }
-        };
+        Grid.SetColumn(themeCol, 0);
+        Grid.SetColumn(langCol, 1);
+        appearanceRow.Children.Add(themeCol);
+        appearanceRow.Children.Add(langCol);
+        formStack.Children.Add(appearanceRow);
 
-        // 3. Browser Engine Selector
-        TextBlock browserLabel = CloudflareControls.CreateThemedLabel(
+        // 2. Browser Engine Selector
+        TextBlock browserLabel = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.BrowserEngineLabel"],
             12,
@@ -136,14 +146,14 @@ public sealed partial class MainWindow
             SelectedItem = this._vm.SelectedBrowserKind,
             ItemTemplate = new FuncDataTemplate<PreferredBrowserKind>((k, _) =>
             {
-                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
+                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatBrowserKind(k);
                 return tb;
             })
         };
         browserCombo.SelectionChanged += (_, _) =>
         {
-            if (browserCombo.SelectedItem is PreferredBrowserKind kind)
+            if (browserCombo.SelectedItem is PreferredBrowserKind kind && this._vm.SelectedBrowserKind != kind)
             {
                 this._vm.SelectedBrowserKind = kind;
             }
@@ -155,13 +165,20 @@ public sealed partial class MainWindow
             ColumnSpacing = 8
         };
 
-        TextBox customExeBox = CloudflareControls.CreateTextBox(
+        TextBox customExeBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Settings.BrowserCustomPathPlaceholder"],
             this._vm.CustomBrowserExecutablePath);
-        customExeBox.TextChanged += (_, _) => this._vm.CustomBrowserExecutablePath = customExeBox.Text ?? string.Empty;
+        customExeBox.TextChanged += (_, _) =>
+        {
+            string next = customExeBox.Text ?? string.Empty;
+            if (!string.Equals(this._vm.CustomBrowserExecutablePath, next, StringComparison.Ordinal))
+            {
+                this._vm.CustomBrowserExecutablePath = next;
+            }
+        };
 
-        Button browseExeBtn = CloudflareControls.CreateSecondaryButton(
+        Button browseExeBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Common.BrowseFile"]);
         browseExeBtn.Click += async (_, _) =>
@@ -185,10 +202,16 @@ public sealed partial class MainWindow
             IsChecked = this._vm.RunBrowserHeadless
         };
         headlessCheck.IsCheckedChanged += (_, _) =>
-            this._vm.RunBrowserHeadless = headlessCheck.IsChecked ?? false;
+        {
+            bool next = headlessCheck.IsChecked ?? false;
+            if (this._vm.RunBrowserHeadless != next)
+            {
+                this._vm.RunBrowserHeadless = next;
+            }
+        };
 
-        // 4. Anti-Checkpoint Delay Range Controls
-        TextBlock delayRangeLabel = CloudflareControls.CreateThemedLabel(
+        // 3. Anti-Checkpoint Delay Range Controls
+        TextBlock delayRangeLabel = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.DelayRangeLabel"],
             12,
@@ -201,37 +224,49 @@ public sealed partial class MainWindow
             ColumnSpacing = 8
         };
 
-        TextBlock minDelayPrefix = CloudflareControls.CreateThemedLabel(
+        TextBlock minDelayPrefix = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.MinDelayPrefix"],
             12);
 
         NumericUpDown minDelayBox = new()
         {
-            Minimum = 0,
+            Minimum = 1,
             Maximum = 600,
             Increment = 5,
             Value = this._vm.MinDelaySeconds,
             FormatString = "0"
         };
         minDelayBox.ValueChanged += (_, _) =>
-            this._vm.MinDelaySeconds = (int)(minDelayBox.Value ?? 15);
+        {
+            int next = (int)(minDelayBox.Value ?? 15);
+            if (this._vm.MinDelaySeconds != next)
+            {
+                this._vm.MinDelaySeconds = next;
+            }
+        };
 
-        TextBlock maxDelayPrefix = CloudflareControls.CreateThemedLabel(
+        TextBlock maxDelayPrefix = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Settings.MaxDelayPrefix"],
             12);
 
         NumericUpDown maxDelayBox = new()
         {
-            Minimum = 0,
+            Minimum = 1,
             Maximum = 1200,
             Increment = 5,
             Value = this._vm.MaxDelaySeconds,
             FormatString = "0"
         };
         maxDelayBox.ValueChanged += (_, _) =>
-            this._vm.MaxDelaySeconds = (int)(maxDelayBox.Value ?? 45);
+        {
+            int next = (int)(maxDelayBox.Value ?? 45);
+            if (this._vm.MaxDelaySeconds != next)
+            {
+                this._vm.MaxDelaySeconds = next;
+            }
+        };
 
         Grid.SetColumn(minDelayPrefix, 0);
         Grid.SetColumn(minDelayBox, 1);
@@ -242,132 +277,115 @@ public sealed partial class MainWindow
         delayRow.Children.Add(maxDelayPrefix);
         delayRow.Children.Add(maxDelayBox);
 
-        Button saveBtn = CloudflareControls.CreatePrimaryButton(
+        Button saveBtn = UiControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Settings.BtnSaveSettings"],
             this._vm.SaveSettingsCommand,
             VectorIcons.Settings);
 
-        leftStack.Children.Add(themeLabel);
-        leftStack.Children.Add(themeCombo);
-        leftStack.Children.Add(langLabel);
-        leftStack.Children.Add(langCombo);
-        leftStack.Children.Add(browserLabel);
-        leftStack.Children.Add(browserCombo);
-        leftStack.Children.Add(customExeRow);
-        leftStack.Children.Add(headlessCheck);
-        leftStack.Children.Add(delayRangeLabel);
-        leftStack.Children.Add(delayRow);
-        leftStack.Children.Add(saveBtn);
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedThemeMode), StringComparison.Ordinal))
+            {
+                themeCombo.SelectedItem = this._vm.SelectedThemeMode;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedLanguage), StringComparison.Ordinal))
+            {
+                langCombo.SelectedItem = this._vm.SelectedLanguage;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedBrowserKind), StringComparison.Ordinal))
+            {
+                browserCombo.SelectedItem = this._vm.SelectedBrowserKind;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.CustomBrowserExecutablePath), StringComparison.Ordinal) &&
+                     !string.Equals(customExeBox.Text, this._vm.CustomBrowserExecutablePath, StringComparison.Ordinal))
+            {
+                customExeBox.Text = this._vm.CustomBrowserExecutablePath;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.RunBrowserHeadless), StringComparison.Ordinal))
+            {
+                headlessCheck.IsChecked = this._vm.RunBrowserHeadless;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MinDelaySeconds), StringComparison.Ordinal))
+            {
+                minDelayBox.Value = this._vm.MinDelaySeconds;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MaxDelaySeconds), StringComparison.Ordinal))
+            {
+                maxDelayBox.Value = this._vm.MaxDelaySeconds;
+            }
+        };
 
-        Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
-        Grid.SetColumn(leftCard, 0);
-        grid.Children.Add(leftCard);
-
-        // Right: Non-technical User Guide Card
-        StackPanel guideStack = new() { Spacing = 8 };
-        TextBlock guideTitle = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Settings.GuideTitle"],
-            15,
-            FontWeight.SemiBold,
-            isBrand: true);
-        TextBlock guideBody = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Settings.GuideBody"],
-            13);
-        guideStack.Children.Add(guideTitle);
-        guideStack.Children.Add(guideBody);
-
-        Border rightCard = CloudflareControls.CreateCard(this._theme, guideStack);
-        Grid.SetColumn(rightCard, 1);
-        grid.Children.Add(rightCard);
+        formStack.Children.Add(browserLabel);
+        formStack.Children.Add(browserCombo);
+        formStack.Children.Add(customExeRow);
+        formStack.Children.Add(headlessCheck);
+        formStack.Children.Add(delayRangeLabel);
+        formStack.Children.Add(delayRow);
+        formStack.Children.Add(saveBtn);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Settings.Header"];
-            descTb.Text = this._i18n["Settings.Desc"];
+            descTb.Text = CombinedSettingsInfo();
             themeLabel.Text = this._i18n["Settings.ThemeLabel"];
             langLabel.Text = this._i18n["Settings.LanguageLabel"];
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
-            CloudflareControls.SetButtonText(browseExeBtn, this._i18n["Common.BrowseFile"]);
+            UiControls.SetButtonText(browseExeBtn, this._i18n["Common.BrowseFile"]);
             headlessCheck.Content = this._i18n["Settings.HeadlessLabel"];
             delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
-            CloudflareControls.SetButtonText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
-            guideTitle.Text = this._i18n["Settings.GuideTitle"];
-            guideBody.Text = this._i18n["Settings.GuideBody"];
+            UiControls.SetButtonText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
         };
 
-        return grid;
+        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = formStack });
     }
 
-    private Border BuildCollapsibleAuditTaskbar()
+    private Control BuildAuditLogsScreen()
     {
         AuditLogDrawerViewModel drawerVm = this._vm.AuditDrawer;
-        StackPanel container = new() { Spacing = 0 };
 
-        // 1. Collapsed Persistent Status Bar (36px height)
-        Grid barGrid = new()
+        Grid pageGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
-            ColumnSpacing = 12,
-            Margin = new Thickness(16, 6)
+            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
+            RowSpacing = 12
         };
 
-        Border livePill = CloudflareControls.CreateStatusPill(
+        Grid topHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Audit.TaskbarTitle"],
-            AuditSeverity.Info);
-        Grid.SetColumn(livePill, 0);
-
-        TextBlock tickerText = new()
-        {
-            Text = drawerVm.LatestTickerText,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-        Grid.SetColumn(tickerText, 1);
+            this._i18n["Audit.SearchPlaceholder"],
+            out TextBlock titleTb,
+            out TextBlock infoTb);
 
         TextBlock countersText = new()
         {
             Text = $"✔ {drawerVm.SuccessCount}   ⚠ {drawerVm.WarningCount}   ✖ {drawerVm.ErrorCount}",
-            FontSize = 12,
+            FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace"),
             VerticalAlignment = VerticalAlignment.Center
         };
-        Grid.SetColumn(countersText, 2);
 
-        Button toggleBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            drawerVm.IsExpanded ? this._i18n["Audit.ToggleCollapse"] : this._i18n["Audit.ToggleExpand"],
-            drawerVm.ToggleDrawerCommand,
-            VectorIcons.AuditLog);
-        Grid.SetColumn(toggleBtn, 3);
-
-        barGrid.Children.Add(livePill);
-        barGrid.Children.Add(tickerText);
-        barGrid.Children.Add(countersText);
-        barGrid.Children.Add(toggleBtn);
-
-        // 2. Expandable Audit Log Drawer Panel (Hidden by default unless expanded)
-        Grid drawerBody = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            Height = 250,
-            Margin = new Thickness(16, 4, 16, 12),
-            RowSpacing = 8,
-            IsVisible = drawerVm.IsExpanded
-        };
+        Grid.SetColumn(header, 0);
+        Grid.SetColumn(countersText, 1);
+        topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(countersText);
+        Grid.SetRow(topHeaderRow, 0);
+        pageGrid.Children.Add(topHeaderRow);
 
         // 4-Way Filter Bar: Category (Sự kiện), Time Range (Thời gian), Account (Tài khoản), Keyword (Từ khóa)
         Grid filterRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("150,150,175,*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("140,140,165,*,Auto,Auto,Auto"),
             ColumnSpacing = 8
         };
 
@@ -388,7 +406,7 @@ public sealed partial class MainWindow
             ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
             {
                 AuditCategory? cat = obj is AuditCategory c ? c : null;
-                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
+                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditCategory(cat);
                 return tb;
             })
@@ -413,7 +431,7 @@ public sealed partial class MainWindow
             SelectedIndex = 0,
             ItemTemplate = new FuncDataTemplate<AuditTimeRange>((r, _) =>
             {
-                TextBlock tb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
+                TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditTimeRange(r);
                 return tb;
             })
@@ -444,10 +462,10 @@ public sealed partial class MainWindow
             {
                 if (obj is AccountProfile acc)
                 {
-                    return CloudflareControls.CreateThemedLabel(this._theme, acc.DisplayName, 12);
+                    return UiControls.CreateThemedLabel(this._theme, acc.DisplayName, 12);
                 }
 
-                TextBlock allTb = CloudflareControls.CreateThemedLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
+                TextBlock allTb = UiControls.CreateThemedLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
                 this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Audit.FilterAccountAll"];
                 return allTb;
             })
@@ -479,7 +497,7 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(accountFilterCombo, 2);
 
-        TextBox searchBox = CloudflareControls.CreateTextBox(this._theme, this._i18n["Audit.SearchPlaceholder"]);
+        TextBox searchBox = UiControls.CreateTextBox(this._theme, this._i18n["Audit.SearchPlaceholder"]);
         searchBox.TextChanged += async (_, _) =>
         {
             drawerVm.SearchKeyword = searchBox.Text ?? string.Empty;
@@ -487,13 +505,13 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(searchBox, 3);
 
-        Button refreshBtn = CloudflareControls.CreateSecondaryButton(
+        Button refreshBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand);
         Grid.SetColumn(refreshBtn, 4);
 
-        Button exportBtn = CloudflareControls.CreateSecondaryButton(
+        Button exportBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnExport"]);
         exportBtn.Click += async (_, _) =>
@@ -519,7 +537,7 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(exportBtn, 5);
 
-        Button clearBtn = CloudflareControls.CreateSecondaryButton(
+        Button clearBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnClear"],
             drawerVm.ClearLogsCommand);
@@ -532,10 +550,10 @@ public sealed partial class MainWindow
         filterRow.Children.Add(refreshBtn);
         filterRow.Children.Add(exportBtn);
         filterRow.Children.Add(clearBtn);
-        Grid.SetRow(filterRow, 0);
-        drawerBody.Children.Add(filterRow);
+        Grid.SetRow(filterRow, 1);
+        pageGrid.Children.Add(filterRow);
 
-        Border emptyLogsBanner = CloudflareControls.CreateEmptyState(
+        Border emptyLogsBanner = UiControls.CreateEmptyState(
             this._theme,
             this._i18n["Empty.AuditLogs"],
             VectorIcons.AuditLog,
@@ -557,10 +575,10 @@ public sealed partial class MainWindow
                 {
                     ColumnDefinitions = new ColumnDefinitions("75,130,120,160,*"),
                     ColumnSpacing = 8,
-                    Margin = new Thickness(2, 1)
+                    Margin = new Thickness(2, 2)
                 };
 
-                TextBlock tsTb = CloudflareControls.CreateThemedLabel(
+                TextBlock tsTb = UiControls.CreateThemedLabel(
                     this._theme,
                     rec.Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
                     11,
@@ -569,26 +587,26 @@ public sealed partial class MainWindow
                 tsTb.FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace");
                 logRow.Children.Add(tsTb);
 
-                TextBlock accTb = CloudflareControls.CreateThemedLabel(this._theme, rec.AccountDisplayName, 11, FontWeight.SemiBold);
+                TextBlock accTb = UiControls.CreateThemedLabel(this._theme, rec.AccountDisplayName, 11, FontWeight.SemiBold);
                 Grid.SetColumn(accTb, 1);
                 logRow.Children.Add(accTb);
 
-                Border catPill = CloudflareControls.CreateStatusPill(
+                Border catPill = UiControls.CreateStatusPill(
                     this._theme,
                     this._i18n.FormatAuditCategory(rec.Category),
                     rec.Severity);
                 this._i18n.LanguageChanged += (_, _) =>
-                    CloudflareControls.SetPillText(catPill, this._i18n.FormatAuditCategory(rec.Category));
+                    UiControls.SetPillText(catPill, this._i18n.FormatAuditCategory(rec.Category));
                 Grid.SetColumn(catPill, 2);
                 logRow.Children.Add(catPill);
 
-                TextBlock targetTb = CloudflareControls.CreateThemedLabel(this._theme, rec.TargetName, 11, FontWeight.Normal, isSecondary: true);
+                TextBlock targetTb = UiControls.CreateThemedLabel(this._theme, rec.TargetName, 11, FontWeight.Normal, isSecondary: true);
                 targetTb.TextTrimming = TextTrimming.CharacterEllipsis;
                 targetTb.TextWrapping = TextWrapping.NoWrap;
                 Grid.SetColumn(targetTb, 3);
                 logRow.Children.Add(targetTb);
 
-                TextBlock msgTb = CloudflareControls.CreateThemedLabel(this._theme, rec.Message, 12);
+                TextBlock msgTb = UiControls.CreateThemedLabel(this._theme, rec.Message, 12);
                 msgTb.TextWrapping = TextWrapping.NoWrap;
                 msgTb.TextTrimming = TextTrimming.CharacterEllipsis;
                 Grid.SetColumn(msgTb, 4);
@@ -601,63 +619,28 @@ public sealed partial class MainWindow
         Grid logContentHost = new();
         logContentHost.Children.Add(logList);
         logContentHost.Children.Add(emptyLogsBanner);
-        Grid.SetRow(logContentHost, 1);
-        drawerBody.Children.Add(logContentHost);
+        Grid.SetRow(logContentHost, 2);
+        pageGrid.Children.Add(logContentHost);
 
-        container.Children.Add(barGrid);
-        container.Children.Add(drawerBody);
-
-        Border wrapper = new()
-        {
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = container
-        };
-
-        void ApplyColors()
-        {
-            CloudflarePalette p = this._theme.Palette;
-            wrapper.Background = p.ElevatedSurface;
-            wrapper.BorderBrush = p.SubtleBorder;
-            tickerText.Foreground = p.TextSecondary;
-            countersText.Foreground = p.TextPrimary;
-        }
-
+        void ApplyColors() => countersText.Foreground = this._theme.Palette.TextPrimary;
         ApplyColors();
         this._theme.ThemeChanged += (_, _) => ApplyColors();
 
         this._i18n.LanguageChanged += (_, _) =>
         {
-            CloudflareControls.SetPillText(livePill, this._i18n["Audit.TaskbarTitle"]);
+            titleTb.Text = this._i18n["Audit.TaskbarTitle"];
+            infoTb.Text = this._i18n["Audit.SearchPlaceholder"];
             accountFilterCombo.PlaceholderText = this._i18n["Audit.FilterAccountAll"];
             searchBox.PlaceholderText = this._i18n["Audit.SearchPlaceholder"];
             emptyLogsMsg.Text = this._i18n["Empty.AuditLogs"];
-            CloudflareControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
-            CloudflareControls.SetButtonText(exportBtn, this._i18n["Audit.BtnExport"]);
-            CloudflareControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
-            CloudflareControls.SetButtonText(
-                toggleBtn,
-                drawerVm.IsExpanded ? this._i18n["Audit.ToggleCollapse"] : this._i18n["Audit.ToggleExpand"]);
+            UiControls.SetButtonText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
+            UiControls.SetButtonText(exportBtn, this._i18n["Audit.BtnExport"]);
+            UiControls.SetButtonText(clearBtn, this._i18n["Audit.BtnClear"]);
         };
 
-        drawerVm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(AuditLogDrawerViewModel.IsExpanded), StringComparison.Ordinal))
-            {
-                drawerBody.IsVisible = drawerVm.IsExpanded;
-                CloudflareControls.SetButtonText(
-                    toggleBtn,
-                    drawerVm.IsExpanded ? this._i18n["Audit.ToggleCollapse"] : this._i18n["Audit.ToggleExpand"]);
-            }
-            else if (string.Equals(e.PropertyName, nameof(AuditLogDrawerViewModel.LatestTickerText), StringComparison.Ordinal))
-            {
-                tickerText.Text = drawerVm.LatestTickerText;
-            }
-            else
-            {
-                countersText.Text = $"✔ {drawerVm.SuccessCount}   ⚠ {drawerVm.WarningCount}   ✖ {drawerVm.ErrorCount}";
-            }
-        };
+        drawerVm.PropertyChanged += (_, _) =>
+            countersText.Text = $"✔ {drawerVm.SuccessCount}   ⚠ {drawerVm.WarningCount}   ✖ {drawerVm.ErrorCount}";
 
-        return wrapper;
+        return UiControls.CreateCard(this._theme, pageGrid);
     }
 }

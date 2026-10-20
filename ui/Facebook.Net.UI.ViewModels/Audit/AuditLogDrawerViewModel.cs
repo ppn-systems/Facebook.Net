@@ -170,7 +170,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     private void ToggleDrawer()
     {
         this.IsExpanded = !this.IsExpanded;
-        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
+        this._context.Settings.Save(this._context.Settings.Current with
         {
             IsAuditDrawerExpanded = this.IsExpanded
         });

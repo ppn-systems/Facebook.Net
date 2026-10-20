@@ -1,6 +1,7 @@
 // Copyright (c) 2026 PPN Corporation. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.UI.Core.Audit;
@@ -11,11 +12,18 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.ViewModels.Shell;
 
 /// <summary>
-/// Partial implementation of <see cref="ShellViewModel"/> managing Cloudflare Dark/Light theme switching,
-/// bilingual (`vi-VN` / `en-US`) language selection, browser engine preferences, and anti-checkpoint delays.
+/// Partial implementation of <see cref="ShellViewModel"/> managing Dark/Light theme switching,
+/// bilingual (`vi-VN` / `en-US`) language selection, sidebar collapse state, browser engine preferences,
+/// and anti-checkpoint delays with automatic synchronous persistence to <c>appsettings.json</c>.
 /// </summary>
 public sealed partial class ShellViewModel
 {
+    private bool _isLoadingSettings;
+
+    /// <summary>Gets or sets a value indicating whether the left navigation sidebar is collapsed to icon-only mode.</summary>
+    [ObservableProperty]
+    public partial bool IsSidebarCollapsed { get; set; }
+
     /// <summary>Gets or sets the selected theme mode in Settings.</summary>
     [ObservableProperty]
     public partial AppThemeMode SelectedThemeMode { get; set; } = AppThemeMode.Dark;
@@ -44,47 +52,83 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial int MaxDelaySeconds { get; set; } = 45;
 
-    private void LoadSettingsIntoProperties()
+    partial void OnIsSidebarCollapsedChanged(bool value)
     {
-        AppConfig cfg = this._context.Settings.Current;
-        this.SelectedThemeMode = cfg.Theme;
-        this.SelectedLanguage = cfg.Language;
-        this.SelectedBrowserKind = cfg.PreferredBrowser;
-        this.CustomBrowserExecutablePath = cfg.CustomBrowserExecutablePath ?? string.Empty;
-        this.RunBrowserHeadless = cfg.RunBrowserHeadless;
-        this.MinDelaySeconds = cfg.MinDelaySeconds;
-        this.MaxDelaySeconds = cfg.MaxDelaySeconds;
-    }
-
-    private void ToggleThemeQuick()
-    {
-        this._context.Theme.ToggleTheme();
-        this.SelectedThemeMode = this._context.Theme.CurrentMode;
-        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
+        if (!this._isLoadingSettings)
         {
-            Theme = this.SelectedThemeMode
-        });
+            this.FlushSettingsToDisk();
+        }
     }
 
-    private void ToggleLanguageQuick()
+    partial void OnSelectedThemeModeChanged(AppThemeMode value)
     {
-        AppLanguage next = this._context.Localization.CurrentLanguage == AppLanguage.ViVn
-            ? AppLanguage.EnUs
-            : AppLanguage.ViVn;
-
-        this._context.Localization.SetLanguage(next);
-        this.SelectedLanguage = next;
-        _ = this._context.Settings.SaveAsync(this._context.Settings.Current with
+        this._context.Theme.SetTheme(value);
+        if (!this._isLoadingSettings)
         {
-            Language = next
-        });
+            this.FlushSettingsToDisk();
+        }
     }
 
-    private async Task SaveSettingsAsync()
+    partial void OnSelectedLanguageChanged(AppLanguage value)
     {
-        AppConfig previous = this._context.Settings.Current;
-        this._context.Theme.SetTheme(this.SelectedThemeMode);
-        this._context.Localization.SetLanguage(this.SelectedLanguage);
+        this._context.Localization.SetLanguage(value);
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnSelectedBrowserKindChanged(PreferredBrowserKind value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnCustomBrowserExecutablePathChanged(string value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnRunBrowserHeadlessChanged(bool value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnMinDelaySecondsChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    partial void OnMaxDelaySecondsChanged(int value)
+    {
+        if (!this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+    }
+
+    /// <summary>
+    /// Synchronously writes all current setting properties to <c>appsettings.json</c> so configuration is never lost on exit.
+    /// </summary>
+    public void FlushSettingsToDisk()
+    {
+        if (this._isLoadingSettings)
+        {
+            return;
+        }
+
+        string? selectedUid = this.SelectedAccount?.Uid ?? this._context.Settings.Current.LastSelectedAccountUid;
 
         AppConfig updated = new AppConfig(
             Theme: this.SelectedThemeMode,
@@ -96,16 +140,73 @@ public sealed partial class ShellViewModel
             RunBrowserHeadless: this.RunBrowserHeadless,
             MinDelaySeconds: this.MinDelaySeconds,
             MaxDelaySeconds: this.MaxDelaySeconds,
-            IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded).Normalize();
+            IsAuditDrawerExpanded: this.AuditDrawer.IsExpanded,
+            IsSidebarCollapsed: this.IsSidebarCollapsed,
+            LastSelectedAccountUid: selectedUid).Normalize();
 
-        this.MinDelaySeconds = updated.MinDelaySeconds;
-        this.MaxDelaySeconds = updated.MaxDelaySeconds;
-        await this._context.Settings.SaveAsync(updated).ConfigureAwait(true);
+        this._context.Settings.Save(updated);
+    }
+
+    private void LoadSettingsIntoProperties()
+    {
+        this._isLoadingSettings = true;
+        try
+        {
+            AppConfig cfg = this._context.Settings.Current;
+            this.IsSidebarCollapsed = cfg.IsSidebarCollapsed;
+            this.SelectedThemeMode = cfg.Theme;
+            this.SelectedLanguage = cfg.Language;
+            this.SelectedBrowserKind = cfg.PreferredBrowser;
+            this.CustomBrowserExecutablePath = cfg.CustomBrowserExecutablePath ?? string.Empty;
+            this.RunBrowserHeadless = cfg.RunBrowserHeadless;
+            this.MinDelaySeconds = cfg.MinDelaySeconds;
+            this.MaxDelaySeconds = cfg.MaxDelaySeconds;
+        }
+        finally
+        {
+            this._isLoadingSettings = false;
+        }
+    }
+
+    private void ToggleThemeQuick()
+    {
+        this._context.Theme.ToggleTheme();
+        this.SelectedThemeMode = this._context.Theme.CurrentMode;
+    }
+
+    private void ToggleLanguageQuick()
+    {
+        AppLanguage next = this._context.Localization.CurrentLanguage == AppLanguage.ViVn
+            ? AppLanguage.EnUs
+            : AppLanguage.ViVn;
+
+        this.SelectedLanguage = next;
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        AppConfig previous = this._context.Settings.Current;
+        this._context.Theme.SetTheme(this.SelectedThemeMode);
+        this._context.Localization.SetLanguage(this.SelectedLanguage);
+
+        this.FlushSettingsToDisk();
+        AppConfig updated = this._context.Settings.Current;
+
+        this._isLoadingSettings = true;
+        try
+        {
+            this.MinDelaySeconds = updated.MinDelaySeconds;
+            this.MaxDelaySeconds = updated.MaxDelaySeconds;
+        }
+        finally
+        {
+            this._isLoadingSettings = false;
+        }
 
         // If browser engine or headless mode changed, recycle active browser sessions so the next launch uses the new browser
         if (previous.PreferredBrowser != updated.PreferredBrowser ||
             previous.RunBrowserHeadless != updated.RunBrowserHeadless ||
-            !string.Equals(previous.CustomBrowserExecutablePath, updated.CustomBrowserExecutablePath, System.StringComparison.Ordinal))
+            !string.Equals(previous.CustomBrowserExecutablePath, updated.CustomBrowserExecutablePath, StringComparison.Ordinal))
         {
             for (int i = 0; i < this.Accounts.Count; i++)
             {

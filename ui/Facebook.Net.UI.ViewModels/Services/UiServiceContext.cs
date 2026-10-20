@@ -132,7 +132,7 @@ public sealed class UiServiceContext : IDisposable
     /// <summary>Gets the application settings service.</summary>
     public AppSettingsService Settings { get; }
 
-    /// <summary>Gets the Cloudflare Dark/Light theme service.</summary>
+    /// <summary>Gets the Dark/Light theme service.</summary>
     public ThemeService Theme { get; }
 
     /// <summary>Gets the bilingual (`vi-VN` / `en-US`) localization service.</summary>

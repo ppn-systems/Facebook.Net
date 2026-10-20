@@ -242,6 +242,41 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Contains("Nick Seeding VIP", await File.ReadAllTextAsync(csvExportPath), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ShellViewModel_PersistsAllSettingsImmediately_AndReloadsOnRestart()
+    {
+        string persistDir = Path.Combine(this._tempDir, "settings_persist_test");
+
+        using (UiServiceContext ctx1 = new(new StubBrowserAdapter(), persistDir))
+        using (ShellViewModel vm1 = new(ctx1))
+        {
+            vm1.SelectedThemeMode = AppThemeMode.Light;
+            vm1.SelectedLanguage = AppLanguage.EnUs;
+            vm1.SelectedBrowserKind = Facebook.Net.UI.Core.Configuration.PreferredBrowserKind.Brave;
+            vm1.CustomBrowserExecutablePath = @"C:\CustomBrowser\brave.exe";
+            vm1.RunBrowserHeadless = true;
+            vm1.MinDelaySeconds = 25;
+            vm1.MaxDelaySeconds = 90;
+            vm1.IsSidebarCollapsed = true;
+        }
+
+        // Simulate closing and reopening the application from the same data directory
+        using UiServiceContext ctx2 = new(new StubBrowserAdapter(), persistDir);
+        using ShellViewModel vm2 = new(ctx2);
+
+        // Verify properties are loaded synchronously in ShellViewModel constructor BEFORE InitializeAsync()
+        Assert.Equal(AppThemeMode.Light, vm2.SelectedThemeMode);
+        Assert.Equal(AppThemeMode.Light, ctx2.Theme.CurrentMode);
+        Assert.Equal(AppLanguage.EnUs, vm2.SelectedLanguage);
+        Assert.Equal(AppLanguage.EnUs, ctx2.Localization.CurrentLanguage);
+        Assert.Equal(Facebook.Net.UI.Core.Configuration.PreferredBrowserKind.Brave, vm2.SelectedBrowserKind);
+        Assert.Equal(@"C:\CustomBrowser\brave.exe", vm2.CustomBrowserExecutablePath);
+        Assert.True(vm2.RunBrowserHeadless);
+        Assert.Equal(25, vm2.MinDelaySeconds);
+        Assert.Equal(90, vm2.MaxDelaySeconds);
+        Assert.True(vm2.IsSidebarCollapsed);
+    }
+
     public void Dispose()
     {
         try

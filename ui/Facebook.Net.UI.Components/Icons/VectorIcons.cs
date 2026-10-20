@@ -11,12 +11,24 @@ namespace Facebook.Net.UI.Components.Icons;
 
 /// <summary>
 /// Provides crisp 24x24 Lucide/Tabler SVG path geometries and helper methods to create vector icons
-/// for the Cloudflare-styled UI without requiring external font files.
+/// for the application UI without requiring external font files.
 /// Caches parsed <see cref="StreamGeometry"/> instances in memory to eliminate repeated SVG parsing overhead.
 /// </summary>
 public static class VectorIcons
 {
     private static readonly ConcurrentDictionary<string, StreamGeometry> s_geometryCache = new(StringComparer.Ordinal);
+
+    /// <summary>Home / Overview globe icon path.</summary>
+    public const string Home = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z";
+
+    /// <summary>Sidebar collapse / expand panel toggle icon path (`[|]`).</summary>
+    public const string SidebarToggle = "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z M9 3v18";
+
+    /// <summary>Info circle (`i`) icon path for click-to-view explanation flyouts.</summary>
+    public const string InfoCircle = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z";
+
+    /// <summary>Brand flame / shield logo icon path.</summary>
+    public const string BrandMark = "M13 2L3 14h9l-1 8 10-12h-9l1-8z";
 
     /// <summary>Users / Accounts icon path.</summary>
     public const string Accounts = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75";

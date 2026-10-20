@@ -42,7 +42,9 @@ public sealed record AppConfig(
     bool RunBrowserHeadless = false,
     int MinDelaySeconds = 15,
     int MaxDelaySeconds = 45,
-    bool IsAuditDrawerExpanded = false)
+    bool IsAuditDrawerExpanded = false,
+    bool IsSidebarCollapsed = false,
+    string? LastSelectedAccountUid = null)
 {
     /// <summary>
     /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
@@ -54,12 +56,16 @@ public sealed record AppConfig(
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
+        string? cleanedUid = string.IsNullOrWhiteSpace(this.LastSelectedAccountUid)
+            ? null
+            : this.LastSelectedAccountUid.Trim();
 
         return this with
         {
             MinDelaySeconds = clampedMin,
             MaxDelaySeconds = clampedMax,
-            CustomBrowserExecutablePath = cleanedPath
+            CustomBrowserExecutablePath = cleanedPath,
+            LastSelectedAccountUid = cleanedUid
         };
     }
 }

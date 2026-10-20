@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <Title>Facebook.Net.UI.Core - Theme, i18n, Audit Log DB &amp; Universal Session Importer</Title>
-    <Description>Shared UI infrastructure for Facebook.Net: Cloudflare Dark/Light Theme Engine, Bilingual i18n (vi-VN &amp; en-US), Dedicated Audit Log SQLite Database, and Universal Cookie/J2Team Session Importer.</Description>
+    <Description>Shared UI infrastructure for Facebook.Net: Dark/Light Theme Engine, Bilingual i18n (vi-VN &amp; en-US), Dedicated Audit Log SQLite Database, and Universal Cookie/J2Team Session Importer.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

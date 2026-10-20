@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Title>Facebook.Net.UI.Components - Cloudflare Design System Controls &amp; SVG Icons</Title>
-    <Description>Reusable Cloudflare-styled Avalonia UI components, vector icons, status pills, visual entity cards, and collapsible bottom audit log taskbar.</Description>
+    <Title>Facebook.Net.UI.Components - Design System Controls &amp; SVG Icons</Title>
+    <Description>Reusable Avalonia UI components, vector icons, status pills, visual entity cards, and info flyouts.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

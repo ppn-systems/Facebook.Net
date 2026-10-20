@@ -18,8 +18,8 @@ using Facebook.Net.UI.Core.Audit;
 namespace Facebook.Net.App.Views;
 
 /// <summary>
-/// Partial implementation of <see cref="MainWindow"/> building the Publisher Screen
-/// and the Sales Leads &amp; Auto-Comment Screen.
+/// Partial implementation of <see cref="MainWindow"/> building the focused Publisher Page
+/// and the Sales Leads &amp; Auto-Comment Page using SVG Info (`i`) flyouts and clean popovers.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -41,25 +41,152 @@ public sealed partial class MainWindow
 
     private Control BuildPublisherScreen()
     {
-        Grid grid = new()
+        StackPanel pageStack = new() { Spacing = 12 };
+
+        // Top Bar: Title + SVG Info (`i`) Flyout + Saved Templates Flyout Button + Up-Top Flyout Button
+        Grid topBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,360"),
-            ColumnSpacing = 16
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        StackPanel leftStack = new() { Spacing = 10 };
-        StackPanel header = CloudflareControls.CreateSectionHeader(
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Publisher.Header"],
             this._i18n["Publisher.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        leftStack.Children.Add(header);
+
+        TextBox contentBox = UiControls.CreateTextBox(
+            this._theme,
+            this._i18n["Publisher.ContentPlaceholder"],
+            this._vm.PostSpintaxText,
+            multiline: true,
+            height: 140);
+        contentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = contentBox.Text ?? string.Empty;
+
+        TextBox photoBox = UiControls.CreateTextBox(
+            this._theme,
+            this._i18n["Publisher.PhotoPlaceholder"],
+            this._vm.PostMediaFilePath);
+        photoBox.TextChanged += (_, _) => this._vm.PostMediaFilePath = photoBox.Text ?? string.Empty;
+
+        // Saved Templates Flyout (replaces permanent right column)
+        ListBox tplList = new()
+        {
+            Height = 220,
+            ItemsSource = this._vm.SavedTemplates,
+            SelectedItem = this._vm.SelectedTemplate,
+            ItemTemplate = new FuncDataTemplate<CampaignTemplate>((tpl, _) =>
+            {
+                if (tpl is null)
+                {
+                    return new Border();
+                }
+
+                StackPanel sp = new() { Spacing = 2, Margin = new Thickness(4) };
+                sp.Children.Add(UiControls.CreateThemedLabel(this._theme, tpl.Title, 13, FontWeight.SemiBold));
+                TextBlock bodyTb = UiControls.CreateThemedLabel(this._theme, tpl.SpintaxContent, 11, FontWeight.Normal, isSecondary: true);
+                bodyTb.MaxLines = 2;
+                sp.Children.Add(bodyTb);
+                return sp;
+            })
+        };
+
+        tplList.SelectionChanged += (_, _) =>
+        {
+            if (tplList.SelectedItem is CampaignTemplate selectedTpl)
+            {
+                this._vm.SelectedTemplate = selectedTpl;
+                contentBox.Text = selectedTpl.SpintaxContent;
+                this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
+
+                string mediaPath = selectedTpl.MediaFilePath ?? string.Empty;
+                photoBox.Text = mediaPath;
+                this._vm.PostMediaFilePath = mediaPath;
+            }
+        };
+
+        Button deleteTplBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnDeleteTemplate"],
+            this._vm.DeleteSelectedTemplateCommand);
+
+        Border emptyTemplatesBanner = UiControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Templates"],
+            VectorIcons.Publish,
+            out TextBlock emptyTplTb);
+        emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+        this._vm.SavedTemplates.CollectionChanged += (_, _) =>
+            emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+
+        StackPanel tplFlyoutStack = new() { Spacing = 8, Width = 340 };
+        tplFlyoutStack.Children.Add(emptyTemplatesBanner);
+        tplFlyoutStack.Children.Add(tplList);
+        tplFlyoutStack.Children.Add(deleteTplBtn);
+
+        Button openTemplatesBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.TemplatesTitle"],
+            iconSvg: VectorIcons.Folder);
+        openTemplatesBtn.Flyout = new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedRight,
+            Content = UiControls.CreateCard(this._theme, tplFlyoutStack, new Thickness(12))
+        };
+
+        // Up-Top / Bump Posts Flyout
+        TextBox bumpBox = UiControls.CreateTextBox(
+            this._theme,
+            this._i18n["Publisher.BumpPlaceholder"],
+            this._vm.BumpCommentSpintaxText,
+            multiline: true,
+            height: 75);
+        bumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = bumpBox.Text ?? string.Empty;
+
+        Button bumpBtn = UiControls.CreatePrimaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnBumpRecentPosts"],
+            this._vm.BumpRecentPostsCommand,
+            VectorIcons.SalesComment);
+
+        StackPanel bumpFlyoutStack = new() { Spacing = 8, Width = 340 };
+        bumpFlyoutStack.Children.Add(bumpBox);
+        bumpFlyoutStack.Children.Add(bumpBtn);
+
+        Button openBumpFlyoutBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnBumpRecentPosts"],
+            iconSvg: VectorIcons.SalesComment);
+        openBumpFlyoutBtn.Flyout = new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedRight,
+            Content = UiControls.CreateCard(this._theme, bumpFlyoutStack, new Thickness(12))
+        };
+
+        Grid.SetColumn(header, 0);
+        Grid.SetColumn(openTemplatesBtn, 1);
+        Grid.SetColumn(openBumpFlyoutBtn, 2);
+        topBar.Children.Add(header);
+        topBar.Children.Add(openTemplatesBtn);
+        topBar.Children.Add(openBumpFlyoutBtn);
+        pageStack.Children.Add(topBar);
+
+        // Options Row: Target Mode + Auto-React + Schedule Delay
+        Grid optionsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,80"),
+            ColumnSpacing = 14,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         CheckBox targetModeCheck = new()
         {
             Content = this._i18n["Publisher.TargetModeGroup"],
-            IsChecked = this._vm.PublishToTargetGroups
+            IsChecked = this._vm.PublishToTargetGroups,
+            VerticalAlignment = VerticalAlignment.Center
         };
         targetModeCheck.IsCheckedChanged += (_, _) =>
             this._vm.PublishToTargetGroups = targetModeCheck.IsChecked ?? false;
@@ -67,23 +194,20 @@ public sealed partial class MainWindow
         CheckBox autoReactOwnPostCheck = new()
         {
             Content = this._i18n["Publisher.AutoReactOwnPost"],
-            IsChecked = this._vm.AutoReactPublishedPost
+            IsChecked = this._vm.AutoReactPublishedPost,
+            VerticalAlignment = VerticalAlignment.Center
         };
         autoReactOwnPostCheck.IsCheckedChanged += (_, _) =>
             this._vm.AutoReactPublishedPost = autoReactOwnPostCheck.IsChecked ?? false;
 
-        Grid scheduleDelayRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,100"),
-            ColumnSpacing = 10
-        };
-        TextBlock scheduleDelayLbl = CloudflareControls.CreateThemedLabel(
+        TextBlock scheduleDelayLbl = UiControls.CreateThemedLabel(
             this._theme,
             this._i18n["Publisher.ScheduleDelayLabel"],
             12,
             FontWeight.Medium,
             isSecondary: true);
-        TextBox scheduleDelayBox = CloudflareControls.CreateTextBox(
+
+        TextBox scheduleDelayBox = UiControls.CreateTextBox(
             this._theme,
             "0",
             this._vm.ScheduleDelayMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -94,18 +218,15 @@ public sealed partial class MainWindow
                 this._vm.ScheduleDelayMinutes = Math.Clamp(mins, 0, 1440);
             }
         };
-        Grid.SetColumn(scheduleDelayLbl, 0);
-        Grid.SetColumn(scheduleDelayBox, 1);
-        scheduleDelayRow.Children.Add(scheduleDelayLbl);
-        scheduleDelayRow.Children.Add(scheduleDelayBox);
 
-        TextBox contentBox = CloudflareControls.CreateTextBox(
-            this._theme,
-            this._i18n["Publisher.ContentPlaceholder"],
-            this._vm.PostSpintaxText,
-            multiline: true,
-            height: 120);
-        contentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = contentBox.Text ?? string.Empty;
+        Grid.SetColumn(targetModeCheck, 0);
+        Grid.SetColumn(autoReactOwnPostCheck, 1);
+        Grid.SetColumn(scheduleDelayLbl, 3);
+        Grid.SetColumn(scheduleDelayBox, 4);
+        optionsRow.Children.Add(targetModeCheck);
+        optionsRow.Children.Add(autoReactOwnPostCheck);
+        optionsRow.Children.Add(scheduleDelayLbl);
+        optionsRow.Children.Add(scheduleDelayBox);
 
         // Spintax Live Preview Row
         Grid previewRow = new()
@@ -114,13 +235,13 @@ public sealed partial class MainWindow
             ColumnSpacing = 8
         };
 
-        Button previewSpintaxBtn = CloudflareControls.CreateSecondaryButton(
+        Button previewSpintaxBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Publisher.BtnPreviewSpintax"],
             this._vm.PreviewSpintaxCommand,
             VectorIcons.Sync);
 
-        TextBlock previewSpintaxTb = CloudflareControls.CreateThemedLabel(
+        TextBlock previewSpintaxTb = UiControls.CreateThemedLabel(
             this._theme,
             this._vm.SpintaxPreviewText,
             12,
@@ -138,13 +259,7 @@ public sealed partial class MainWindow
             ColumnSpacing = 8
         };
 
-        TextBox photoBox = CloudflareControls.CreateTextBox(
-            this._theme,
-            this._i18n["Publisher.PhotoPlaceholder"],
-            this._vm.PostMediaFilePath);
-        photoBox.TextChanged += (_, _) => this._vm.PostMediaFilePath = photoBox.Text ?? string.Empty;
-
-        Button pickPhotoBtn = CloudflareControls.CreateSecondaryButton(
+        Button pickPhotoBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Publisher.BtnPickPhoto"]);
         pickPhotoBtn.Click += async (_, _) =>
@@ -164,16 +279,16 @@ public sealed partial class MainWindow
 
         Grid btnRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
             ColumnSpacing = 10
         };
 
-        Button saveTplBtn = CloudflareControls.CreateSecondaryButton(
+        Button saveTplBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Publisher.BtnSaveTemplate"],
             this._vm.SaveTemplateCommand);
 
-        Button publishBtn = CloudflareControls.CreatePrimaryButton(
+        Button publishBtn = UiControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Publisher.BtnPublishNow"],
             this._vm.PublishCampaignCommand,
@@ -183,21 +298,6 @@ public sealed partial class MainWindow
         Grid.SetColumn(publishBtn, 1);
         btnRow.Children.Add(saveTplBtn);
         btnRow.Children.Add(publishBtn);
-
-        // Auto Up-Top (Bump Recent Posts) Section
-        StackPanel bumpStack = new() { Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
-        TextBlock bumpTitleTb = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Publisher.BumpTitle"],
-            14,
-            FontWeight.SemiBold,
-            isBrand: true);
-
-        TextBox bumpBox = CloudflareControls.CreateTextBox(
-            this._theme,
-            this._i18n["Publisher.BumpPlaceholder"],
-            this._vm.BumpCommentSpintaxText);
-        bumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = bumpBox.Text ?? string.Empty;
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -222,94 +322,11 @@ public sealed partial class MainWindow
             }
         };
 
-        Button bumpBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Publisher.BtnBumpRecentPosts"],
-            this._vm.BumpRecentPostsCommand,
-            VectorIcons.SalesComment);
-
-        bumpStack.Children.Add(bumpTitleTb);
-        bumpStack.Children.Add(bumpBox);
-        bumpStack.Children.Add(bumpBtn);
-
-        leftStack.Children.Add(targetModeCheck);
-        leftStack.Children.Add(autoReactOwnPostCheck);
-        leftStack.Children.Add(scheduleDelayRow);
-        leftStack.Children.Add(contentBox);
-        leftStack.Children.Add(previewRow);
-        leftStack.Children.Add(photoRow);
-        leftStack.Children.Add(btnRow);
-        leftStack.Children.Add(CloudflareControls.CreateInsetWell(this._theme, bumpStack));
-
-        Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
-        Grid.SetColumn(leftCard, 0);
-        grid.Children.Add(leftCard);
-
-        // Right: Saved Content Library
-        StackPanel rightStack = new() { Spacing = 10 };
-        TextBlock tplTitle = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Publisher.TemplatesTitle"],
-            15,
-            FontWeight.SemiBold);
-
-        ListBox tplList = new()
-        {
-            Height = 350,
-            ItemsSource = this._vm.SavedTemplates,
-            SelectedItem = this._vm.SelectedTemplate,
-            ItemTemplate = new FuncDataTemplate<CampaignTemplate>((tpl, _) =>
-            {
-                if (tpl is null)
-                {
-                    return new Border();
-                }
-
-                StackPanel sp = new() { Spacing = 3, Margin = new Thickness(4) };
-                sp.Children.Add(CloudflareControls.CreateThemedLabel(this._theme, tpl.Title, 13, FontWeight.SemiBold));
-                TextBlock bodyTb = CloudflareControls.CreateThemedLabel(this._theme, tpl.SpintaxContent, 11, FontWeight.Normal, isSecondary: true);
-                bodyTb.MaxLines = 2;
-                sp.Children.Add(bodyTb);
-                return sp;
-            })
-        };
-
-        tplList.SelectionChanged += (_, _) =>
-        {
-            if (tplList.SelectedItem is CampaignTemplate selectedTpl)
-            {
-                this._vm.SelectedTemplate = selectedTpl;
-                contentBox.Text = selectedTpl.SpintaxContent;
-                this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
-
-                string mediaPath = selectedTpl.MediaFilePath ?? string.Empty;
-                photoBox.Text = mediaPath;
-                this._vm.PostMediaFilePath = mediaPath;
-            }
-        };
-
-        Button deleteTplBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Publisher.BtnDeleteTemplate"],
-            this._vm.DeleteSelectedTemplateCommand);
-
-        Border emptyTemplatesBanner = CloudflareControls.CreateEmptyState(
-            this._theme,
-            this._i18n["Empty.Templates"],
-            VectorIcons.Publish,
-            out TextBlock emptyTplTb);
-        emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
-        this._vm.SavedTemplates.CollectionChanged += (_, _) =>
-            emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
-
-        rightStack.Children.Add(tplTitle);
-        rightStack.Children.Add(emptyTemplatesBanner);
-        rightStack.Children.Add(tplList);
-        rightStack.Children.Add(deleteTplBtn);
-
-        Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightStack });
-        Grid.SetColumn(rightCard, 1);
-        grid.Children.Add(rightCard);
+        pageStack.Children.Add(optionsRow);
+        pageStack.Children.Add(contentBox);
+        pageStack.Children.Add(previewRow);
+        pageStack.Children.Add(photoRow);
+        pageStack.Children.Add(btnRow);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -320,58 +337,53 @@ public sealed partial class MainWindow
             autoReactOwnPostCheck.Content = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
-            CloudflareControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
+            UiControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
             photoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
-            CloudflareControls.SetButtonText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
-            CloudflareControls.SetButtonText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
-            CloudflareControls.SetButtonText(publishBtn, this._i18n["Publisher.BtnPublishNow"]);
-            bumpTitleTb.Text = this._i18n["Publisher.BumpTitle"];
+            UiControls.SetButtonText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
+            UiControls.SetButtonText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
+            UiControls.SetButtonText(publishBtn, this._i18n["Publisher.BtnPublishNow"]);
             bumpBox.PlaceholderText = this._i18n["Publisher.BumpPlaceholder"];
-            CloudflareControls.SetButtonText(bumpBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
-            tplTitle.Text = this._i18n["Publisher.TemplatesTitle"];
-            CloudflareControls.SetButtonText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
+            UiControls.SetButtonText(bumpBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
+            UiControls.SetButtonText(openBumpFlyoutBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
+            UiControls.SetButtonText(openTemplatesBtn, this._i18n["Publisher.TemplatesTitle"]);
+            UiControls.SetButtonText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
         };
 
-        return grid;
+        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
     }
 
     private Control BuildSalesLeadsScreen()
     {
-        Grid grid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,420"),
-            ColumnSpacing = 16
-        };
+        StackPanel pageStack = new() { Spacing = 12 };
 
-        // Left: Visual Group Post Scanner & Buyer Keyword Filter
-        StackPanel leftStack = new() { Spacing = 10 };
-        StackPanel header = CloudflareControls.CreateSectionHeader(
+        Grid header = UiControls.CreateSectionHeader(
             this._theme,
             this._i18n["Leads.Header"],
             this._i18n["Leads.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        leftStack.Children.Add(header);
+        pageStack.Children.Add(header);
 
-        TextBox buyerKwBox = CloudflareControls.CreateTextBox(
+        // Top Filter & Scan Bar
+        Grid scanBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 8
+        };
+
+        TextBox buyerKwBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Leads.BuyerKeywordPlaceholder"],
             this._vm.BuyerIntentKeywords);
         buyerKwBox.TextChanged += (_, _) => this._vm.BuyerIntentKeywords = buyerKwBox.Text ?? string.Empty;
 
-        Grid scanRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8
-        };
-
-        Button scanBtn = CloudflareControls.CreatePrimaryButton(
+        Button scanBtn = UiControls.CreatePrimaryButton(
             this._theme,
             this._i18n["Leads.BtnScanGroupPosts"],
             this._vm.ScanGroupLeadsCommand,
             VectorIcons.Search);
 
-        Button exportLeadsBtn = CloudflareControls.CreateSecondaryButton(
+        Button exportLeadsBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Leads.BtnExportLeads"]);
         exportLeadsBtn.Click += async (_, _) =>
@@ -395,14 +407,17 @@ public sealed partial class MainWindow
             }
         };
 
-        Grid.SetColumn(scanBtn, 0);
-        Grid.SetColumn(exportLeadsBtn, 1);
-        scanRow.Children.Add(scanBtn);
-        scanRow.Children.Add(exportLeadsBtn);
+        Grid.SetColumn(buyerKwBox, 0);
+        Grid.SetColumn(scanBtn, 1);
+        Grid.SetColumn(exportLeadsBtn, 2);
+        scanBar.Children.Add(buyerKwBox);
+        scanBar.Children.Add(scanBtn);
+        scanBar.Children.Add(exportLeadsBtn);
 
+        // Discovered Group Posts List
         ListBox postsList = new()
         {
-            Height = 340,
+            Height = 230,
             ItemsSource = this._vm.ScrapedPosts,
             SelectedItem = this._vm.SelectedScrapedPost,
             ItemTemplate = new FuncDataTemplate<PostSummary>((post, _) =>
@@ -414,9 +429,9 @@ public sealed partial class MainWindow
 
                 StackPanel card = new() { Spacing = 4, Margin = new Thickness(4) };
                 StackPanel authorRow = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
-                authorRow.Children.Add(CloudflareControls.CreateAvatarBadge(this._theme, post.AuthorName ?? this._i18n["Leads.DefaultAuthor"], 26));
+                authorRow.Children.Add(UiControls.CreateAvatarBadge(this._theme, post.AuthorName ?? this._i18n["Leads.DefaultAuthor"], 26));
 
-                TextBlock authorTb = CloudflareControls.CreateThemedLabel(
+                TextBlock authorTb = UiControls.CreateThemedLabel(
                     this._theme,
                     string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName,
                     13,
@@ -426,24 +441,24 @@ public sealed partial class MainWindow
                 int intentScore = Facebook.Net.UI.ViewModels.Shell.ShellViewModel.CalculateBuyerIntentScore(
                     post.MessageText,
                     this._vm.BuyerIntentKeywords);
-                Border intentPill = CloudflareControls.CreateStatusPill(
+                Border intentPill = UiControls.CreateStatusPill(
                     this._theme,
                     this._vm.FormatBuyerIntentBadge(post),
                     intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning);
                 authorRow.Children.Add(intentPill);
 
-                authorRow.Children.Add(CloudflareControls.CreateStatusPill(
+                authorRow.Children.Add(UiControls.CreateStatusPill(
                     this._theme,
                     $"👍 {post.ReactionCount}  💬 {post.CommentCount}",
                     AuditSeverity.Info));
 
-                TextBlock snippet = CloudflareControls.CreateThemedLabel(
+                TextBlock snippet = UiControls.CreateThemedLabel(
                     this._theme,
                     string.IsNullOrWhiteSpace(post.MessageText) ? this._i18n["Leads.MediaOnlyPost"] : post.MessageText,
                     12,
                     FontWeight.Normal,
                     isSecondary: true);
-                snippet.MaxLines = 3;
+                snippet.MaxLines = 2;
 
                 this._i18n.LanguageChanged += (_, _) =>
                 {
@@ -457,48 +472,16 @@ public sealed partial class MainWindow
                         snippet.Text = this._i18n["Leads.MediaOnlyPost"];
                     }
 
-                    CloudflareControls.SetPillText(intentPill, this._vm.FormatBuyerIntentBadge(post));
+                    UiControls.SetPillText(intentPill, this._vm.FormatBuyerIntentBadge(post));
                 };
 
                 card.Children.Add(authorRow);
                 card.Children.Add(snippet);
-                return CloudflareControls.CreateInsetWell(this._theme, card, new Thickness(10, 6));
+                return UiControls.CreateInsetWell(this._theme, card, new Thickness(10, 6));
             })
         };
 
-        TextBlock selectedBanner = CloudflareControls.CreateThemedLabel(
-            this._theme,
-            this._i18n["Leads.NoPostSelected"],
-            12,
-            FontWeight.Medium,
-            isBrand: true);
-
-        void UpdateSelectedPostBanner()
-        {
-            PostSummary? p = this._vm.SelectedScrapedPost;
-            if (p is null)
-            {
-                selectedBanner.Text = this._i18n["Leads.NoPostSelected"];
-                return;
-            }
-
-            string author = string.IsNullOrWhiteSpace(p.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : p.AuthorName;
-            string body = string.IsNullOrWhiteSpace(p.MessageText) ? this._i18n["Leads.MediaOnlyPost"] : p.MessageText;
-            selectedBanner.Text = $"{this._i18n["Leads.SelectedPostBanner"]} {author} — \"{body}\"";
-        }
-
-        UpdateSelectedPostBanner();
-
-        postsList.SelectionChanged += (_, _) =>
-        {
-            if (postsList.SelectedItem is PostSummary p)
-            {
-                this._vm.SelectedScrapedPost = p;
-                UpdateSelectedPostBanner();
-            }
-        };
-
-        Border emptyLeadsBanner = CloudflareControls.CreateEmptyState(
+        Border emptyLeadsBanner = UiControls.CreateEmptyState(
             this._theme,
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
@@ -507,38 +490,94 @@ public sealed partial class MainWindow
         this._vm.ScrapedPosts.CollectionChanged += (_, _) =>
             emptyLeadsBanner.IsVisible = this._vm.ScrapedPosts.Count == 0;
 
-        leftStack.Children.Add(buyerKwBox);
-        leftStack.Children.Add(scanRow);
-        leftStack.Children.Add(emptyLeadsBanner);
-        leftStack.Children.Add(postsList);
-
-        Border leftCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = leftStack });
-        Grid.SetColumn(leftCard, 0);
-        grid.Children.Add(leftCard);
-
-        // Right: Sales Comment Composer & 1-Click Auto Comment
-        StackPanel rightStack = new() { Spacing = 10 };
-        rightStack.Children.Add(CloudflareControls.CreateInsetWell(this._theme, selectedBanner));
-
-        TextBox commentBox = CloudflareControls.CreateTextBox(
+        // Compact Sales Comment Composer below the list
+        TextBox commentBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Leads.CommentContentPlaceholder"],
             this._vm.SalesCommentSpintaxText,
             multiline: true,
-            height: 120);
+            height: 75);
         commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
 
-        Grid commentPhotoRow = new()
+        Grid commentOptionsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             ColumnSpacing = 8
         };
 
-        TextBox commentPhotoBox = CloudflareControls.CreateTextBox(
+        CheckBox autoReactCheck = new()
+        {
+            Content = this._i18n["Leads.AutoReactToggle"],
+            IsChecked = this._vm.AutoReactBeforeComment,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        autoReactCheck.IsCheckedChanged += (_, _) =>
+            this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
+
+        TextBox commentPhotoBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Leads.CommentPhotoPlaceholder"],
             this._vm.SalesCommentPhotoPath);
         commentPhotoBox.TextChanged += (_, _) => this._vm.SalesCommentPhotoPath = commentPhotoBox.Text ?? string.Empty;
+
+        Button pickCommentPhotoBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Publisher.BtnPickPhoto"]);
+        pickCommentPhotoBtn.Click += async (_, _) =>
+        {
+            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                commentPhotoBox.Text = path;
+                this._vm.SalesCommentPhotoPath = path;
+            }
+        };
+
+        Grid.SetColumn(autoReactCheck, 0);
+        Grid.SetColumn(commentPhotoBox, 1);
+        Grid.SetColumn(pickCommentPhotoBtn, 2);
+        commentOptionsRow.Children.Add(autoReactCheck);
+        commentOptionsRow.Children.Add(commentPhotoBox);
+        commentOptionsRow.Children.Add(pickCommentPhotoBtn);
+
+        Grid commentButtonsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*,Auto"),
+            ColumnSpacing = 8
+        };
+
+        Button sendSelectedBtn = UiControls.CreatePrimaryButton(
+            this._theme,
+            this._i18n["Leads.BtnSendCommentSelected"],
+            this._vm.SendSalesCommentOnSelectedPostCommand,
+            VectorIcons.SalesComment);
+
+        Button autoCommentAllBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Leads.BtnAutoCommentAllMatched"],
+            this._vm.AutoCommentAllMatchedPostsCommand,
+            VectorIcons.Publish);
+
+        Button openPostBtn = UiControls.CreateSecondaryButton(
+            this._theme,
+            this._i18n["Leads.BtnOpenPostInBrowser"],
+            this._vm.OpenSelectedPostInBrowserCommand,
+            VectorIcons.Browser);
+
+        Grid.SetColumn(sendSelectedBtn, 0);
+        Grid.SetColumn(autoCommentAllBtn, 1);
+        Grid.SetColumn(openPostBtn, 2);
+        commentButtonsRow.Children.Add(sendSelectedBtn);
+        commentButtonsRow.Children.Add(autoCommentAllBtn);
+        commentButtonsRow.Children.Add(openPostBtn);
+
+        postsList.SelectionChanged += (_, _) =>
+        {
+            if (postsList.SelectedItem is PostSummary p)
+            {
+                this._vm.SelectedScrapedPost = p;
+            }
+        };
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -552,71 +591,19 @@ public sealed partial class MainWindow
             {
                 commentPhotoBox.Text = this._vm.SalesCommentPhotoPath;
             }
-            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedScrapedPost), StringComparison.Ordinal))
+            else if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Shell.ShellViewModel.SelectedScrapedPost), StringComparison.Ordinal) &&
+                     !ReferenceEquals(postsList.SelectedItem, this._vm.SelectedScrapedPost))
             {
-                if (!ReferenceEquals(postsList.SelectedItem, this._vm.SelectedScrapedPost))
-                {
-                    postsList.SelectedItem = this._vm.SelectedScrapedPost;
-                }
-
-                UpdateSelectedPostBanner();
+                postsList.SelectedItem = this._vm.SelectedScrapedPost;
             }
         };
 
-        Button pickCommentPhotoBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Publisher.BtnPickPhoto"]);
-        pickCommentPhotoBtn.Click += async (_, _) =>
-        {
-            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
-            if (!string.IsNullOrWhiteSpace(path))
-            {
-                commentPhotoBox.Text = path;
-                this._vm.SalesCommentPhotoPath = path;
-            }
-        };
-
-        Grid.SetColumn(commentPhotoBox, 0);
-        Grid.SetColumn(pickCommentPhotoBtn, 1);
-        commentPhotoRow.Children.Add(commentPhotoBox);
-        commentPhotoRow.Children.Add(pickCommentPhotoBtn);
-
-        CheckBox autoReactCheck = new()
-        {
-            Content = this._i18n["Leads.AutoReactToggle"],
-            IsChecked = this._vm.AutoReactBeforeComment
-        };
-        autoReactCheck.IsCheckedChanged += (_, _) =>
-            this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
-
-        Button sendSelectedBtn = CloudflareControls.CreatePrimaryButton(
-            this._theme,
-            this._i18n["Leads.BtnSendCommentSelected"],
-            this._vm.SendSalesCommentOnSelectedPostCommand,
-            VectorIcons.SalesComment);
-
-        Button autoCommentAllBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Leads.BtnAutoCommentAllMatched"],
-            this._vm.AutoCommentAllMatchedPostsCommand,
-            VectorIcons.Publish);
-
-        Button openPostBtn = CloudflareControls.CreateSecondaryButton(
-            this._theme,
-            this._i18n["Leads.BtnOpenPostInBrowser"],
-            this._vm.OpenSelectedPostInBrowserCommand,
-            VectorIcons.Browser);
-
-        rightStack.Children.Add(commentBox);
-        rightStack.Children.Add(commentPhotoRow);
-        rightStack.Children.Add(autoReactCheck);
-        rightStack.Children.Add(sendSelectedBtn);
-        rightStack.Children.Add(autoCommentAllBtn);
-        rightStack.Children.Add(openPostBtn);
-
-        Border rightCard = CloudflareControls.CreateCard(this._theme, new ScrollViewer { Content = rightStack });
-        Grid.SetColumn(rightCard, 1);
-        grid.Children.Add(rightCard);
+        pageStack.Children.Add(scanBar);
+        pageStack.Children.Add(emptyLeadsBanner);
+        pageStack.Children.Add(postsList);
+        pageStack.Children.Add(commentBox);
+        pageStack.Children.Add(commentOptionsRow);
+        pageStack.Children.Add(commentButtonsRow);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -624,18 +611,17 @@ public sealed partial class MainWindow
             descTb.Text = this._i18n["Leads.Desc"];
             emptyLeadsTb.Text = this._i18n["Empty.Leads"];
             buyerKwBox.PlaceholderText = this._i18n["Leads.BuyerKeywordPlaceholder"];
-            CloudflareControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
-            CloudflareControls.SetButtonText(exportLeadsBtn, this._i18n["Leads.BtnExportLeads"]);
-            UpdateSelectedPostBanner();
+            UiControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
+            UiControls.SetButtonText(exportLeadsBtn, this._i18n["Leads.BtnExportLeads"]);
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
             autoReactCheck.Content = this._i18n["Leads.AutoReactToggle"];
-            CloudflareControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
-            CloudflareControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
-            CloudflareControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
-            CloudflareControls.SetButtonText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
+            UiControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
+            UiControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
+            UiControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
+            UiControls.SetButtonText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
         };
 
-        return grid;
+        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
     }
 }

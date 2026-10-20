@@ -14,15 +14,15 @@ using Facebook.Net.UI.Core.Theming;
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Reusable Cloudflare Dashboard UI component factory (`CFCard`, `CFButton`, `CFStatusPill`, `CFTextBox`, `CFSectionHeader`)
+/// Reusable UI component factory (`CreateCard`, `CreatePrimaryButton`, `CreateStatusPill`, `CreateTextBox`, `CreateSectionHeader`)
 /// that automatically reacts to Dark/Light theme changes via <see cref="ThemeService"/>.
 /// Split into partial files for core containers/buttons and entity cards/pills.
 /// </summary>
-public static partial class CloudflareControls
+public static partial class UiControls
 {
     /// <summary>
-    /// Creates a Cloudflare-styled elevated surface card with a crisp 1px border (`#E2E8F0` light / `#27272A` dark)
-    /// and 8px rounded corners. Automatically updates colors when <see cref="ThemeService"/> toggles.
+    /// Creates an elevated surface card with a crisp 1px border (`#E2E8F0` light / `#27272A` dark)
+    /// and 10px rounded corners. Automatically updates colors when <see cref="ThemeService"/> toggles.
     /// </summary>
     public static Border CreateCard(ThemeService theme, Control content, Thickness? padding = null)
     {
@@ -31,15 +31,15 @@ public static partial class CloudflareControls
 
         Border card = new()
         {
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1),
-            Padding = padding ?? new Thickness(16),
+            Padding = padding ?? new Thickness(18),
             Child = content
         };
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             card.Background = p.ElevatedSurface;
             card.BorderBrush = p.SubtleBorder;
         }
@@ -59,15 +59,15 @@ public static partial class CloudflareControls
 
         Border well = new()
         {
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
-            Padding = padding ?? new Thickness(10),
+            Padding = padding ?? new Thickness(12),
             Child = content
         };
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             well.Background = p.SecondarySurface;
             well.BorderBrush = p.SubtleBorder;
         }
@@ -78,7 +78,7 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
-    /// Creates a primary Call-To-Action button in Cloudflare Orange (`#F6821F`) with an optional vector icon.
+    /// Creates a primary Call-To-Action button in brand orange (`#F6821F`) with an optional vector icon.
     /// </summary>
     public static Button CreatePrimaryButton(
         ThemeService theme,
@@ -105,9 +105,9 @@ public static partial class CloudflareControls
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 4
+                Spacing = 6
             };
-            row.Children.Add(VectorIcons.Create(iconSvg, 15, Brushes.White));
+            row.Children.Add(VectorIcons.Create(iconSvg, 15, Brushes.White, new Thickness(0)));
             row.Children.Add(label);
             buttonContent = row;
         }
@@ -116,8 +116,8 @@ public static partial class CloudflareControls
         {
             Content = buttonContent,
             Command = command,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(14, 8),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 9),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Foreground = Brushes.White,
@@ -135,7 +135,7 @@ public static partial class CloudflareControls
     }
 
     /// <summary>
-    /// Creates a secondary outlined button that adapts to Cloudflare Dark and Light mode.
+    /// Creates a secondary outlined button that adapts to Dark and Light mode.
     /// </summary>
     public static Button CreateSecondaryButton(
         ThemeService theme,
@@ -154,7 +154,7 @@ public static partial class CloudflareControls
         };
 
         PathIcon? icon = !string.IsNullOrWhiteSpace(iconSvg)
-            ? VectorIcons.Create(iconSvg, 15)
+            ? VectorIcons.Create(iconSvg, 15, margin: new Thickness(0))
             : null;
 
         Control buttonContent = label;
@@ -165,7 +165,7 @@ public static partial class CloudflareControls
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 4
+                Spacing = 6
             };
             row.Children.Add(icon);
             row.Children.Add(label);
@@ -176,8 +176,8 @@ public static partial class CloudflareControls
         {
             Content = buttonContent,
             Command = command,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(12, 7),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 8),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             BorderThickness = new Thickness(1),
@@ -188,7 +188,7 @@ public static partial class CloudflareControls
 
         void ApplyColors()
         {
-            CloudflarePalette p = theme.Palette;
+            ThemePalette p = theme.Palette;
             btn.Background = p.SecondarySurface;
             btn.BorderBrush = p.InteractiveBorder;
             label.Foreground = p.TextPrimary;
