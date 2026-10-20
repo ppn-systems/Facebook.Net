@@ -128,14 +128,14 @@ public sealed partial class GroupsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         targetsPane.Children.Add(topHeaderRow);
 
-        // Row 1: Quick Search + SegmentedFilterPill ([ Đang bật | Đang tắt | Tất cả ])
+        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Lọc nhanh tên nhóm... | 🔍 ]) with Flyout Popover
         BulkObservableCollection<SavedTargetGroup> filteredTargets = new();
         int targetStateFilter = 2; // 0 = Enabled, 1 = Disabled, 2 = All
-        TextBox targetFilterBox = FormField.CreateTextBox(this._theme, this._i18n["Groups.FilterPlaceholder"]);
+        SearchFilterBar targetSearchBar = null!;
 
         void RefreshFilteredTargets()
         {
-            string q = (targetFilterBox.Text ?? string.Empty).Trim();
+            string q = (targetSearchBar?.SearchTextBox.Text ?? string.Empty).Trim();
             List<SavedTargetGroup> matches = new(this._vm.TargetGroups.Count);
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
@@ -162,8 +162,6 @@ public sealed partial class GroupsPage : UserControl
             filteredTargets.ReplaceAll(matches);
         }
 
-        targetFilterBox.TextChanged += (_, _) => RefreshFilteredTargets();
-
         SegmentedFilterPill targetStatePill = new(
             this._theme,
             [
@@ -175,21 +173,21 @@ public sealed partial class GroupsPage : UserControl
             onSelected: idx =>
             {
                 targetStateFilter = idx;
+                targetSearchBar?.SetFilterActive(idx != 2);
                 RefreshFilteredTargets();
             });
 
-        Grid targetFilterRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(targetFilterBox, 0);
-        Grid.SetColumn(targetStatePill, 1);
-        targetFilterRow.Children.Add(targetFilterBox);
-        targetFilterRow.Children.Add(targetStatePill);
-        Grid.SetRow(targetFilterRow, 1);
-        targetsPane.Children.Add(targetFilterRow);
+        Border targetFilterFlyoutCard = SurfaceCard.Create(this._theme, targetStatePill, new Thickness(12));
+        targetSearchBar = new SearchFilterBar(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Groups.FilterPlaceholder"],
+            filterFlyoutContent: targetFilterFlyoutCard);
+
+        targetSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredTargets();
+        targetSearchBar.SearchButton.Click += (_, _) => RefreshFilteredTargets();
+        Grid.SetRow(targetSearchBar, 1);
+        targetsPane.Children.Add(targetSearchBar);
 
         RefreshFilteredTargets();
 
@@ -257,7 +255,7 @@ public sealed partial class GroupsPage : UserControl
         {
             targetListTitle.Text = this._i18n["Groups.TargetListTitle"];
             targetListDesc.Text = this._i18n["Groups.Desc"];
-            targetFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
+            targetSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.FilterPlaceholder"]);
             targetStatePill.UpdateLabels(
             [
                 this._i18n["Groups.FilterSegEnabled"],
@@ -334,15 +332,46 @@ public sealed partial class GroupsPage : UserControl
             filteredCatalog.ReplaceAll(list);
         }
 
-        StackPanel filterPopoverStack = new() { Spacing = 8, Width = 260 };
-        TextBox localFilterBox = FormField.CreateTextBox(
+        SearchFilterBar searchFilterBar = null!;
+        TextBox localFilterBox = null!;
+
+        void UpdateDiscoverFilterActive()
+        {
+            searchFilterBar?.SetFilterActive(
+                membershipFilter != 2 ||
+                !string.IsNullOrWhiteSpace(localFilterBox?.Text));
+        }
+
+        SegmentedFilterPill membershipPill = new(
+            this._theme,
+            [
+                this._i18n["Groups.FilterSegUnjoined"],
+                this._i18n["Groups.FilterSegJoined"],
+                this._i18n["Groups.FilterSegAll"]
+            ],
+            initialIndex: 2,
+            onSelected: idx =>
+            {
+                membershipFilter = idx;
+                UpdateDiscoverFilterActive();
+                RefreshCatalogFilter();
+            });
+
+        localFilterBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Groups.FilterPlaceholder"]);
-        localFilterBox.TextChanged += (_, _) => this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
-        filterPopoverStack.Children.Add(localFilterBox);
-        Border filterPopoverCard = SurfaceCard.Create(this._theme, filterPopoverStack, new Thickness(10));
+        localFilterBox.TextChanged += (_, _) =>
+        {
+            UpdateDiscoverFilterActive();
+            this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
+        };
 
-        SearchFilterBar searchFilterBar = new(
+        StackPanel filterPopoverStack = new() { Spacing = 10, Width = 310 };
+        filterPopoverStack.Children.Add(membershipPill);
+        filterPopoverStack.Children.Add(localFilterBox);
+        Border filterPopoverCard = SurfaceCard.Create(this._theme, filterPopoverStack, new Thickness(12));
+
+        searchFilterBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.SearchKeywordPlaceholder"],
@@ -357,32 +386,8 @@ public sealed partial class GroupsPage : UserControl
             this._vm.ApplyLocalGroupFilter(text);
         };
 
-        SegmentedFilterPill membershipPill = new(
-            this._theme,
-            [
-                this._i18n["Groups.FilterSegUnjoined"],
-                this._i18n["Groups.FilterSegJoined"],
-                this._i18n["Groups.FilterSegAll"]
-            ],
-            initialIndex: 2,
-            onSelected: idx =>
-            {
-                membershipFilter = idx;
-                RefreshCatalogFilter();
-            });
-
-        Grid searchAndPillRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(searchFilterBar, 0);
-        Grid.SetColumn(membershipPill, 1);
-        searchAndPillRow.Children.Add(searchFilterBar);
-        searchAndPillRow.Children.Add(membershipPill);
-        Grid.SetRow(searchAndPillRow, 1);
-        catalogPane.Children.Add(searchAndPillRow);
+        Grid.SetRow(searchFilterBar, 1);
+        catalogPane.Children.Add(searchFilterBar);
 
         RefreshCatalogFilter();
 

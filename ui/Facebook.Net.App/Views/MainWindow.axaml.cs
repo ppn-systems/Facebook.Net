@@ -3,12 +3,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Facebook.Net.App.Views.Pages;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
@@ -125,7 +128,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(10, 14)
         };
 
-        // 1. Top Brand Logo + Collapse Menu Toggle Button
+        // 1. Top Brand Logo + Brand Title + Collapse Menu Toggle Button
         Grid topHeader = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
@@ -133,15 +136,55 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Control brandIcon = VectorIcons.Create(VectorIcons.BrandMark, 22, margin: new Thickness(0));
+        Image brandLogoImage = new()
+        {
+            Width = 34,
+            Height = 34,
+            Stretch = Stretch.UniformToFill
+        };
+        RenderOptions.SetBitmapInterpolationMode(brandLogoImage, BitmapInterpolationMode.HighQuality);
+        using (Stream logoStream = AssetLoader.Open(new Uri("avares://Facebook.Net.App/Assets/icon.png")))
+        {
+            brandLogoImage.Source = new Bitmap(logoStream);
+        }
+
         Border brandBadge = new()
         {
             Width = 34,
             Height = 34,
             CornerRadius = new CornerRadius(8),
+            ClipToBounds = true,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
-            Child = brandIcon
+            Child = brandLogoImage
+        };
+
+        TextBlock brandTitle = new()
+        {
+            Text = "Facebook One",
+            FontSize = 13,
+            FontWeight = FontWeight.Bold,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        TextBlock brandSubtitle = new()
+        {
+            Text = "Client",
+            FontSize = 10.5,
+            FontWeight = FontWeight.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        StackPanel brandTitleStack = new()
+        {
+            Spacing = 1,
+            Margin = new Thickness(10, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                brandTitle,
+                brandSubtitle
+            }
         };
 
         Button collapseBtn = AppButton.CreateIcon(
@@ -151,8 +194,10 @@ public sealed partial class MainWindow : Window
             this._vm.ToggleSidebarCommand);
 
         Grid.SetColumn(brandBadge, 0);
+        Grid.SetColumn(brandTitleStack, 1);
         Grid.SetColumn(collapseBtn, 2);
         topHeader.Children.Add(brandBadge);
+        topHeader.Children.Add(brandTitleStack);
         topHeader.Children.Add(collapseBtn);
         Grid.SetRow(topHeader, 0);
         sidebarGrid.Children.Add(topHeader);
@@ -199,13 +244,16 @@ public sealed partial class MainWindow : Window
             ThemePalette p = this._theme.Palette;
             bool collapsed = this._vm.IsSidebarCollapsed;
 
-            sidebar.Width = collapsed ? 60 : 196;
+            sidebar.Width = collapsed ? 60 : 206;
             sidebar.Background = p.ElevatedSurface;
             sidebar.BorderBrush = p.SubtleBorder;
 
             brandBadge.IsVisible = !collapsed;
-            brandBadge.Background = p.BrandSubtleFill;
-            VectorIcons.SetForeground(brandIcon, p.BrandPrimary);
+            brandTitleStack.IsVisible = !collapsed;
+            brandTitle.Foreground = p.TextPrimary;
+            brandSubtitle.Foreground = p.BrandPrimary;
+            ToolTip.SetTip(brandBadge, this._i18n["App.Title"]);
+            ToolTip.SetTip(brandTitleStack, this._i18n["App.Title"]);
 
             Grid.SetColumn(collapseBtn, collapsed ? 0 : 2);
             collapseBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right;
@@ -373,7 +421,7 @@ public sealed partial class MainWindow : Window
 
         TextBlock versionLabel = SectionHeader.CreateLabel(
             this._theme,
-            "Facebook.Net  |  v2026.10.0",
+            "Facebook One Client  |  v2026.10.0",
             11,
             FontWeight.Normal,
             isSecondary: true);

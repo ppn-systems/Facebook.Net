@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Title>Facebook.Net.App - Cross-Platform Avalonia Desktop Application</Title>
-    <Description>Cross-platform Desktop UI (Windows &amp; macOS) built with Avalonia UI and Native AOT for Facebook.Net.</Description>
+    <Title>Facebook One Client</Title>
+    <Product>Facebook One Client</Product>
+    <Description>Facebook One Client — Cross-platform Desktop Application built with Avalonia UI and Native AOT.</Description>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>

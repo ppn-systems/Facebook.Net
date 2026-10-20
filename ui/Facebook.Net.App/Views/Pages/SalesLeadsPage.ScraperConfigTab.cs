@@ -77,17 +77,28 @@ public sealed partial class SalesLeadsPage
         Grid.SetRow(bulkGroupBtnRow, 1);
         leftPane.Children.Add(bulkGroupBtnRow);
 
-        // Quick Search Filter for Target Groups
+        // Quick Search & Filter Bar for Target Groups
         BulkObservableCollection<SavedTargetGroup> filteredTargetGroups = new();
-        TextBox groupFilterBox = FormField.CreateTextBox(this._theme, this._i18n["Groups.FilterPlaceholder"]);
+        int targetStateFilter = 2; // 0 = Enabled, 1 = Disabled, 2 = All
+        SearchFilterBar groupSearchBar = null!;
 
         void RefreshFilteredGroups()
         {
-            string q = (groupFilterBox.Text ?? string.Empty).Trim();
+            string q = (groupSearchBar?.SearchTextBox.Text ?? string.Empty).Trim();
             List<SavedTargetGroup> matches = new(this._vm.TargetGroups.Count);
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
                 SavedTargetGroup tg = this._vm.TargetGroups[i];
+                if (targetStateFilter == 0 && !tg.IsEnabled)
+                {
+                    continue;
+                }
+
+                if (targetStateFilter == 1 && tg.IsEnabled)
+                {
+                    continue;
+                }
+
                 if (!string.IsNullOrEmpty(q) &&
                     !tg.GroupName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 {
@@ -100,9 +111,32 @@ public sealed partial class SalesLeadsPage
             filteredTargetGroups.ReplaceAll(matches);
         }
 
-        groupFilterBox.TextChanged += (_, _) => RefreshFilteredGroups();
-        Grid.SetRow(groupFilterBox, 2);
-        leftPane.Children.Add(groupFilterBox);
+        SegmentedFilterPill groupStatePill = new(
+            this._theme,
+            [
+                this._i18n["Groups.FilterSegEnabled"],
+                this._i18n["Groups.FilterSegDisabled"],
+                this._i18n["Groups.FilterSegAll"]
+            ],
+            initialIndex: 2,
+            onSelected: idx =>
+            {
+                targetStateFilter = idx;
+                groupSearchBar?.SetFilterActive(idx != 2);
+                RefreshFilteredGroups();
+            });
+
+        Border groupFilterFlyoutCard = SurfaceCard.Create(this._theme, groupStatePill, new Thickness(12));
+        groupSearchBar = new SearchFilterBar(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Groups.FilterPlaceholder"],
+            filterFlyoutContent: groupFilterFlyoutCard);
+
+        groupSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredGroups();
+        groupSearchBar.SearchButton.Click += (_, _) => RefreshFilteredGroups();
+        Grid.SetRow(groupSearchBar, 2);
+        leftPane.Children.Add(groupSearchBar);
 
         RefreshFilteredGroups();
 
@@ -356,7 +390,13 @@ public sealed partial class SalesLeadsPage
         {
             multiGroupTitleTb.Text = this._i18n["Leads.ConfigMultiGroupTitle"];
             multiGroupDescTb.Text = this._i18n["Leads.ConfigMultiGroupDesc"];
-            groupFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
+            groupSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Groups.FilterPlaceholder"]);
+            groupStatePill.UpdateLabels(
+            [
+                this._i18n["Groups.FilterSegEnabled"],
+                this._i18n["Groups.FilterSegDisabled"],
+                this._i18n["Groups.FilterSegAll"]
+            ]);
             AppButton.SetText(enableAllBtn, this._i18n["Groups.BtnSelectAllTargets"]);
             AppButton.SetText(disableAllBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
             AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);

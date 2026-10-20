@@ -123,6 +123,16 @@ public sealed partial class AuditLogsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
+        SearchFilterBar searchFilterBar = null!;
+
+        void UpdateAuditFilterActive()
+        {
+            searchFilterBar?.SetFilterActive(
+                drawerVm.SelectedCategory is not null ||
+                drawerVm.SelectedTimeRange != AuditTimeRange.AllTime ||
+                !string.IsNullOrEmpty(drawerVm.SelectedAccountUid));
+        }
+
         // Filter Flyout Content inside [ ▽ Bộ lọc ] button: Category, TimeRange, Account
         ComboBox categoryCombo = FormField.CreateComboBox<object>(
             this._theme,
@@ -147,6 +157,7 @@ public sealed partial class AuditLogsPage : UserControl
         categoryCombo.SelectionChanged += async (_, _) =>
         {
             drawerVm.SelectedCategory = categoryCombo.SelectedItem is AuditCategory cat ? cat : null;
+            UpdateAuditFilterActive();
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
@@ -171,6 +182,7 @@ public sealed partial class AuditLogsPage : UserControl
             if (timeRangeCombo.SelectedItem is AuditTimeRange range)
             {
                 drawerVm.SelectedTimeRange = range;
+                UpdateAuditFilterActive();
                 await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
             }
         };
@@ -220,6 +232,7 @@ public sealed partial class AuditLogsPage : UserControl
         accountFilterCombo.SelectionChanged += async (_, _) =>
         {
             drawerVm.SelectedAccountUid = accountFilterCombo.SelectedItem is AccountProfile acc ? acc.Uid : null;
+            UpdateAuditFilterActive();
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
@@ -237,7 +250,7 @@ public sealed partial class AuditLogsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        SearchFilterBar searchFilterBar = new(
+        searchFilterBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Audit.SearchPlaceholder"],

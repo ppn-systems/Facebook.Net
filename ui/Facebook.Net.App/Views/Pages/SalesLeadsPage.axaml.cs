@@ -145,20 +145,15 @@ public sealed partial class SalesLeadsPage : UserControl
         Grid.SetRow(topHeaderBar, 0);
         tabGrid.Children.Add(topHeaderBar);
 
-        // 2. Structured Filter Card ("Bộ lọc" + Segmented Pill [ Chưa bình luận | Đã bình luận | Tất cả ])
-        StackPanel filterCardStack = new() { Spacing = 12 };
+        // 2. Unified Search & Filter Bar ([ ▽ Bộ lọc | Nhập từ khóa... | 🔍 ]) with Flyout Popover
+        SearchFilterBar dbSearchBar = null!;
 
-        Grid filterCardTopRow = new()
+        void UpdateLeadFilterActiveState()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock filterCardTitleTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._i18n["Common.FilterButton"],
-            14,
-            FontWeight.Bold);
+            dbSearchBar?.SetFilterActive(
+                this._vm.LeadCommentStatusFilter != 0 ||
+                !string.IsNullOrEmpty(this._vm.FilterScrapedGroupId));
+        }
 
         SegmentedFilterPill statusSegmentPill = new(
             this._theme,
@@ -176,21 +171,8 @@ public sealed partial class SalesLeadsPage : UserControl
                     1 => 2,
                     _ => 0
                 };
+                UpdateLeadFilterActiveState();
             });
-
-        Grid.SetColumn(filterCardTitleTb, 0);
-        Grid.SetColumn(statusSegmentPill, 1);
-        filterCardTopRow.Children.Add(filterCardTitleTb);
-        filterCardTopRow.Children.Add(statusSegmentPill);
-        filterCardStack.Children.Add(filterCardTopRow);
-
-        // Filter Controls Row: Group Dropdown (Left) + Local DB Keyword Search Input (Right)
-        Grid filterFieldsRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("300,*"),
-            ColumnSpacing = 14,
-            VerticalAlignment = VerticalAlignment.Bottom
-        };
 
         ObservableCollection<object> groupFilterItems = new() { "ALL" };
         for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -261,6 +243,8 @@ public sealed partial class SalesLeadsPage : UserControl
             {
                 this._vm.FilterScrapedGroupId = null;
             }
+
+            UpdateLeadFilterActiveState();
         };
 
         StackPanel groupFilterField = FormField.CreateLabeled(
@@ -269,32 +253,24 @@ public sealed partial class SalesLeadsPage : UserControl
             groupFilterCombo,
             out TextBlock groupFilterLbl);
 
-        SearchFilterBar dbSearchBar = new(
+        StackPanel filterFlyoutStack = new() { Spacing = 12, Width = 330 };
+        filterFlyoutStack.Children.Add(statusSegmentPill);
+        filterFlyoutStack.Children.Add(groupFilterField);
+        Border filterFlyoutCard = SurfaceCard.Create(this._theme, filterFlyoutStack, new Thickness(14));
+
+        dbSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Leads.BuyerKeywordPlaceholder"],
             this._vm.BuyerIntentKeywords,
-            filterFlyoutContent: null,
+            filterFlyoutContent: filterFlyoutCard,
             searchCommand: this._vm.QueryLocalScrapedPostsCommand);
 
         dbSearchBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalLeadFilter(dbSearchBar.SearchTextBox.Text);
 
-        StackPanel keywordFilterField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.FilterKeywordLabel"],
-            dbSearchBar,
-            out TextBlock keywordFilterLbl);
-
-        Grid.SetColumn(groupFilterField, 0);
-        Grid.SetColumn(keywordFilterField, 1);
-        filterFieldsRow.Children.Add(groupFilterField);
-        filterFieldsRow.Children.Add(keywordFilterField);
-        filterCardStack.Children.Add(filterFieldsRow);
-
-        Border filterCard = SurfaceCard.Create(this._theme, filterCardStack, new Thickness(16, 14));
-        Grid.SetRow(filterCard, 1);
-        tabGrid.Children.Add(filterCard);
+        Grid.SetRow(dbSearchBar, 1);
+        tabGrid.Children.Add(dbSearchBar);
 
         // 3. Master-Detail Split: Left = Spacious DataTableView<PostSummary>, Right = Selected Post Detail Inspector Card
         Grid masterDetailSplit = new()
@@ -607,7 +583,6 @@ public sealed partial class SalesLeadsPage : UserControl
             detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
-            filterCardTitleTb.Text = this._i18n["Common.FilterButton"];
             statusSegmentPill.UpdateLabels(
             [
                 this._i18n["Leads.FilterSegPending"],
@@ -616,7 +591,6 @@ public sealed partial class SalesLeadsPage : UserControl
             ]);
             groupFilterLbl.Text = this._i18n["Leads.FilterGroupLabel"];
             groupFilterCombo.PlaceholderText = this._i18n["Leads.FilterAllGroups"];
-            keywordFilterLbl.Text = this._i18n["Leads.FilterKeywordLabel"];
             dbSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
             postsTable.UpdateHeadersAndEmptyText(
                 [

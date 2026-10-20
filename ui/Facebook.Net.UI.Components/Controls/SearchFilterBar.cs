@@ -21,7 +21,10 @@ namespace Facebook.Net.UI.Components.Controls;
 /// </summary>
 public sealed class SearchFilterBar : Border
 {
+    private readonly ThemeService _theme;
     private readonly TextBlock _filterLabel;
+    private readonly Control _funnelIcon;
+    private bool _isFilterActive;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SearchFilterBar"/> class.
@@ -41,6 +44,7 @@ public sealed class SearchFilterBar : Border
         ICommand? searchCommand = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
+        this._theme = theme;
 
         this.CornerRadius = new CornerRadius(8);
         this.BorderThickness = new Thickness(1);
@@ -55,7 +59,7 @@ public sealed class SearchFilterBar : Border
         };
 
         // 1. Left Segment: [ ▽ Bộ lọc ]
-        Control funnelIcon = VectorIcons.Create(VectorIcons.Filter, 14, margin: new Thickness(0));
+        this._funnelIcon = VectorIcons.Create(VectorIcons.Filter, 14, margin: new Thickness(0));
         this._filterLabel = new TextBlock
         {
             Text = filterButtonText,
@@ -70,7 +74,7 @@ public sealed class SearchFilterBar : Border
             Spacing = 7,
             VerticalAlignment = VerticalAlignment.Center
         };
-        filterBtnContent.Children.Add(funnelIcon);
+        filterBtnContent.Children.Add(this._funnelIcon);
         filterBtnContent.Children.Add(this._filterLabel);
 
         this.FilterButton = new Button
@@ -173,9 +177,9 @@ public sealed class SearchFilterBar : Border
             this.Background = p.ElevatedSurface;
             this.BorderBrush = p.InteractiveBorder;
 
-            this.FilterButton.Background = p.SecondarySurface;
-            this._filterLabel.Foreground = p.TextPrimary;
-            VectorIcons.SetForeground(funnelIcon, p.TextSecondary);
+            this.FilterButton.Background = this._isFilterActive ? p.BrandSubtleFill : p.SecondarySurface;
+            this._filterLabel.Foreground = this._isFilterActive ? p.BrandPrimary : p.TextPrimary;
+            VectorIcons.SetForeground(this._funnelIcon, this._isFilterActive ? p.BrandPrimary : p.TextSecondary);
 
             leftDivider.Background = p.InteractiveBorder;
             rightDivider.Background = p.InteractiveBorder;
@@ -199,6 +203,31 @@ public sealed class SearchFilterBar : Border
 
     /// <summary>Gets the right magnifier search <see cref="Button"/>.</summary>
     public Button SearchButton { get; }
+
+    /// <summary>
+    /// Attaches or replaces the popover <see cref="Flyout"/> content displayed when clicking the left filter button.
+    /// </summary>
+    public void SetFilterFlyout(Control filterFlyoutContent)
+    {
+        ArgumentNullException.ThrowIfNull(filterFlyoutContent);
+        this.FilterButton.Flyout = new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = filterFlyoutContent
+        };
+    }
+
+    /// <summary>
+    /// Updates the visual active indicator on the left filter button when non-default filters are applied.
+    /// </summary>
+    public void SetFilterActive(bool isActive)
+    {
+        this._isFilterActive = isActive;
+        ThemePalette p = this._theme.Palette;
+        this.FilterButton.Background = isActive ? p.BrandSubtleFill : p.SecondarySurface;
+        this._filterLabel.Foreground = isActive ? p.BrandPrimary : p.TextPrimary;
+        VectorIcons.SetForeground(this._funnelIcon, isActive ? p.BrandPrimary : p.TextSecondary);
+    }
 
     /// <summary>
     /// Updates localized text on the filter button and search box placeholder.

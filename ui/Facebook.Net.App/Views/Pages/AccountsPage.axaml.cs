@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
-using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.UI.Components.Controls;
@@ -146,21 +145,7 @@ public sealed partial class AccountsPage : UserControl
         Grid.SetRow(topBar, 0);
         tabGrid.Children.Add(topBar);
 
-        // Row 1: Filter Card with SegmentedFilterPill ([ Đang hoạt động | Cần kiểm tra | Tất cả ])
-        StackPanel filterStack = new() { Spacing = 10 };
-
-        Grid filterTopRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock filterTitleTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._i18n["Common.FilterButton"],
-            14,
-            FontWeight.Bold);
-
+        // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc... | 🔍 ]) with Flyout Popover
         AccountStatus? currentStatusFilter = null;
         SearchFilterBar accountSearchBar = null!;
 
@@ -180,29 +165,25 @@ public sealed partial class AccountsPage : UserControl
                     1 => AccountStatus.CookieExpired,
                     _ => null
                 };
+                accountSearchBar?.SetFilterActive(currentStatusFilter is not null);
                 this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter);
             });
 
-        Grid.SetColumn(filterTitleTb, 0);
-        Grid.SetColumn(statusPill, 1);
-        filterTopRow.Children.Add(filterTitleTb);
-        filterTopRow.Children.Add(statusPill);
-        filterStack.Children.Add(filterTopRow);
+        Border filterFlyoutCard = SurfaceCard.Create(this._theme, statusPill, new Thickness(12));
 
         accountSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Accounts.SearchPlaceholder"],
-            this._vm.AccountFilterText);
+            this._vm.AccountFilterText,
+            filterFlyoutContent: filterFlyoutCard);
         accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
         accountSearchBar.SearchButton.Click += (_, _) =>
             this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
-        filterStack.Children.Add(accountSearchBar);
 
-        Border filterCard = SurfaceCard.Create(this._theme, filterStack, new Thickness(16, 12));
-        Grid.SetRow(filterCard, 1);
-        tabGrid.Children.Add(filterCard);
+        Grid.SetRow(accountSearchBar, 1);
+        tabGrid.Children.Add(accountSearchBar);
 
         // Row 2: Visual Account List
         ListBox accountList = FormField.CreateListBox<AccountProfile>(
@@ -284,7 +265,6 @@ public sealed partial class AccountsPage : UserControl
         {
             titleTb.Text = this._i18n["Accounts.Header"];
             descTb.Text = this._i18n["Accounts.Desc"];
-            filterTitleTb.Text = this._i18n["Common.FilterButton"];
             statusPill.UpdateLabels(
             [
                 this._i18n["Accounts.FilterSegActive"],
