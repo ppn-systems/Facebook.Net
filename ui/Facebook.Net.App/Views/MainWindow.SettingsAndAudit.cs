@@ -349,8 +349,8 @@ public sealed partial class MainWindow
 
         Grid pageGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*"),
-            RowSpacing = 12
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"),
+            RowSpacing = 8
         };
 
         Grid topHeaderRow = new()
@@ -382,10 +382,10 @@ public sealed partial class MainWindow
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
-        // 4-Way Filter Bar: Category (Sự kiện), Time Range (Thời gian), Account (Tài khoản), Keyword (Từ khóa)
-        Grid filterRow = new()
+        // Row 1: 3-Way Dropdown Filters: Category (Sự kiện), Time Range (Thời gian), Account (Tài khoản)
+        Grid filterDropsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("140,140,165,*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
             ColumnSpacing = 8
         };
 
@@ -497,19 +497,32 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(accountFilterCombo, 2);
 
+        filterDropsRow.Children.Add(categoryCombo);
+        filterDropsRow.Children.Add(timeRangeCombo);
+        filterDropsRow.Children.Add(accountFilterCombo);
+        Grid.SetRow(filterDropsRow, 1);
+        pageGrid.Children.Add(filterDropsRow);
+
+        // Row 2: Keyword Search Box + Action Buttons (Refresh, Export CSV, Clear Old)
+        Grid searchAndActionRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+            ColumnSpacing = 8
+        };
+
         TextBox searchBox = UiControls.CreateTextBox(this._theme, this._i18n["Audit.SearchPlaceholder"]);
         searchBox.TextChanged += async (_, _) =>
         {
             drawerVm.SearchKeyword = searchBox.Text ?? string.Empty;
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
-        Grid.SetColumn(searchBox, 3);
+        Grid.SetColumn(searchBox, 0);
 
         Button refreshBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand);
-        Grid.SetColumn(refreshBtn, 4);
+        Grid.SetColumn(refreshBtn, 1);
 
         Button exportBtn = UiControls.CreateSecondaryButton(
             this._theme,
@@ -535,23 +548,20 @@ public sealed partial class MainWindow
                 await drawerVm.ExportFilteredLogsAsync(localPath).ConfigureAwait(true);
             }
         };
-        Grid.SetColumn(exportBtn, 5);
+        Grid.SetColumn(exportBtn, 2);
 
         Button clearBtn = UiControls.CreateSecondaryButton(
             this._theme,
             this._i18n["Audit.BtnClear"],
             drawerVm.ClearLogsCommand);
-        Grid.SetColumn(clearBtn, 6);
+        Grid.SetColumn(clearBtn, 3);
 
-        filterRow.Children.Add(categoryCombo);
-        filterRow.Children.Add(timeRangeCombo);
-        filterRow.Children.Add(accountFilterCombo);
-        filterRow.Children.Add(searchBox);
-        filterRow.Children.Add(refreshBtn);
-        filterRow.Children.Add(exportBtn);
-        filterRow.Children.Add(clearBtn);
-        Grid.SetRow(filterRow, 1);
-        pageGrid.Children.Add(filterRow);
+        searchAndActionRow.Children.Add(searchBox);
+        searchAndActionRow.Children.Add(refreshBtn);
+        searchAndActionRow.Children.Add(exportBtn);
+        searchAndActionRow.Children.Add(clearBtn);
+        Grid.SetRow(searchAndActionRow, 2);
+        pageGrid.Children.Add(searchAndActionRow);
 
         Border emptyLogsBanner = UiControls.CreateEmptyState(
             this._theme,
@@ -559,10 +569,10 @@ public sealed partial class MainWindow
             VectorIcons.AuditLog,
             out TextBlock emptyLogsMsg);
         emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
-        drawerVm.FilteredLogs.CollectionChanged += (_, _) => emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
 
         ListBox logList = new()
         {
+            IsVisible = drawerVm.FilteredLogs.Count > 0,
             ItemsSource = drawerVm.FilteredLogs,
             ItemTemplate = new FuncDataTemplate<AuditLogRecord>((rec, _) =>
             {
@@ -573,7 +583,7 @@ public sealed partial class MainWindow
 
                 Grid logRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("75,130,120,160,*"),
+                    ColumnDefinitions = new ColumnDefinitions("70,120,105,140,*"),
                     ColumnSpacing = 8,
                     Margin = new Thickness(2, 2)
                 };
@@ -588,6 +598,8 @@ public sealed partial class MainWindow
                 logRow.Children.Add(tsTb);
 
                 TextBlock accTb = UiControls.CreateThemedLabel(this._theme, rec.AccountDisplayName, 11, FontWeight.SemiBold);
+                accTb.TextTrimming = TextTrimming.CharacterEllipsis;
+                accTb.TextWrapping = TextWrapping.NoWrap;
                 Grid.SetColumn(accTb, 1);
                 logRow.Children.Add(accTb);
 
@@ -616,10 +628,17 @@ public sealed partial class MainWindow
             })
         };
 
+        drawerVm.FilteredLogs.CollectionChanged += (_, _) =>
+        {
+            bool isEmpty = drawerVm.FilteredLogs.Count == 0;
+            emptyLogsBanner.IsVisible = isEmpty;
+            logList.IsVisible = !isEmpty;
+        };
+
         Grid logContentHost = new();
         logContentHost.Children.Add(logList);
         logContentHost.Children.Add(emptyLogsBanner);
-        Grid.SetRow(logContentHost, 2);
+        Grid.SetRow(logContentHost, 3);
         pageGrid.Children.Add(logContentHost);
 
         void ApplyColors() => countersText.Foreground = this._theme.Palette.TextPrimary;

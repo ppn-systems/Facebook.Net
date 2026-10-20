@@ -33,7 +33,7 @@ public static partial class UiControls
         {
             CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1),
-            Padding = padding ?? new Thickness(18),
+            Padding = padding ?? new Thickness(14),
             Child = content
         };
 
@@ -92,9 +92,11 @@ public static partial class UiControls
         {
             Text = initialText,
             FontWeight = FontWeight.SemiBold,
-            FontSize = 13,
+            FontSize = 12.5,
             Foreground = Brushes.White,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         Control buttonContent = label;
@@ -107,7 +109,7 @@ public static partial class UiControls
                 VerticalAlignment = VerticalAlignment.Center,
                 Spacing = 6
             };
-            row.Children.Add(VectorIcons.Create(iconSvg, 15, Brushes.White, new Thickness(0)));
+            row.Children.Add(VectorIcons.Create(iconSvg, 14, Brushes.White, new Thickness(0)));
             row.Children.Add(label);
             buttonContent = row;
         }
@@ -117,7 +119,7 @@ public static partial class UiControls
             Content = buttonContent,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(14, 9),
+            Padding = new Thickness(12, 7),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Foreground = Brushes.White,
@@ -149,12 +151,14 @@ public static partial class UiControls
         {
             Text = initialText,
             FontWeight = FontWeight.Medium,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center
+            FontSize = 12.5,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         PathIcon? icon = !string.IsNullOrWhiteSpace(iconSvg)
-            ? VectorIcons.Create(iconSvg, 15, margin: new Thickness(0))
+            ? VectorIcons.Create(iconSvg, 14, margin: new Thickness(0))
             : null;
 
         Control buttonContent = label;
@@ -177,7 +181,7 @@ public static partial class UiControls
             Content = buttonContent,
             Command = command,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 8),
+            Padding = new Thickness(10, 6),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             BorderThickness = new Thickness(1),

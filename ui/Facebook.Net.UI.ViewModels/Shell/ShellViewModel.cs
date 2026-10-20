@@ -353,7 +353,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             .Replace("c_user", "phiên đăng nhập", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<IBrowserSession?> TryGetOrLaunchActiveSessionAsync(CancellationToken ct = default)
+    private async Task<IBrowserSession?> TryGetOrLaunchActiveSessionAsync(CancellationToken ct = default, bool forceVisible = false)
     {
         if (this.SelectedAccount is null)
         {
@@ -366,7 +366,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
 
         IBrowserSession? existing = this._context.SessionManager.TryGetSession(this.SelectedAccount.Uid);
-        if (existing is not null)
+        if (existing is not null && existing.State == Facebook.Net.Contracts.Primitives.BrowserState.Running)
         {
             return existing;
         }
@@ -392,7 +392,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             UserDataDir: this.SelectedAccount.ProfileDirectory,
             UserAgent: this.SelectedAccount.UserAgent,
             Proxy: resolvedProxy,
-            Headless: this._context.Settings.Current.RunBrowserHeadless,
+            Headless: !forceVisible && this._context.Settings.Current.RunBrowserHeadless,
             ExecutablePath: preferredExe);
 
         IBrowserSession session = await this._context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);

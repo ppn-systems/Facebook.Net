@@ -73,12 +73,27 @@ public sealed partial class ShellViewModel
             ?? this.SelectedAccount?.Uid
             ?? this._context.Settings.Current.LastSelectedAccountUid;
         IReadOnlyList<AccountProfile> storedAccounts = await this._context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
-        this.Accounts.ReplaceAll(storedAccounts);
 
-        AccountProfile? matched = null;
+        List<AccountProfile> normalizedAccounts = new(storedAccounts.Count);
         for (int i = 0; i < storedAccounts.Count; i++)
         {
             AccountProfile acc = storedAccounts[i];
+            if ((acc.Status == AccountStatus.CookieExpired || acc.Status == AccountStatus.Idle) &&
+                (!string.IsNullOrWhiteSpace(acc.CookieHeader) || HasProfileAuthenticatedCookieStore(acc.ProfileDirectory)))
+            {
+                acc = acc with { Status = AccountStatus.Active };
+                await this._context.AccountStore.UpsertAccountAsync(acc).ConfigureAwait(true);
+            }
+
+            normalizedAccounts.Add(acc);
+        }
+
+        this.Accounts.ReplaceAll(normalizedAccounts);
+
+        AccountProfile? matched = null;
+        for (int i = 0; i < normalizedAccounts.Count; i++)
+        {
+            AccountProfile acc = normalizedAccounts[i];
             if (!string.IsNullOrWhiteSpace(targetUid) &&
                 string.Equals(acc.Uid, targetUid, StringComparison.Ordinal))
             {
@@ -131,6 +146,54 @@ public sealed partial class ShellViewModel
         {
             this.SavedTemplates.Add(storedTemplates[i]);
         }
+    }
+
+    private static bool HasProfileAuthenticatedCookieStore(string? profileDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
+        {
+            return false;
+        }
+
+        string[] candidates =
+        [
+            Path.Combine(profileDirectory, "Default", "Network", "Cookies"),
+            Path.Combine(profileDirectory, "Default", "Cookies")
+        ];
+
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            string cookieDbPath = candidates[i];
+            if (!File.Exists(cookieDbPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                using FileStream fs = new(cookieDbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                if (fs.Length <= 0 || fs.Length > 16 * 1024 * 1024)
+                {
+                    continue;
+                }
+
+                byte[] bytes = new byte[(int)fs.Length];
+                int read = fs.Read(bytes, 0, bytes.Length);
+                string ascii = System.Text.Encoding.Latin1.GetString(bytes, 0, read);
+                if (ascii.Contains("facebook.com", StringComparison.OrdinalIgnoreCase) &&
+                    ascii.Contains("c_user", StringComparison.Ordinal) &&
+                    ascii.Contains("xs", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignore locked or unreadable cookie database
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -275,27 +338,6 @@ public sealed partial class ShellViewModel
         }
 
         AccountProfile current = this.SelectedAccount;
-
-        // Fast offline cookie check first
-        bool hasCUser = current.CookieHeader.Contains("c_user=", StringComparison.Ordinal);
-        bool hasXs = current.CookieHeader.Contains("xs=", StringComparison.Ordinal);
-
-        if (!hasCUser || !hasXs)
-        {
-            AccountProfile expired = current with { Status = AccountStatus.CookieExpired };
-            await this._context.AccountStore.UpsertAccountAsync(expired).ConfigureAwait(true);
-            await this.ReloadAllStoredDataAsync(expired.Uid).ConfigureAwait(true);
-
-            _ = await this.LogAuditAsync(
-                AuditCategory.Account,
-                AuditSeverity.Warning,
-                expired.DisplayName,
-                this.Msg(
-                    $"Tài khoản '{expired.DisplayName}' chưa có phiên Cookie hợp lệ — vui lòng bấm 'Mở Trình duyệt Đăng nhập & Đồng bộ'.",
-                    $"Account '{expired.DisplayName}' does not have valid session cookies — please click 'Open Browser to Log In & Sync'.")).ConfigureAwait(true);
-            return;
-        }
-
         System.Threading.CancellationToken ct = this.BeginTaskScope();
         try
         {
@@ -305,18 +347,45 @@ public sealed partial class ShellViewModel
                 return;
             }
 
-            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
-            SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            SessionMaterial? material = null;
+            try
+            {
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
 
-            bool isHealthy = !string.IsNullOrWhiteSpace(material.FbDtsg) && !string.IsNullOrWhiteSpace(material.Uid);
+            bool isHealthy = !string.IsNullOrWhiteSpace(material.Uid) && material.Uid != "0";
             AccountStatus resolvedStatus = isHealthy ? AccountStatus.Active : AccountStatus.CookieExpired;
+
+            string realUid = isHealthy ? material.Uid : current.Uid;
+            string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
+            bool isDefaultPlaceholder =
+                current.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
+                current.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
+                current.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+
+            string displayName = isDefaultPlaceholder && isHealthy
+                ? $"Facebook ({suffix})"
+                : current.DisplayName;
 
             AccountProfile checkedProfile = current with
             {
+                Uid = realUid,
+                DisplayName = displayName,
                 CookieHeader = !string.IsNullOrWhiteSpace(material.CookieHeader) ? material.CookieHeader : current.CookieHeader,
+                UserAgent = !string.IsNullOrWhiteSpace(material.UserAgent) ? material.UserAgent : current.UserAgent,
                 Status = resolvedStatus,
                 LastActiveAt = DateTimeOffset.UtcNow
             };
+
+            if (!string.Equals(current.Uid, realUid, StringComparison.Ordinal))
+            {
+                _ = await this._context.AccountStore.DeleteAccountAsync(current.Uid, ct).ConfigureAwait(true);
+            }
 
             await this._context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(checkedProfile.Uid).ConfigureAwait(true);
@@ -344,7 +413,11 @@ public sealed partial class ShellViewModel
         catch (Exception ex)
         {
             string msg = ex.Message;
-            AccountStatus faultStatus = msg.Contains("checkpoint", StringComparison.OrdinalIgnoreCase)
+            bool isActualCheckpoint =
+                msg.Contains("190", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("checkpoint required", StringComparison.OrdinalIgnoreCase);
+
+            AccountStatus faultStatus = isActualCheckpoint
                 ? AccountStatus.Checkpoint
                 : AccountStatus.CookieExpired;
 
@@ -391,14 +464,53 @@ public sealed partial class ShellViewModel
                     $"Đang mở trình duyệt cho '{account.DisplayName}'...",
                     $"Launching browser for '{account.DisplayName}'...")).ConfigureAwait(true);
 
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct, forceVisible: true).ConfigureAwait(true);
             if (session is null)
             {
                 return;
             }
 
-            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
-            SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            SessionMaterial? material = null;
+            try
+            {
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            }
+
+            if (material is null)
+            {
+                Exception? lastExtractEx = null;
+                for (int attempt = 0; attempt < 60 && !ct.IsCancellationRequested; attempt++)
+                {
+                    if (session.State != BrowserState.Running)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+                        if (!string.IsNullOrWhiteSpace(material.Uid) && material.Uid != "0")
+                        {
+                            break;
+                        }
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        lastExtractEx = ex;
+                    }
+
+                    await Task.Delay(1500, ct).ConfigureAwait(true);
+                }
+
+                if (material is null)
+                {
+                    throw lastExtractEx ?? new InvalidOperationException("Chưa phát hiện phiên đăng nhập trên trình duyệt.");
+                }
+            }
 
             // If the account was created as a placeholder before login, update its internal session identifier cleanly
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;

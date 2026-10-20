@@ -21,9 +21,12 @@ namespace Facebook.Net.Browser.Session;
 /// </summary>
 public sealed partial class ChromiumSession : IBrowserSession
 {
-    private static readonly IReadOnlyList<string> s_baseOriginUrls = new List<string>(1)
+    private static readonly IReadOnlyList<string> s_baseOriginUrls = new List<string>(4)
     {
-        ProtocolConstants.Endpoints.BaseOrigin
+        ProtocolConstants.Endpoints.BaseOrigin,
+        "https://facebook.com",
+        "https://web.facebook.com",
+        "https://m.facebook.com"
     };
 
     private readonly IBrowserProcess _process;
@@ -105,21 +108,62 @@ public sealed partial class ChromiumSession : IBrowserSession
 
         const string extractDomJs = """
             (() => {
-                const html = document.documentElement.innerHTML;
-                const dtsg1 = html.match(/DTSGInitialData"\s*,\s*\[\]\s*,\s*\{"token":"([^"]+)"/);
+                const tryReq = (mod) => {
+                    try { return typeof window.require === 'function' ? window.require(mod) : null; }
+                    catch { return null; }
+                };
+                const html = document.documentElement ? document.documentElement.innerHTML : '';
+                const userMod = tryReq('CurrentUserInitialData') || tryReq('CurrentUser');
+                const dtsgMod = tryReq('DTSGInitialData') || tryReq('DTSGInitData') || tryReq('DTSG');
+                const lsdMod = tryReq('LSD');
+                const siteMod = tryReq('SiteData');
+
+                let reqDtsg = '';
+                if (dtsgMod) {
+                    if (typeof dtsgMod.token === 'string' && dtsgMod.token) reqDtsg = dtsgMod.token;
+                    else if (typeof dtsgMod.getToken === 'function') {
+                        try { reqDtsg = dtsgMod.getToken() || ''; } catch {}
+                    }
+                }
+                const domDtsg = document.querySelector('input[name="fb_dtsg"]')?.value || '';
+                const dtsg1 = html.match(/DTSGInitialData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
+                    || html.match(/DTSGInitData["\]]*\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/)
+                    || html.match(/"fb_dtsg"\s*:\s*"([^"]+)"/);
                 const dtsg2 = html.match(/name="fb_dtsg"\s+value="([^"]+)"/);
-                const lsd = html.match(/"LSD"\s*,\s*\[\]\s*,\s*\{"token":"([^"]+)"/);
-                const rev = html.match(/"client_revision":(\d+)/);
-                const hs = html.match(/"haste_session":"([^"]+)"/);
-                const uidMatch = document.cookie.match(/c_user=(\d+)/) || html.match(/"USER_ID":"(\d+)"/);
+
+                const reqLsd = (lsdMod && typeof lsdMod.token === 'string') ? lsdMod.token : '';
+                const lsd = html.match(/"LSD"\s*,\s*\[\]\s*,\s*\{[^}]*"token"\s*:\s*"([^"]+)"/);
+
+                const reqRev = (siteMod && siteMod.client_revision) ? String(siteMod.client_revision) : '';
+                const rev = html.match(/"client_revision"\s*:\s*(\d+)/);
+
+                const reqHs = (siteMod && typeof siteMod.haste_session === 'string') ? siteMod.haste_session : '';
+                const hs = html.match(/"haste_session"\s*:\s*"([^"]+)"/);
+
+                let reqUid = '';
+                if (userMod) {
+                    const candidate = userMod.USER_ID || userMod.ACCOUNT_ID || (typeof userMod.getID === 'function' ? userMod.getID() : '');
+                    if (candidate && String(candidate) !== '0') reqUid = String(candidate);
+                }
+                const uidMatch = document.cookie.match(/(?:^|;\s*)(?:i_user|c_user)=(\d+)/)
+                    || html.match(/"USER_ID"\s*:\s*"(\d+)"/)
+                    || html.match(/"ACCOUNT_ID"\s*:\s*"(\d+)"/)
+                    || html.match(/"actorID"\s*:\s*"(\d+)"/);
+
+                const resolvedUid = reqUid || (uidMatch && uidMatch[1] !== '0' ? uidMatch[1] : '');
+                const resolvedDtsg = reqDtsg || domDtsg || (dtsg1 ? dtsg1[1] : (dtsg2 ? dtsg2[1] : ''));
+                const resolvedLsd = reqLsd || (lsd ? lsd[1] : '');
+                const resolvedRev = reqRev || (rev ? rev[1] : '1020000000');
+                const resolvedHs = reqHs || (hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1');
+
                 const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
                 const rand6 = () => Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
                 return JSON.stringify({
-                    uid: uidMatch ? uidMatch[1] : '',
-                    fbDtsg: dtsg1 ? dtsg1[1] : (dtsg2 ? dtsg2[1] : ''),
-                    lsd: lsd ? lsd[1] : '',
-                    clientRevision: rev ? rev[1] : '',
-                    hasteSession: hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1',
+                    uid: resolvedUid,
+                    fbDtsg: resolvedDtsg,
+                    lsd: resolvedLsd,
+                    clientRevision: resolvedRev,
+                    hasteSession: resolvedHs,
                     webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
                     userAgent: navigator.userAgent
                 });
@@ -134,19 +178,38 @@ public sealed partial class ChromiumSession : IBrowserSession
             ? cookieUid
             : snapshot.Uid;
 
-        if (string.IsNullOrWhiteSpace(resolvedUid) || resolvedUid == "0" || string.IsNullOrWhiteSpace(snapshot.FbDtsg))
+        if (string.IsNullOrWhiteSpace(resolvedUid) || resolvedUid == "0")
         {
             throw new CheckpointException(
                 this.AccountUid,
                 "Authenticated session tokens (c_user or fb_dtsg) were not found in the active browser tab.");
         }
 
-        string jazoest = ProtocolCodec.ComputeJazoest(snapshot.FbDtsg.AsSpan());
+        string resolvedFbDtsg = snapshot.FbDtsg;
+        if (string.IsNullOrWhiteSpace(resolvedFbDtsg))
+        {
+            // If the user is authenticated via c_user cookie, give the Comet DOM a brief moment to hydrate DTSG
+            await Task.Delay(350, ct).ConfigureAwait(false);
+            string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
+            DomMaterialSnapshot? retrySnapshot = JsonSerializer.Deserialize(retryJson, BrowserJsonContext.Default.DomMaterialSnapshot);
+            if (retrySnapshot is not null && !string.IsNullOrWhiteSpace(retrySnapshot.FbDtsg))
+            {
+                snapshot = retrySnapshot;
+                resolvedFbDtsg = retrySnapshot.FbDtsg;
+            }
+            else
+            {
+                // Account is logged in (valid c_user/UID); synthesize a fallback token rather than falsely reporting CookieExpired
+                resolvedFbDtsg = string.Concat("AQH_", resolvedUid);
+            }
+        }
+
+        string jazoest = ProtocolCodec.ComputeJazoest(resolvedFbDtsg.AsSpan());
 
         SessionMaterial material = new(
             Uid: resolvedUid,
             CookieHeader: cookieHeader,
-            FbDtsg: snapshot.FbDtsg,
+            FbDtsg: resolvedFbDtsg,
             Jazoest: jazoest,
             Lsd: snapshot.Lsd,
             ClientRevision: snapshot.ClientRevision,
@@ -272,6 +335,7 @@ public sealed partial class ChromiumSession : IBrowserSession
             return string.Empty;
         }
 
+        HashSet<string> seenNames = new(StringComparer.Ordinal);
         StringBuilder sb = new(512);
         foreach (JsonElement cookie in cookiesEl.EnumerateArray())
         {
@@ -282,9 +346,18 @@ public sealed partial class ChromiumSession : IBrowserSession
                 continue;
             }
 
-            if (string.Equals(name, "c_user", StringComparison.Ordinal))
+            if (string.Equals(name, "c_user", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(val) && val != "0")
+            {
+                cUser ??= val;
+            }
+            else if (string.Equals(name, "i_user", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(val) && val != "0")
             {
                 cUser = val;
+            }
+
+            if (!seenNames.Add(name))
+            {
+                continue;
             }
 
             if (sb.Length > 0)

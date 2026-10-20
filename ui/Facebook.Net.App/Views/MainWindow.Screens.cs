@@ -24,7 +24,11 @@ public sealed partial class MainWindow
 {
     private Control BuildAccountsScreen()
     {
-        StackPanel pageStack = new() { Spacing = 14 };
+        Grid pageGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
+            RowSpacing = 10
+        };
 
         Grid header = UiControls.CreateSectionHeader(
             this._theme,
@@ -32,7 +36,8 @@ public sealed partial class MainWindow
             this._i18n["Accounts.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        pageStack.Children.Add(header);
+        Grid.SetRow(header, 0);
+        pageGrid.Children.Add(header);
 
         // Quick Import Flyout Card (opened only when the user clicks the Import Session button)
         TextBox nameBox = UiControls.CreateTextBox(this._theme, this._i18n["Accounts.NamePlaceholder"]);
@@ -69,7 +74,7 @@ public sealed partial class MainWindow
         // Top 1-Click Action Bar
         Grid topActionBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 8
         };
 
@@ -111,13 +116,13 @@ public sealed partial class MainWindow
         topActionBar.Children.Add(openBrowserBtn);
         topActionBar.Children.Add(pasteClipboardBtn);
         topActionBar.Children.Add(openImportFlyoutBtn);
-        pageStack.Children.Add(topActionBar);
+        Grid.SetRow(topActionBar, 1);
+        pageGrid.Children.Add(topActionBar);
 
-        // Visual Account List (Single-focus center card)
+        // Visual Account List (Single-focus center area)
         ListBox accountList = new()
         {
-            MinHeight = 300,
-            MaxHeight = 380,
+            IsVisible = this._vm.Accounts.Count > 0,
             ItemsSource = this._vm.Accounts,
             SelectedItem = this._vm.SelectedAccount,
             ItemTemplate = new FuncDataTemplate<AccountProfile>((item, _) =>
@@ -131,10 +136,10 @@ public sealed partial class MainWindow
                 {
                     ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 12,
-                    Margin = new Thickness(4, 5)
+                    Margin = new Thickness(4, 4)
                 };
 
-                Border avatar = UiControls.CreateAvatarBadge(this._theme, item.DisplayName, 36);
+                Border avatar = UiControls.CreateAvatarBadge(this._theme, item.DisplayName, 34);
                 Grid.SetColumn(avatar, 0);
 
                 string FormatSubInfo()
@@ -149,7 +154,7 @@ public sealed partial class MainWindow
                 }
 
                 StackPanel info = new() { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
-                TextBlock displayName = UiControls.CreateThemedLabel(this._theme, item.DisplayName, 14, FontWeight.SemiBold);
+                TextBlock displayName = UiControls.CreateThemedLabel(this._theme, item.DisplayName, 13, FontWeight.SemiBold);
                 TextBlock subInfo = UiControls.CreateThemedLabel(
                     this._theme,
                     FormatSubInfo(),
@@ -197,12 +202,22 @@ public sealed partial class MainWindow
             out TextBlock emptyAccTb);
         emptyAccountsBanner.IsVisible = this._vm.Accounts.Count == 0;
         this._vm.Accounts.CollectionChanged += (_, _) =>
-            emptyAccountsBanner.IsVisible = this._vm.Accounts.Count == 0;
-
-        // Bottom Selected Account Actions & Proxy Bar
-        Grid selectedAccBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
+            bool isEmpty = this._vm.Accounts.Count == 0;
+            emptyAccountsBanner.IsVisible = isEmpty;
+            accountList.IsVisible = !isEmpty;
+        };
+
+        Grid accountListHost = new();
+        accountListHost.Children.Add(accountList);
+        accountListHost.Children.Add(emptyAccountsBanner);
+        Grid.SetRow(accountListHost, 2);
+        pageGrid.Children.Add(accountListHost);
+
+        // Row 3: Dedicated Proxy Configuration Row
+        Grid proxyRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             ColumnSpacing = 8
         };
 
@@ -216,6 +231,20 @@ public sealed partial class MainWindow
             this._i18n["Accounts.BtnSaveProxy"],
             this._vm.SaveAccountProxyCommand,
             VectorIcons.Settings);
+
+        Grid.SetColumn(proxyBox, 0);
+        Grid.SetColumn(saveProxyBtn, 1);
+        proxyRow.Children.Add(proxyBox);
+        proxyRow.Children.Add(saveProxyBtn);
+        Grid.SetRow(proxyRow, 3);
+        pageGrid.Children.Add(proxyRow);
+
+        // Row 4: Selected Account Action Buttons (3 equal-width buttons)
+        Grid selectedAccBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+            ColumnSpacing = 8
+        };
 
         Button checkHealthBtn = UiControls.CreateSecondaryButton(
             this._theme,
@@ -234,16 +263,14 @@ public sealed partial class MainWindow
             this._i18n["Accounts.BtnDelete"],
             this._vm.DeleteSelectedAccountCommand);
 
-        Grid.SetColumn(proxyBox, 0);
-        Grid.SetColumn(saveProxyBtn, 1);
-        Grid.SetColumn(checkHealthBtn, 2);
-        Grid.SetColumn(warmUpBtn, 3);
-        Grid.SetColumn(deleteBtn, 4);
-        selectedAccBar.Children.Add(proxyBox);
-        selectedAccBar.Children.Add(saveProxyBtn);
+        Grid.SetColumn(checkHealthBtn, 0);
+        Grid.SetColumn(warmUpBtn, 1);
+        Grid.SetColumn(deleteBtn, 2);
         selectedAccBar.Children.Add(checkHealthBtn);
         selectedAccBar.Children.Add(warmUpBtn);
         selectedAccBar.Children.Add(deleteBtn);
+        Grid.SetRow(selectedAccBar, 4);
+        pageGrid.Children.Add(selectedAccBar);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -269,10 +296,6 @@ public sealed partial class MainWindow
             }
         };
 
-        pageStack.Children.Add(emptyAccountsBanner);
-        pageStack.Children.Add(accountList);
-        pageStack.Children.Add(selectedAccBar);
-
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Accounts.Header"];
@@ -291,12 +314,16 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(deleteBtn, this._i18n["Accounts.BtnDelete"]);
         };
 
-        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
+        return UiControls.CreateCard(this._theme, pageGrid);
     }
 
     private Control BuildGroupsScreen()
     {
-        StackPanel pageStack = new() { Spacing = 12 };
+        Grid pageGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 10
+        };
 
         // Header + Segmented View Switcher (Catalog vs Target Campaign Groups) on one clean single page
         Grid topBar = new()
@@ -329,10 +356,15 @@ public sealed partial class MainWindow
         topBar.Children.Add(header);
         topBar.Children.Add(tabCatalogBtn);
         topBar.Children.Add(tabTargetsBtn);
-        pageStack.Children.Add(topBar);
+        Grid.SetRow(topBar, 0);
+        pageGrid.Children.Add(topBar);
 
         // View 1: Group Catalog & Discovery
-        StackPanel catalogPane = new() { Spacing = 10 };
+        Grid catalogPane = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowSpacing = 8
+        };
 
         Grid searchAndSyncRow = new()
         {
@@ -363,15 +395,19 @@ public sealed partial class MainWindow
         searchAndSyncRow.Children.Add(syncJoinedBtn);
         searchAndSyncRow.Children.Add(searchKeywordBox);
         searchAndSyncRow.Children.Add(searchBtn);
+        Grid.SetRow(searchAndSyncRow, 0);
+        catalogPane.Children.Add(searchAndSyncRow);
 
         TextBox localFilterBox = UiControls.CreateTextBox(
             this._theme,
             this._i18n["Groups.FilterPlaceholder"]);
         localFilterBox.TextChanged += (_, _) => this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
+        Grid.SetRow(localFilterBox, 1);
+        catalogPane.Children.Add(localFilterBox);
 
         ListBox groupsList = new()
         {
-            Height = 290,
+            IsVisible = this._vm.JoinedGroups.Count > 0,
             ItemsSource = this._vm.JoinedGroups,
             SelectedItem = this._vm.SelectedGroup,
             ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
@@ -418,6 +454,25 @@ public sealed partial class MainWindow
             }
         };
 
+        Border emptyGroupsBanner = UiControls.CreateEmptyState(
+            this._theme,
+            this._i18n["Empty.Groups"],
+            VectorIcons.Groups,
+            out TextBlock emptyGroupsTb);
+        emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
+        this._vm.JoinedGroups.CollectionChanged += (_, _) =>
+        {
+            bool isEmpty = this._vm.JoinedGroups.Count == 0;
+            emptyGroupsBanner.IsVisible = isEmpty;
+            groupsList.IsVisible = !isEmpty;
+        };
+
+        Grid groupsListHost = new();
+        groupsListHost.Children.Add(groupsList);
+        groupsListHost.Children.Add(emptyGroupsBanner);
+        Grid.SetRow(groupsListHost, 2);
+        catalogPane.Children.Add(groupsListHost);
+
         Grid actionRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
@@ -446,26 +501,14 @@ public sealed partial class MainWindow
         actionRow.Children.Add(saveTargetBtn);
         actionRow.Children.Add(joinBtn);
         actionRow.Children.Add(autoJoinAllBtn);
-
-        Border emptyGroupsBanner = UiControls.CreateEmptyState(
-            this._theme,
-            this._i18n["Empty.Groups"],
-            VectorIcons.Groups,
-            out TextBlock emptyGroupsTb);
-        emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
-        this._vm.JoinedGroups.CollectionChanged += (_, _) =>
-            emptyGroupsBanner.IsVisible = this._vm.JoinedGroups.Count == 0;
-
-        catalogPane.Children.Add(searchAndSyncRow);
-        catalogPane.Children.Add(localFilterBox);
-        catalogPane.Children.Add(emptyGroupsBanner);
-        catalogPane.Children.Add(groupsList);
+        Grid.SetRow(actionRow, 3);
         catalogPane.Children.Add(actionRow);
 
         // View 2: Target Campaign Groups Pane
-        StackPanel targetsPane = new()
+        Grid targetsPane = new()
         {
-            Spacing = 10,
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 8,
             IsVisible = false
         };
 
@@ -497,10 +540,12 @@ public sealed partial class MainWindow
         bulkToggleRow.Children.Add(selectAllTargetsBtn);
         bulkToggleRow.Children.Add(deselectAllTargetsBtn);
         bulkToggleRow.Children.Add(removeTargetBtn);
+        Grid.SetRow(bulkToggleRow, 0);
+        targetsPane.Children.Add(bulkToggleRow);
 
         ListBox targetList = new()
         {
-            Height = 330,
+            IsVisible = this._vm.TargetGroups.Count > 0,
             ItemsSource = this._vm.TargetGroups,
             SelectedItem = this._vm.SelectedTargetGroup,
             ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, _) =>
@@ -553,11 +598,17 @@ public sealed partial class MainWindow
             out TextBlock emptyTargetsTb);
         emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
         this._vm.TargetGroups.CollectionChanged += (_, _) =>
-            emptyTargetsBanner.IsVisible = this._vm.TargetGroups.Count == 0;
+        {
+            bool isEmpty = this._vm.TargetGroups.Count == 0;
+            emptyTargetsBanner.IsVisible = isEmpty;
+            targetList.IsVisible = !isEmpty;
+        };
 
-        targetsPane.Children.Add(bulkToggleRow);
-        targetsPane.Children.Add(emptyTargetsBanner);
-        targetsPane.Children.Add(targetList);
+        Grid targetListHost = new();
+        targetListHost.Children.Add(targetList);
+        targetListHost.Children.Add(emptyTargetsBanner);
+        Grid.SetRow(targetListHost, 1);
+        targetsPane.Children.Add(targetListHost);
 
         tabCatalogBtn.Click += (_, _) =>
         {
@@ -584,8 +635,11 @@ public sealed partial class MainWindow
             }
         };
 
-        pageStack.Children.Add(catalogPane);
-        pageStack.Children.Add(targetsPane);
+        Grid paneHost = new();
+        paneHost.Children.Add(catalogPane);
+        paneHost.Children.Add(targetsPane);
+        Grid.SetRow(paneHost, 1);
+        pageGrid.Children.Add(paneHost);
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -607,6 +661,6 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
-        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
+        return UiControls.CreateCard(this._theme, pageGrid);
     }
 }

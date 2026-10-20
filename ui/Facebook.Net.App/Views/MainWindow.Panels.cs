@@ -41,7 +41,11 @@ public sealed partial class MainWindow
 
     private Control BuildPublisherScreen()
     {
-        StackPanel pageStack = new() { Spacing = 12 };
+        Grid pageGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
+            RowSpacing = 10
+        };
 
         // Top Bar: Title + SVG Info (`i`) Flyout + Saved Templates Flyout Button + Up-Top Flyout Button
         Grid topBar = new()
@@ -63,7 +67,8 @@ public sealed partial class MainWindow
             this._i18n["Publisher.ContentPlaceholder"],
             this._vm.PostSpintaxText,
             multiline: true,
-            height: 140);
+            height: 150);
+        contentBox.VerticalAlignment = VerticalAlignment.Stretch;
         contentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = contentBox.Text ?? string.Empty;
 
         TextBox photoBox = UiControls.CreateTextBox(
@@ -75,7 +80,8 @@ public sealed partial class MainWindow
         // Saved Templates Flyout (replaces permanent right column)
         ListBox tplList = new()
         {
-            Height = 220,
+            Height = 200,
+            IsVisible = this._vm.SavedTemplates.Count > 0,
             ItemsSource = this._vm.SavedTemplates,
             SelectedItem = this._vm.SelectedTemplate,
             ItemTemplate = new FuncDataTemplate<CampaignTemplate>((tpl, _) =>
@@ -120,7 +126,11 @@ public sealed partial class MainWindow
             out TextBlock emptyTplTb);
         emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
         this._vm.SavedTemplates.CollectionChanged += (_, _) =>
-            emptyTemplatesBanner.IsVisible = this._vm.SavedTemplates.Count == 0;
+        {
+            bool isEmpty = this._vm.SavedTemplates.Count == 0;
+            emptyTemplatesBanner.IsVisible = isEmpty;
+            tplList.IsVisible = !isEmpty;
+        };
 
         StackPanel tplFlyoutStack = new() { Spacing = 8, Width = 340 };
         tplFlyoutStack.Children.Add(emptyTemplatesBanner);
@@ -172,13 +182,14 @@ public sealed partial class MainWindow
         topBar.Children.Add(header);
         topBar.Children.Add(openTemplatesBtn);
         topBar.Children.Add(openBumpFlyoutBtn);
-        pageStack.Children.Add(topBar);
+        Grid.SetRow(topBar, 0);
+        pageGrid.Children.Add(topBar);
 
         // Options Row: Target Mode + Auto-React + Schedule Delay
         Grid optionsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,80"),
-            ColumnSpacing = 14,
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,76"),
+            ColumnSpacing = 12,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -227,12 +238,18 @@ public sealed partial class MainWindow
         optionsRow.Children.Add(autoReactOwnPostCheck);
         optionsRow.Children.Add(scheduleDelayLbl);
         optionsRow.Children.Add(scheduleDelayBox);
+        Grid.SetRow(optionsRow, 1);
+        pageGrid.Children.Add(optionsRow);
+
+        Grid.SetRow(contentBox, 2);
+        pageGrid.Children.Add(contentBox);
 
         // Spintax Live Preview Row
         Grid previewRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 8
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         Button previewSpintaxBtn = UiControls.CreateSecondaryButton(
@@ -247,11 +264,17 @@ public sealed partial class MainWindow
             12,
             FontWeight.Normal,
             isSecondary: true);
+        previewSpintaxTb.MaxLines = 1;
+        previewSpintaxTb.TextWrapping = TextWrapping.NoWrap;
+        previewSpintaxTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        previewSpintaxTb.VerticalAlignment = VerticalAlignment.Center;
 
         Grid.SetColumn(previewSpintaxBtn, 0);
         Grid.SetColumn(previewSpintaxTb, 1);
         previewRow.Children.Add(previewSpintaxBtn);
         previewRow.Children.Add(previewSpintaxTb);
+        Grid.SetRow(previewRow, 3);
+        pageGrid.Children.Add(previewRow);
 
         Grid photoRow = new()
         {
@@ -276,6 +299,8 @@ public sealed partial class MainWindow
         Grid.SetColumn(pickPhotoBtn, 1);
         photoRow.Children.Add(photoBox);
         photoRow.Children.Add(pickPhotoBtn);
+        Grid.SetRow(photoRow, 4);
+        pageGrid.Children.Add(photoRow);
 
         Grid btnRow = new()
         {
@@ -298,6 +323,8 @@ public sealed partial class MainWindow
         Grid.SetColumn(publishBtn, 1);
         btnRow.Children.Add(saveTplBtn);
         btnRow.Children.Add(publishBtn);
+        Grid.SetRow(btnRow, 5);
+        pageGrid.Children.Add(btnRow);
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -322,12 +349,6 @@ public sealed partial class MainWindow
             }
         };
 
-        pageStack.Children.Add(optionsRow);
-        pageStack.Children.Add(contentBox);
-        pageStack.Children.Add(previewRow);
-        pageStack.Children.Add(photoRow);
-        pageStack.Children.Add(btnRow);
-
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Publisher.Header"];
@@ -349,12 +370,16 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
         };
 
-        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
+        return UiControls.CreateCard(this._theme, pageGrid);
     }
 
     private Control BuildSalesLeadsScreen()
     {
-        StackPanel pageStack = new() { Spacing = 12 };
+        Grid pageGrid = new()
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
+            RowSpacing = 8
+        };
 
         Grid header = UiControls.CreateSectionHeader(
             this._theme,
@@ -362,7 +387,8 @@ public sealed partial class MainWindow
             this._i18n["Leads.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
-        pageStack.Children.Add(header);
+        Grid.SetRow(header, 0);
+        pageGrid.Children.Add(header);
 
         // Top Filter & Scan Bar
         Grid scanBar = new()
@@ -413,11 +439,13 @@ public sealed partial class MainWindow
         scanBar.Children.Add(buyerKwBox);
         scanBar.Children.Add(scanBtn);
         scanBar.Children.Add(exportLeadsBtn);
+        Grid.SetRow(scanBar, 1);
+        pageGrid.Children.Add(scanBar);
 
         // Discovered Group Posts List
         ListBox postsList = new()
         {
-            Height = 230,
+            IsVisible = this._vm.ScrapedPosts.Count > 0,
             ItemsSource = this._vm.ScrapedPosts,
             SelectedItem = this._vm.SelectedScrapedPost,
             ItemTemplate = new FuncDataTemplate<PostSummary>((post, _) =>
@@ -488,7 +516,17 @@ public sealed partial class MainWindow
             out TextBlock emptyLeadsTb);
         emptyLeadsBanner.IsVisible = this._vm.ScrapedPosts.Count == 0;
         this._vm.ScrapedPosts.CollectionChanged += (_, _) =>
-            emptyLeadsBanner.IsVisible = this._vm.ScrapedPosts.Count == 0;
+        {
+            bool isEmpty = this._vm.ScrapedPosts.Count == 0;
+            emptyLeadsBanner.IsVisible = isEmpty;
+            postsList.IsVisible = !isEmpty;
+        };
+
+        Grid leadsListHost = new();
+        leadsListHost.Children.Add(postsList);
+        leadsListHost.Children.Add(emptyLeadsBanner);
+        Grid.SetRow(leadsListHost, 2);
+        pageGrid.Children.Add(leadsListHost);
 
         // Compact Sales Comment Composer below the list
         TextBox commentBox = UiControls.CreateTextBox(
@@ -496,13 +534,16 @@ public sealed partial class MainWindow
             this._i18n["Leads.CommentContentPlaceholder"],
             this._vm.SalesCommentSpintaxText,
             multiline: true,
-            height: 75);
+            height: 62);
         commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
+        Grid.SetRow(commentBox, 3);
+        pageGrid.Children.Add(commentBox);
 
         Grid commentOptionsRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 8
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         CheckBox autoReactCheck = new()
@@ -539,10 +580,12 @@ public sealed partial class MainWindow
         commentOptionsRow.Children.Add(autoReactCheck);
         commentOptionsRow.Children.Add(commentPhotoBox);
         commentOptionsRow.Children.Add(pickCommentPhotoBtn);
+        Grid.SetRow(commentOptionsRow, 4);
+        pageGrid.Children.Add(commentOptionsRow);
 
         Grid commentButtonsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
             ColumnSpacing = 8
         };
 
@@ -570,6 +613,8 @@ public sealed partial class MainWindow
         commentButtonsRow.Children.Add(sendSelectedBtn);
         commentButtonsRow.Children.Add(autoCommentAllBtn);
         commentButtonsRow.Children.Add(openPostBtn);
+        Grid.SetRow(commentButtonsRow, 5);
+        pageGrid.Children.Add(commentButtonsRow);
 
         postsList.SelectionChanged += (_, _) =>
         {
@@ -598,13 +643,6 @@ public sealed partial class MainWindow
             }
         };
 
-        pageStack.Children.Add(scanBar);
-        pageStack.Children.Add(emptyLeadsBanner);
-        pageStack.Children.Add(postsList);
-        pageStack.Children.Add(commentBox);
-        pageStack.Children.Add(commentOptionsRow);
-        pageStack.Children.Add(commentButtonsRow);
-
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Leads.Header"];
@@ -622,6 +660,6 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
         };
 
-        return UiControls.CreateCard(this._theme, new ScrollViewer { Content = pageStack });
+        return UiControls.CreateCard(this._theme, pageGrid);
     }
 }

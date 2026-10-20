@@ -52,10 +52,14 @@ public sealed partial class MainWindow : Window
         this.DataContext = viewModel;
 
         this.Title = this._i18n["App.Title"];
-        this.Width = 1060;
-        this.Height = 700;
-        this.MinWidth = 860;
-        this.MinHeight = 580;
+        this.Width = 980;
+        this.Height = 640;
+        this.MinWidth = 980;
+        this.MaxWidth = 980;
+        this.MinHeight = 640;
+        this.MaxHeight = 640;
+        this.CanResize = false;
+        this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
         this._i18n.LanguageChanged += (_, _) => this.Title = this._i18n["App.Title"];
         this.Content = this.BuildShellLayout();
@@ -197,8 +201,8 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(navStack, 1);
         sidebarGrid.Children.Add(navStack);
 
-        // 3. Bottom-left Activity / Audit Log Icon Button (matching the uploaded One Client screenshot)
-        PathIcon auditIcon = VectorIcons.Create(VectorIcons.SalesComment, 16, margin: new Thickness(0));
+        // 3. Bottom-left Activity / Audit Log Icon Button
+        PathIcon auditIcon = VectorIcons.Create(VectorIcons.AuditLog, 16, margin: new Thickness(0));
         TextBlock auditLabel = new()
         {
             Text = this._i18n["Nav.AuditLogs"],
@@ -243,7 +247,7 @@ public sealed partial class MainWindow : Window
             ThemePalette p = this._theme.Palette;
             bool collapsed = this._vm.IsSidebarCollapsed;
 
-            sidebar.Width = collapsed ? 64 : 204;
+            sidebar.Width = collapsed ? 60 : 196;
             sidebar.Background = p.ElevatedSurface;
             sidebar.BorderBrush = p.SubtleBorder;
 
@@ -276,6 +280,11 @@ public sealed partial class MainWindow : Window
 
                 icn.Foreground = isActive ? p.BrandPrimary : p.TextSecondary;
 
+                if (btn.Content is StackPanel navRow)
+                {
+                    navRow.Spacing = collapsed ? 0 : 10;
+                }
+
                 btn.HorizontalContentAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
                 btn.Background = isActive ? p.SecondarySurface : Brushes.Transparent;
                 btn.BorderBrush = isActive ? p.InteractiveBorder : Brushes.Transparent;
@@ -286,6 +295,7 @@ public sealed partial class MainWindow : Window
             bool isAuditActive = this._vm.CurrentSection == NavigationSection.AuditLogs;
             auditLabel.Text = this._i18n["Nav.AuditLogs"];
             auditLabel.IsVisible = !collapsed;
+            bottomRow.Spacing = collapsed ? 0 : 10;
             auditLabel.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
             auditIcon.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
             bottomAuditBtn.Background = isAuditActive ? p.BrandSubtleFill : p.SecondarySurface;
@@ -470,7 +480,7 @@ public sealed partial class MainWindow : Window
 
         Border host = new()
         {
-            Padding = new Thickness(28, 18, 28, 14),
+            Padding = new Thickness(18, 12, 18, 10),
             Child = workspaceGrid
         };
 
@@ -529,7 +539,7 @@ public sealed partial class MainWindow : Window
             Spacing = 14,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 460
+            MaxWidth = 560
         };
 
         Grid headerRow = UiControls.CreateSectionHeader(
@@ -569,8 +579,9 @@ public sealed partial class MainWindow : Window
 
         Grid actionRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
             ColumnSpacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 6, 0, 0)
         };
 
@@ -646,17 +657,20 @@ public sealed partial class MainWindow : Window
         centerHero.Children.Add(statusSub);
         centerHero.Children.Add(actionRow);
 
-        Border heroCard = UiControls.CreateCard(this._theme, centerHero, new Thickness(32, 28));
+        Border heroCard = UiControls.CreateCard(this._theme, centerHero, new Thickness(26, 20));
 
-        StackPanel pageStack = new()
+        Grid pageGrid = new()
         {
-            Spacing = 16,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 680,
+            RowDefinitions = new RowDefinitions("*,Auto"),
+            RowSpacing = 12,
+            VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        pageStack.Children.Add(heroCard);
-        pageStack.Children.Add(statsRow);
+        heroCard.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetRow(heroCard, 0);
+        Grid.SetRow(statsRow, 1);
+        pageGrid.Children.Add(heroCard);
+        pageGrid.Children.Add(statsRow);
 
         void RefreshOverviewState()
         {
@@ -721,6 +735,6 @@ public sealed partial class MainWindow : Window
             RefreshOverviewState();
         };
 
-        return new ScrollViewer { Content = pageStack };
+        return pageGrid;
     }
 }

@@ -80,6 +80,15 @@ public sealed class MacOsBrowserAdapter : IBrowserAdapter
         }
 
         _ = Directory.CreateDirectory(options.UserDataDir);
+
+        Uri? existingWsUri = await BrowserLauncherHelpers
+            .TryResolveExistingDebuggerUriAsync(options.UserDataDir, ct)
+            .ConfigureAwait(false);
+        if (existingWsUri is not null)
+        {
+            return new ManagedBrowserProcess(null, existingWsUri);
+        }
+
         int port = BrowserLauncherHelpers.AllocateFreePort();
 
         BrowserLaunchOptions effectiveOptions = string.IsNullOrWhiteSpace(options.UserAgent)
@@ -105,8 +114,10 @@ public sealed class MacOsBrowserAdapter : IBrowserAdapter
 
         try
         {
-            Uri wsUri = await BrowserLauncherHelpers.WaitForPageDebuggerUriAsync(port, process, ct).ConfigureAwait(false);
-            return new ManagedBrowserProcess(process, wsUri);
+            Uri wsUri = await BrowserLauncherHelpers
+                .WaitForPageDebuggerUriAsync(port, process, options.UserDataDir, ct)
+                .ConfigureAwait(false);
+            return new ManagedBrowserProcess(process, wsUri, killOnDispose: effectiveOptions.Headless);
         }
         catch
         {
