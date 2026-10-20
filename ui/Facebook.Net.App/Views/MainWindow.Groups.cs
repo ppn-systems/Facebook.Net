@@ -205,13 +205,13 @@ public sealed partial class MainWindow
             IsVisible = this._vm.TargetGroups.Count > 0,
             ItemsSource = this._vm.TargetGroups,
             SelectedItem = this._vm.SelectedTargetGroup,
-            ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, _) =>
+            ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, ns) =>
                 tg is null
                     ? new Border()
                     : UiControls.CreateTargetGroupItemCard(
                         this._theme,
                         tg,
-                        nextState => { _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState); }))
+                        nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)))
         };
 
         targetList.SelectionChanged += (_, _) =>

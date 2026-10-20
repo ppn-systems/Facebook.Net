@@ -37,7 +37,7 @@ public sealed partial class MainWindow
             out TextBlock infoTb);
         headerRow.HorizontalAlignment = HorizontalAlignment.Center;
 
-        PathIcon heroIcon = VectorIcons.Create(VectorIcons.CheckCircle, 46, margin: new Thickness(0));
+        Control heroIcon = VectorIcons.Create(VectorIcons.CheckCircle, 46, margin: new Thickness(0));
         Border heroCircle = new()
         {
             Width = 88,
@@ -170,7 +170,7 @@ public sealed partial class MainWindow
                 statusHeading.Foreground = p.BrandPrimary;
                 heroCircle.Background = p.BrandSubtleFill;
                 heroCircle.BorderBrush = p.BrandPrimary;
-                heroIcon.Foreground = p.BrandPrimary;
+                VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._vm.AuditDrawer.LatestTickerText;
             }
             else if (isConnected && acc is not null)
@@ -179,7 +179,7 @@ public sealed partial class MainWindow
                 statusHeading.Foreground = p.SuccessText;
                 heroCircle.Background = p.SuccessFill;
                 heroCircle.BorderBrush = p.SuccessBorder;
-                heroIcon.Foreground = p.SuccessText;
+                VectorIcons.SetForeground(heroIcon, p.SuccessText);
                 statusSub.Text = $"{acc.DisplayName} — {this._i18n["Overview.SubtextConnected"]}";
             }
             else
@@ -190,7 +190,7 @@ public sealed partial class MainWindow
                 statusHeading.Foreground = p.TextPrimary;
                 heroCircle.Background = p.SecondarySurface;
                 heroCircle.BorderBrush = p.SubtleBorder;
-                heroIcon.Foreground = p.BrandPrimary;
+                VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._i18n["Overview.SubtextDisconnected"];
             }
 

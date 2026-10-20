@@ -74,7 +74,7 @@ public static partial class UiControls
     {
         ArgumentNullException.ThrowIfNull(theme);
 
-        PathIcon icon = VectorIcons.Create(iconSvg, 15, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, 15, margin: new Thickness(0));
         TextBlock title = new()
         {
             Text = initialTitle,
@@ -97,7 +97,7 @@ public static partial class UiControls
         void ApplyColors()
         {
             ThemePalette p = theme.Palette;
-            icon.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(icon, p.BrandPrimary);
             title.Foreground = p.TextPrimary;
         }
 

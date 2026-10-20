@@ -87,7 +87,7 @@ public static partial class UiControls
     {
         ArgumentNullException.ThrowIfNull(theme);
 
-        PathIcon icon = VectorIcons.Create(iconSvg, 12, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, 12, margin: new Thickness(0));
         TextBlock label = new()
         {
             Text = initialText,
@@ -125,26 +125,26 @@ public static partial class UiControls
                     pill.Background = p.SuccessFill;
                     pill.BorderBrush = p.SuccessBorder;
                     label.Foreground = p.SuccessText;
-                    icon.Foreground = p.SuccessText;
+                    VectorIcons.SetForeground(icon, p.SuccessText);
                     break;
                 case AuditSeverity.Warning:
                     pill.Background = p.WarningFill;
                     pill.BorderBrush = p.WarningBorder;
                     label.Foreground = p.WarningText;
-                    icon.Foreground = p.WarningText;
+                    VectorIcons.SetForeground(icon, p.WarningText);
                     break;
                 case AuditSeverity.Error:
                     pill.Background = p.DangerFill;
                     pill.BorderBrush = p.DangerBorder;
                     label.Foreground = p.DangerText;
-                    icon.Foreground = p.DangerText;
+                    VectorIcons.SetForeground(icon, p.DangerText);
                     break;
                 case AuditSeverity.Info:
                 default:
                     pill.Background = p.InfoFill;
                     pill.BorderBrush = p.InfoBorder;
                     label.Foreground = p.InfoText;
-                    icon.Foreground = p.InfoText;
+                    VectorIcons.SetForeground(icon, p.InfoText);
                     break;
             }
         }
@@ -294,7 +294,7 @@ public static partial class UiControls
             FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace")
         };
 
-        PathIcon icon = VectorIcons.Create(iconSvg, 16, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, 16, margin: new Thickness(0));
         Border iconBadge = new()
         {
             Width = 32,
@@ -343,7 +343,7 @@ public static partial class UiControls
             val.Foreground = p.TextPrimary;
             iconBadge.Background = p.BrandSubtleFill;
             iconBadge.BorderBrush = p.BrandSubtleBorder;
-            icon.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(icon, p.BrandPrimary);
         }
 
         ApplyColors();
@@ -364,7 +364,7 @@ public static partial class UiControls
     {
         ArgumentNullException.ThrowIfNull(theme);
 
-        PathIcon icon = VectorIcons.Create(iconSvg, 18, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, 18, margin: new Thickness(0));
         TextBlock msg = new()
         {
             Text = initialMessage,
@@ -397,7 +397,7 @@ public static partial class UiControls
             ThemePalette p = theme.Palette;
             box.Background = p.SecondarySurface;
             box.BorderBrush = p.SubtleBorder;
-            icon.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(icon, p.BrandPrimary);
             msg.Foreground = p.TextSecondary;
         }
 

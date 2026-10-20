@@ -129,7 +129,7 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        PathIcon brandIcon = VectorIcons.Create(VectorIcons.BrandMark, 22, margin: new Thickness(0));
+        Control brandIcon = VectorIcons.Create(VectorIcons.BrandMark, 22, margin: new Thickness(0));
         Border brandBadge = new()
         {
             Width = 34,
@@ -160,7 +160,7 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Top
         };
 
-        List<(Button Btn, TextBlock Label, PathIcon Icon, string Key, NavigationSection Section)> navEntries = new(6);
+        List<(Button Btn, TextBlock Label, Control Icon, string Key, NavigationSection Section)> navEntries = new(6);
 
         void AddNavItem(string i18nKey, string svgFileName, NavigationSection section, System.Windows.Input.ICommand cmd)
         {
@@ -169,7 +169,7 @@ public sealed partial class MainWindow : Window
                 svgFileName,
                 cmd,
                 out TextBlock lbl,
-                out PathIcon icn);
+                out Control icn);
             navEntries.Add((btn, lbl, icn, i18nKey, section));
             navStack.Children.Add(btn);
         }
@@ -190,7 +190,7 @@ public sealed partial class MainWindow : Window
             VectorIcons.AuditLog,
             this._vm.NavigateAuditLogsCommand,
             out TextBlock auditLabel,
-            out PathIcon auditIcon);
+            out Control auditIcon);
         bottomAuditBtn.CornerRadius = new CornerRadius(18);
         bottomAuditBtn.Padding = new Thickness(10, 7);
         bottomAuditBtn.HorizontalAlignment = HorizontalAlignment.Left;
@@ -215,7 +215,7 @@ public sealed partial class MainWindow : Window
 
             brandBadge.IsVisible = !collapsed;
             brandBadge.Background = p.BrandSubtleFill;
-            brandIcon.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(brandIcon, p.BrandPrimary);
 
             Grid.SetColumn(collapseBtn, collapsed ? 0 : 2);
             collapseBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right;
@@ -226,7 +226,7 @@ public sealed partial class MainWindow : Window
 
             for (int i = 0; i < navEntries.Count; i++)
             {
-                (Button btn, TextBlock lbl, PathIcon icn, string key, NavigationSection sec) = navEntries[i];
+                (Button btn, TextBlock lbl, Control icn, string key, NavigationSection sec) = navEntries[i];
                 bool isActive = this._vm.CurrentSection == sec;
 
                 lbl.Text = this._i18n[key];
@@ -234,7 +234,7 @@ public sealed partial class MainWindow : Window
                 lbl.Foreground = isActive ? p.TextPrimary : p.TextSecondary;
                 lbl.FontWeight = isActive ? FontWeight.SemiBold : FontWeight.Medium;
 
-                icn.Foreground = isActive ? p.BrandPrimary : p.TextSecondary;
+                VectorIcons.SetForeground(icn, isActive ? p.BrandPrimary : p.TextSecondary);
 
                 if (btn.Content is StackPanel navRow)
                 {
@@ -257,7 +257,7 @@ public sealed partial class MainWindow : Window
             }
 
             auditLabel.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
-            auditIcon.Foreground = isAuditActive ? p.BrandPrimary : p.TextSecondary;
+            VectorIcons.SetForeground(auditIcon, isAuditActive ? p.BrandPrimary : p.TextSecondary);
             bottomAuditBtn.Background = isAuditActive ? p.BrandSubtleFill : p.SecondarySurface;
             bottomAuditBtn.BorderBrush = isAuditActive ? p.BrandPrimary : p.SubtleBorder;
             bottomAuditBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;

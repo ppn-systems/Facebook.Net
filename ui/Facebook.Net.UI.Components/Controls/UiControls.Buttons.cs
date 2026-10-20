@@ -99,7 +99,7 @@ public static partial class UiControls
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
-        PathIcon? icon = !string.IsNullOrWhiteSpace(iconSvg)
+        Control? icon = !string.IsNullOrWhiteSpace(iconSvg)
             ? VectorIcons.Create(iconSvg, 14, margin: new Thickness(0))
             : null;
 
@@ -138,7 +138,10 @@ public static partial class UiControls
             btn.Background = p.SecondarySurface;
             btn.BorderBrush = p.InteractiveBorder;
             label.Foreground = p.TextPrimary;
-            icon?.Foreground = p.TextSecondary;
+            if (icon is not null)
+            {
+                VectorIcons.SetForeground(icon, p.TextSecondary);
+            }
         }
 
         ApplyColors();
@@ -168,7 +171,7 @@ public static partial class UiControls
         };
 
         string effectiveSvg = string.IsNullOrWhiteSpace(iconSvg) ? VectorIcons.Trash : iconSvg;
-        PathIcon icon = VectorIcons.Create(effectiveSvg, 14, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(effectiveSvg, 14, margin: new Thickness(0));
 
         StackPanel row = new()
         {
@@ -200,7 +203,7 @@ public static partial class UiControls
             btn.Background = p.DangerFill;
             btn.BorderBrush = p.DangerBorder;
             label.Foreground = p.DangerText;
-            icon.Foreground = p.DangerText;
+            VectorIcons.SetForeground(icon, p.DangerText);
         }
 
         ApplyColors();
@@ -221,7 +224,7 @@ public static partial class UiControls
     {
         ArgumentNullException.ThrowIfNull(theme);
 
-        PathIcon icon = VectorIcons.Create(iconSvg, iconSize, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, iconSize, margin: new Thickness(0));
         Button btn = new()
         {
             Width = size,
@@ -243,7 +246,7 @@ public static partial class UiControls
             ThemePalette p = theme.Palette;
             btn.Background = p.SecondarySurface;
             btn.BorderBrush = p.SubtleBorder;
-            icon.Foreground = p.TextSecondary;
+            VectorIcons.SetForeground(icon, p.TextSecondary);
         }
 
         ApplyColors();
@@ -259,9 +262,9 @@ public static partial class UiControls
         string iconSvg,
         ICommand command,
         out TextBlock labelBlock,
-        out PathIcon iconControl)
+        out Control iconControl)
     {
-        PathIcon icon = VectorIcons.Create(iconSvg, 17, margin: new Thickness(0));
+        Control icon = VectorIcons.Create(iconSvg, 17, margin: new Thickness(0));
         TextBlock label = new()
         {
             Text = initialLabel,
@@ -332,7 +335,7 @@ public static partial class UiControls
             Content = flyoutCard
         };
 
-        PathIcon infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
+        Control infoIcon = VectorIcons.Create(VectorIcons.InfoCircle, 15, margin: new Thickness(0));
 
         Button btn = new()
         {
@@ -356,7 +359,7 @@ public static partial class UiControls
             ThemePalette p = theme.Palette;
             btn.Background = p.SecondarySurface;
             btn.BorderBrush = p.SubtleBorder;
-            infoIcon.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(infoIcon, p.BrandPrimary);
             flyoutCard.Background = p.ElevatedSurface;
             flyoutCard.BorderBrush = p.InteractiveBorder;
             infoBody.Foreground = p.TextPrimary;
