@@ -12,6 +12,7 @@ using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.ViewModels.Shell;
 
@@ -486,7 +487,7 @@ public sealed partial class GroupsPage
 
                 Grid tagRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+                    ColumnDefinitions = new ColumnDefinitions("*,68,28,28"),
                     ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -510,68 +511,44 @@ public sealed partial class GroupsPage
                     FontWeight.Medium,
                     isSecondary: true);
                 countTb.VerticalAlignment = VerticalAlignment.Center;
+                countTb.HorizontalAlignment = HorizontalAlignment.Right;
 
-                Button editBtn = new()
-                {
-                    Content = new TextBlock
+                Button editBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.Edit,
+                    this._i18n["Groups.BtnEditTagShort"],
+                    () =>
                     {
-                        Text = this._i18n["Groups.BtnEditTagShort"],
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = this._theme.Palette.TextPrimary
-                    },
-                    Background = this._theme.Palette.SecondarySurface,
-                    BorderBrush = this._theme.Palette.InteractiveBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                editBtn.Click += (_, _) =>
-                {
-                    selectedAssignTag = tag;
-                    rebuildLeftTagList();
-                    RefreshAssignGroups();
-                    OpenTagModal(tag);
-                };
+                        selectedAssignTag = tag;
+                        rebuildLeftTagList();
+                        RefreshAssignGroups();
+                        OpenTagModal(tag);
+                    });
 
-                Button deleteBtn = new()
-                {
-                    Content = new TextBlock
+                Button deleteBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.Trash,
+                    this._i18n["Groups.BtnDeleteTagShort"],
+                    () =>
                     {
-                        Text = this._i18n["Groups.BtnDeleteTagShort"],
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = this._theme.Palette.DangerText
-                    },
-                    Background = this._theme.Palette.DangerFill,
-                    BorderBrush = this._theme.Palette.DangerText,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                deleteBtn.Click += (_, _) =>
-                {
-                    ConfirmDialogModal.ShowAsync(
-                        this,
-                        this._theme,
-                        this._i18n["Confirm.DeleteTagTitle"],
-                        this._i18n.Format("Confirm.DeleteTagMessage", tag.Name),
-                        this._i18n["Confirm.BtnConfirmDelete"],
-                        this._i18n["Groups.BtnCancelEditTag"],
-                        async () =>
-                        {
-                            if (editingTag is not null && string.Equals(editingTag.Id, tag.Id, StringComparison.OrdinalIgnoreCase))
+                        ConfirmDialogModal.ShowAsync(
+                            this,
+                            this._theme,
+                            this._i18n["Confirm.DeleteTagTitle"],
+                            this._i18n.Format("Confirm.DeleteTagMessage", tag.Name),
+                            this._i18n["Confirm.BtnConfirmDelete"],
+                            this._i18n["Groups.BtnCancelEditTag"],
+                            async () =>
                             {
-                                CloseTagModal();
-                            }
+                                if (editingTag is not null && string.Equals(editingTag.Id, tag.Id, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    CloseTagModal();
+                                }
 
-                            await this._vm.DeleteGroupTagAsync(tag).ConfigureAwait(true);
-                        });
-                };
+                                await this._vm.DeleteGroupTagAsync(tag).ConfigureAwait(true);
+                            });
+                    },
+                    AuditSeverity.Error);
 
                 Grid.SetColumn(pill, 0);
                 Grid.SetColumn(countTb, 1);

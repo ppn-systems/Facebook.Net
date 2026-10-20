@@ -216,17 +216,22 @@ public sealed partial class AuditLogsPage : UserControl
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
-        Button refreshBtn = AppButton.CreateSecondary(
+        Button refreshBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Sync,
             this._i18n["Audit.BtnRefresh"],
             drawerVm.RefreshFilterCommand,
-            VectorIcons.Sync);
+            size: 36,
+            iconSize: 16);
 
-        Button clearBtn = AppButton.CreateDanger(
+        Button clearBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Trash,
             this._i18n["Audit.BtnClear"],
-            null,
-            VectorIcons.Trash);
+            command: null,
+            size: 36,
+            iconSize: 16,
+            tone: AuditSeverity.Error);
         clearBtn.Click += (_, _) =>
         {
             ConfirmDialogModal.ShowAsync(

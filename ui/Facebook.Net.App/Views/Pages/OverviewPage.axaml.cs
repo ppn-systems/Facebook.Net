@@ -63,22 +63,19 @@ public sealed partial class OverviewPage : UserControl
     private Control BuildLayout()
     {
         Control tab1View = this.BuildDashboardTab(out Action refreshTab1, out Action refreshTab1I18n);
-        Control tab2View = this.BuildCampaignsAndChartTab(out Action refreshTab2, out Action refreshTab2I18n);
-        Control tab3View = this.BuildDataAnalyticsTab(out Action refreshTab3, out Action refreshTab3I18n);
+        Control tab2View = this.BuildDataAnalyticsTab(out Action refreshTab2, out Action refreshTab2I18n);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Overview.TabDashboard"], VectorIcons.BrandMark, tab1View),
-                new SubTabItem(this._i18n["Overview.TabCampaigns"], VectorIcons.Groups, tab2View),
-                new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.CheckCircle, tab3View)
+                new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.CheckCircle, tab2View)
             ]);
 
         void RefreshAll()
         {
             refreshTab1();
             refreshTab2();
-            refreshTab3();
         }
 
         RefreshAll();
@@ -95,12 +92,10 @@ public sealed partial class OverviewPage : UserControl
             subTabBar.UpdateTabTitles(
             [
                 this._i18n["Overview.TabDashboard"],
-                this._i18n["Overview.TabCampaigns"],
                 this._i18n["Settings.TabAnalytics"]
             ]);
             refreshTab1I18n();
             refreshTab2I18n();
-            refreshTab3I18n();
             RefreshAll();
         };
 

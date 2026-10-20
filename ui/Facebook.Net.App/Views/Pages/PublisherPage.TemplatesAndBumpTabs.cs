@@ -54,17 +54,22 @@ public sealed partial class PublisherPage
             this._vm.SyncPersonalTimelinePostsCommand,
             VectorIcons.Sync);
 
-        Button openBrowserBtn = AppButton.CreateSecondary(
+        Button openBrowserBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.ExternalLink,
             this._i18n["Leads.BtnOpenPostInBrowser"],
             this._vm.OpenPublishedPostInBrowserCommand,
-            VectorIcons.Browser);
+            size: 34,
+            iconSize: 16);
 
-        Button deletePostBtn = AppButton.CreateDanger(
+        Button deletePostBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Trash,
             this._i18n["Publisher.BtnDeletePublishedPost"],
-            null,
-            VectorIcons.Trash);
+            command: null,
+            size: 34,
+            iconSize: 16,
+            tone: AuditSeverity.Error);
         deletePostBtn.Click += (_, _) =>
         {
             if (this._vm.SelectedPublishedPost is null)
@@ -220,8 +225,8 @@ public sealed partial class PublisherPage
 
                 Grid topMeta = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    ColumnSpacing = 9,
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,114,28,28"),
+                    ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
@@ -254,13 +259,57 @@ public sealed partial class PublisherPage
                     this._theme,
                     isGroup ? this._i18n["Publisher.BadgeGroupPost"] : this._i18n["Publisher.BadgePersonalPost"],
                     isGroup ? AuditSeverity.Info : AuditSeverity.Success);
+                kindPill.HorizontalAlignment = HorizontalAlignment.Stretch;
+                kindPill.Height = 28;
+
+                Button rowOpenBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.ExternalLink,
+                    this._i18n["Leads.BtnOpenPostInBrowser"],
+                    () =>
+                    {
+                        this._vm.SelectedPublishedPost = rec;
+                        if (this._vm.OpenPublishedPostInBrowserCommand.CanExecute(null))
+                        {
+                            this._vm.OpenPublishedPostInBrowserCommand.Execute(null);
+                        }
+                    });
+
+                Button rowDeleteBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.Trash,
+                    this._i18n["Publisher.BtnDeletePublishedPost"],
+                    () =>
+                    {
+                        this._vm.SelectedPublishedPost = rec;
+                        ConfirmDialogModal.ShowAsync(
+                            this,
+                            this._theme,
+                            this._i18n["Confirm.DeletePublishedPostTitle"],
+                            this._i18n["Confirm.DeletePublishedPostMessage"],
+                            this._i18n["Confirm.BtnConfirmDelete"],
+                            this._i18n["Groups.BtnCancelEditTag"],
+                            async () =>
+                            {
+                                this._vm.SelectedPublishedPost = rec;
+                                if (this._vm.DeletePublishedPostCommand.CanExecute(null))
+                                {
+                                    await this._vm.DeletePublishedPostCommand.ExecuteAsync(null).ConfigureAwait(true);
+                                }
+                            });
+                    },
+                    AuditSeverity.Error);
 
                 Grid.SetColumn(av, 0);
                 Grid.SetColumn(authorAndTarget, 1);
                 Grid.SetColumn(kindPill, 2);
+                Grid.SetColumn(rowOpenBtn, 3);
+                Grid.SetColumn(rowDeleteBtn, 4);
                 topMeta.Children.Add(av);
                 topMeta.Children.Add(authorAndTarget);
                 topMeta.Children.Add(kindPill);
+                topMeta.Children.Add(rowOpenBtn);
+                topMeta.Children.Add(rowDeleteBtn);
 
                 TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, rec.MessageText, 12.5, FontWeight.Normal);
                 bodyTb.MaxLines = 2;
@@ -545,7 +594,7 @@ public sealed partial class PublisherPage
 
                 Grid topRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+                    ColumnDefinitions = new ColumnDefinitions("*,110,108,28"),
                     ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -557,6 +606,8 @@ public sealed partial class PublisherPage
                     this._theme,
                     tpl.IsCommentTemplate ? this._i18n["Publisher.FilterTemplatesComment"] : this._i18n["Publisher.FilterTemplatesPost"],
                     tpl.IsCommentTemplate ? AuditSeverity.Info : AuditSeverity.Success);
+                typePill.HorizontalAlignment = HorizontalAlignment.Stretch;
+                typePill.Height = 28;
 
                 Button useBtn = new()
                 {
@@ -567,13 +618,19 @@ public sealed partial class PublisherPage
                             : this._i18n["Publisher.BtnUseCommentTemplate"],
                         FontSize = 11,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = this._theme.Palette.BrandPrimary
+                        Foreground = this._theme.Palette.BrandPrimary,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
                     },
                     Background = this._theme.Palette.BrandSubtleFill,
                     BorderBrush = this._theme.Palette.BrandPrimary,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(10, 3),
+                    CornerRadius = new CornerRadius(8),
+                    Height = 28,
+                    Padding = new Thickness(8, 0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Cursor = new Cursor(StandardCursorType.Hand)
                 };
@@ -596,42 +653,29 @@ public sealed partial class PublisherPage
                     }
                 };
 
-                Button deleteRowBtn = new()
-                {
-                    Content = new TextBlock
+                Button deleteRowBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.Trash,
+                    this._i18n["Groups.BtnDeleteTagShort"],
+                    () =>
                     {
-                        Text = this._i18n["Groups.BtnDeleteTagShort"],
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = this._theme.Palette.DangerText
-                    },
-                    Background = this._theme.Palette.DangerFill,
-                    BorderBrush = this._theme.Palette.DangerText,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-
-                deleteRowBtn.Click += (_, _) =>
-                {
-                    ConfirmDialogModal.ShowAsync(
-                        this,
-                        this._theme,
-                        this._i18n["Confirm.DeleteTemplateTitle"],
-                        this._i18n.Format("Confirm.DeleteTemplateMessage", tpl.Title),
-                        this._i18n["Confirm.BtnConfirmDelete"],
-                        this._i18n["Groups.BtnCancelEditTag"],
-                        async () =>
-                        {
-                            this._vm.SelectedTemplate = tpl;
-                            if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
+                        ConfirmDialogModal.ShowAsync(
+                            this,
+                            this._theme,
+                            this._i18n["Confirm.DeleteTemplateTitle"],
+                            this._i18n.Format("Confirm.DeleteTemplateMessage", tpl.Title),
+                            this._i18n["Confirm.BtnConfirmDelete"],
+                            this._i18n["Groups.BtnCancelEditTag"],
+                            async () =>
                             {
-                                await this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null).ConfigureAwait(true);
-                            }
-                        });
-                };
+                                this._vm.SelectedTemplate = tpl;
+                                if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
+                                {
+                                    await this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null).ConfigureAwait(true);
+                                }
+                            });
+                    },
+                    AuditSeverity.Error);
 
                 Grid.SetColumn(tplTitleTb, 0);
                 Grid.SetColumn(typePill, 1);

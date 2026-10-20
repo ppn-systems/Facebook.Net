@@ -3,12 +3,11 @@
 
 using System;
 using System.Globalization;
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -223,54 +222,29 @@ public static class LeadPostTableRow
             StackPanel actionRow = new()
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 5,
+                Spacing = 6,
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Left
             };
 
             if (onQuickReply is not null)
             {
-                Button quickReplyBtn = new()
-                {
-                    Content = new TextBlock
-                    {
-                        Text = quickReplyLabel ?? "Tư vấn",
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = theme.Palette.BrandPrimary
-                    },
-                    Background = theme.Palette.BrandSubtleFill,
-                    BorderBrush = theme.Palette.BrandPrimary,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(8, 2.5),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                quickReplyBtn.Click += (_, _) => onQuickReply();
+                Button quickReplyBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.SalesComment,
+                    quickReplyLabel ?? "Tư vấn",
+                    onQuickReply,
+                    AuditSeverity.Success);
                 actionRow.Children.Add(quickReplyBtn);
             }
 
             if (onOpenInBrowser is not null)
             {
-                Button openBrowserBtn = new()
-                {
-                    Content = new TextBlock
-                    {
-                        Text = openBrowserLabel ?? "Mở bài",
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = theme.Palette.TextPrimary
-                    },
-                    Background = theme.Palette.SecondarySurface,
-                    BorderBrush = theme.Palette.InteractiveBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(8, 2.5),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                openBrowserBtn.Click += (_, _) => onOpenInBrowser();
+                Button openBrowserBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.ExternalLink,
+                    openBrowserLabel ?? "Mở bài",
+                    onOpenInBrowser);
                 actionRow.Children.Add(openBrowserBtn);
             }
 

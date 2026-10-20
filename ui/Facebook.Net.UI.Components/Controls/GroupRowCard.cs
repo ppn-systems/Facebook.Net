@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -162,10 +163,14 @@ public static class GroupRowCard
         ArgumentNullException.ThrowIfNull(i18n);
         ArgumentNullException.ThrowIfNull(grp);
 
+        bool hasRowActions = onAddToTarget is not null || onJoinGroup is not null;
+
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"),
-            ColumnSpacing = 10,
+            ColumnDefinitions = hasRowActions
+                ? new ColumnDefinitions("Auto,*,Auto,116,104,90")
+                : new ColumnDefinitions("Auto,*,Auto,116"),
+            ColumnSpacing = 8,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -212,6 +217,14 @@ public static class GroupRowCard
             row.Children.Add(tagMenuBtn);
         }
 
+        Border statePill = StatusPill.Create(
+            theme,
+            i18n.FormatGroupMembership(grp.MembershipState),
+            grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
+        statePill.HorizontalAlignment = HorizontalAlignment.Stretch;
+        statePill.Height = 28;
+        Grid.SetColumn(statePill, 3);
+
         if (!isAlreadyInTargets && onAddToTarget is not null)
         {
             Button addTargetBtn = new()
@@ -221,18 +234,24 @@ public static class GroupRowCard
                     Text = addToTargetLabel ?? "+ Nhóm đích",
                     FontSize = 11,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = theme.Palette.TextPrimary
+                    Foreground = theme.Palette.TextPrimary,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
                 },
                 Background = theme.Palette.SecondarySurface,
                 BorderBrush = theme.Palette.InteractiveBorder,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(9, 3),
+                CornerRadius = new CornerRadius(8),
+                Height = 28,
+                Padding = new Thickness(8, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = new Cursor(StandardCursorType.Hand)
             };
             addTargetBtn.Click += (_, _) => onAddToTarget();
-            Grid.SetColumn(addTargetBtn, 3);
+            Grid.SetColumn(addTargetBtn, 4);
             row.Children.Add(addTargetBtn);
         }
 
@@ -247,26 +266,26 @@ public static class GroupRowCard
                     Text = joinLabel ?? "Tham gia",
                     FontSize = 11,
                     FontWeight = FontWeight.Bold,
-                    Foreground = theme.Palette.BrandPrimary
+                    Foreground = theme.Palette.BrandPrimary,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
                 },
                 Background = theme.Palette.BrandSubtleFill,
                 BorderBrush = theme.Palette.BrandPrimary,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(10, 3),
+                CornerRadius = new CornerRadius(8),
+                Height = 28,
+                Padding = new Thickness(8, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = new Cursor(StandardCursorType.Hand)
             };
             joinBtn.Click += (_, _) => onJoinGroup();
-            Grid.SetColumn(joinBtn, 4);
+            Grid.SetColumn(joinBtn, 5);
             row.Children.Add(joinBtn);
         }
-
-        Border statePill = StatusPill.Create(
-            theme,
-            i18n.FormatGroupMembership(grp.MembershipState),
-            grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
-        Grid.SetColumn(statePill, 5);
 
         i18n.LanguageChanged += (_, _) =>
             StatusPill.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
@@ -298,8 +317,10 @@ public static class GroupRowCard
 
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto"),
-            ColumnSpacing = 10,
+            ColumnDefinitions = onRemove is not null
+                ? new ColumnDefinitions("Auto,Auto,*,Auto,28")
+                : new ColumnDefinitions("Auto,Auto,*,Auto"),
+            ColumnSpacing = 8,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -366,24 +387,12 @@ public static class GroupRowCard
 
         if (onRemove is not null)
         {
-            Button removeBtn = new()
-            {
-                Content = new TextBlock
-                {
-                    Text = removeLabel ?? "Gỡ",
-                    FontSize = 11,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = theme.Palette.DangerText
-                },
-                Background = theme.Palette.DangerFill,
-                BorderBrush = theme.Palette.DangerText,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(9, 3),
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-            removeBtn.Click += (_, _) => onRemove();
+            Button removeBtn = AppButton.CreateRowIcon(
+                theme,
+                VectorIcons.Trash,
+                removeLabel ?? "Gỡ",
+                onRemove,
+                AuditSeverity.Error);
             Grid.SetColumn(removeBtn, 4);
             row.Children.Add(removeBtn);
         }

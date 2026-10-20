@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -39,10 +40,14 @@ public static class AccountRowCard
         ArgumentNullException.ThrowIfNull(i18n);
         ArgumentNullException.ThrowIfNull(item);
 
+        bool hasActions = onWarmUpOrLogin is not null || onCheckHealth is not null || onDelete is not null;
+
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
-            ColumnSpacing = 12,
+            ColumnDefinitions = hasActions
+                ? new ColumnDefinitions("Auto,*,124,108,28,28")
+                : new ColumnDefinitions("Auto,*,124"),
+            ColumnSpacing = 8,
             Margin = new Thickness(4, 4),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -73,15 +78,16 @@ public static class AccountRowCard
         info.Children.Add(subInfo);
         Grid.SetColumn(info, 1);
 
-        if (onWarmUpOrLogin is not null || onCheckHealth is not null || onDelete is not null)
-        {
-            StackPanel actionRow = new()
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+        AuditSeverity sev = item.Status == AccountStatus.Active
+            ? AuditSeverity.Success
+            : (item.Status == AccountStatus.Checkpoint ? AuditSeverity.Error : AuditSeverity.Warning);
+        Border statusPill = StatusPill.Create(theme, i18n.FormatAccountStatus(item.Status), sev);
+        statusPill.HorizontalAlignment = HorizontalAlignment.Stretch;
+        statusPill.Height = 28;
+        Grid.SetColumn(statusPill, 2);
 
+        if (hasActions)
+        {
             if (onWarmUpOrLogin is not null)
             {
                 bool isActive = item.Status == AccountStatus.Active;
@@ -94,75 +100,50 @@ public static class AccountRowCard
                         Text = primaryActionText,
                         FontSize = 11,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = isActive ? theme.Palette.BrandPrimary : theme.Palette.WarningText
+                        Foreground = isActive ? theme.Palette.BrandPrimary : theme.Palette.WarningText,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
                     },
                     Background = isActive ? theme.Palette.BrandSubtleFill : theme.Palette.WarningFill,
                     BorderBrush = isActive ? theme.Palette.BrandPrimary : theme.Palette.WarningBorder,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
+                    CornerRadius = new CornerRadius(8),
+                    Height = 28,
+                    Padding = new Thickness(8, 0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Cursor = new Cursor(StandardCursorType.Hand)
                 };
                 warmOrLoginBtn.Click += (_, _) => onWarmUpOrLogin();
-                actionRow.Children.Add(warmOrLoginBtn);
+                Grid.SetColumn(warmOrLoginBtn, 3);
+                row.Children.Add(warmOrLoginBtn);
             }
 
             if (onCheckHealth is not null)
             {
-                Button checkBtn = new()
-                {
-                    Content = new TextBlock
-                    {
-                        Text = checkHealthLabel ?? "Kiểm tra",
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = theme.Palette.TextPrimary
-                    },
-                    Background = theme.Palette.SecondarySurface,
-                    BorderBrush = theme.Palette.InteractiveBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                checkBtn.Click += (_, _) => onCheckHealth();
-                actionRow.Children.Add(checkBtn);
+                Button checkBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.Sync,
+                    checkHealthLabel ?? "Kiểm tra",
+                    onCheckHealth);
+                Grid.SetColumn(checkBtn, 4);
+                row.Children.Add(checkBtn);
             }
 
             if (onDelete is not null)
             {
-                Button deleteBtn = new()
-                {
-                    Content = new TextBlock
-                    {
-                        Text = deleteLabel ?? "Xóa",
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = theme.Palette.DangerText
-                    },
-                    Background = theme.Palette.DangerFill,
-                    BorderBrush = theme.Palette.DangerBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(9, 3),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                deleteBtn.Click += (_, _) => onDelete();
-                actionRow.Children.Add(deleteBtn);
+                Button deleteBtn = AppButton.CreateRowIcon(
+                    theme,
+                    VectorIcons.Trash,
+                    deleteLabel ?? "Xóa",
+                    onDelete,
+                    AuditSeverity.Error);
+                Grid.SetColumn(deleteBtn, 5);
+                row.Children.Add(deleteBtn);
             }
-
-            Grid.SetColumn(actionRow, 2);
-            row.Children.Add(actionRow);
         }
-
-        AuditSeverity sev = item.Status == AccountStatus.Active
-            ? AuditSeverity.Success
-            : (item.Status == AccountStatus.Checkpoint ? AuditSeverity.Error : AuditSeverity.Warning);
-        Border statusPill = StatusPill.Create(theme, i18n.FormatAccountStatus(item.Status), sev);
-        Grid.SetColumn(statusPill, 3);
 
         i18n.LanguageChanged += (_, _) =>
         {

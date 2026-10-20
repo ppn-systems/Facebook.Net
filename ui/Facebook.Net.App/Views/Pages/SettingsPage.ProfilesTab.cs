@@ -49,11 +49,12 @@ public sealed partial class SettingsPage
             out TextBlock headerTitleTb,
             out TextBlock headerDescTb);
 
-        Button rescanProfilesBtn = AppButton.CreateSecondary(
+        Button rescanProfilesBtn = AppButton.CreateIcon(
             this._theme,
+            VectorIcons.Sync,
             this._i18n["Settings.BtnRescanBrowsers"],
-            null,
-            VectorIcons.Sync);
+            size: 34,
+            iconSize: 16);
 
         Button browseFolderBtn = AppButton.CreateSecondary(
             this._theme,
@@ -166,7 +167,7 @@ public sealed partial class SettingsPage
 
                 Grid rowGrid = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"),
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,128,142,28"),
                     ColumnSpacing = 10,
                     Margin = new Thickness(4, 4),
                     VerticalAlignment = VerticalAlignment.Center
@@ -176,7 +177,7 @@ public sealed partial class SettingsPage
                 {
                     Width = 34,
                     Height = 34,
-                    CornerRadius = new CornerRadius(17),
+                    CornerRadius = new CornerRadius(10),
                     Background = opt.IsManagedByApp ? this._theme.Palette.BrandSubtleFill : this._theme.Palette.SecondarySurface,
                     BorderBrush = opt.IsManagedByApp ? this._theme.Palette.BrandPrimary : this._theme.Palette.SubtleBorder,
                     BorderThickness = new Thickness(1),
@@ -228,6 +229,8 @@ public sealed partial class SettingsPage
                     this._theme,
                     opt.IsManagedByApp ? this._i18n["Settings.BadgeManagedProfile"] : this._i18n["Settings.BadgeSystemProfile"],
                     opt.IsManagedByApp ? AuditSeverity.Success : AuditSeverity.Info);
+                sourceBadge.HorizontalAlignment = HorizontalAlignment.Stretch;
+                sourceBadge.Height = 28;
 
                 Grid.SetColumn(iconCircle, 0);
                 Grid.SetColumn(infoStack, 1);
@@ -242,6 +245,8 @@ public sealed partial class SettingsPage
                         this._theme,
                         this._i18n["Settings.BadgeActiveProfile"],
                         AuditSeverity.Success);
+                    activePill.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    activePill.Height = 28;
                     Grid.SetColumn(activePill, 3);
                     rowGrid.Children.Add(activePill);
                 }
@@ -254,13 +259,19 @@ public sealed partial class SettingsPage
                             Text = this._i18n["Settings.BtnUseProfile"],
                             FontSize = 11,
                             FontWeight = FontWeight.SemiBold,
-                            Foreground = this._theme.Palette.BrandPrimary
+                            Foreground = this._theme.Palette.BrandPrimary,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
                         },
                         Background = this._theme.Palette.BrandSubtleFill,
                         BorderBrush = this._theme.Palette.BrandPrimary,
                         BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(999),
-                        Padding = new Thickness(10, 3),
+                        CornerRadius = new CornerRadius(8),
+                        Height = 28,
+                        Padding = new Thickness(10, 0),
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Center,
+                        VerticalContentAlignment = VerticalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         Cursor = new Cursor(StandardCursorType.Hand)
                     };
@@ -276,38 +287,26 @@ public sealed partial class SettingsPage
                 // Strictly allow deletion ONLY for profiles created by our app inside ProfilesRootDirectory
                 if (opt.IsManagedByApp)
                 {
-                    Button deleteProfileBtn = new()
-                    {
-                        Content = new TextBlock
+                    Button deleteProfileBtn = AppButton.CreateRowIcon(
+                        this._theme,
+                        VectorIcons.Trash,
+                        this._i18n["Accounts.BtnRowDelete"],
+                        () =>
                         {
-                            Text = this._i18n["Accounts.BtnRowDelete"],
-                            FontSize = 11,
-                            FontWeight = FontWeight.SemiBold,
-                            Foreground = this._theme.Palette.DangerText
+                            ConfirmDialogModal.ShowAsync(
+                                this,
+                                this._theme,
+                                this._i18n["Confirm.DeleteProfileTitle"],
+                                this._i18n.Format("Confirm.DeleteProfileMessage", opt.DisplayName),
+                                this._i18n["Confirm.BtnConfirmDelete"],
+                                this._i18n["Groups.BtnCancelEditTag"],
+                                async () =>
+                                {
+                                    _ = await this._vm.DeleteManagedBrowserProfileAsync(opt).ConfigureAwait(true);
+                                    RefreshFilteredProfiles();
+                                });
                         },
-                        Background = this._theme.Palette.DangerFill,
-                        BorderBrush = this._theme.Palette.DangerText,
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(999),
-                        Padding = new Thickness(9, 3),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Cursor = new Cursor(StandardCursorType.Hand)
-                    };
-                    deleteProfileBtn.Click += (_, _) =>
-                    {
-                        ConfirmDialogModal.ShowAsync(
-                            this,
-                            this._theme,
-                            this._i18n["Confirm.DeleteProfileTitle"],
-                            this._i18n.Format("Confirm.DeleteProfileMessage", opt.DisplayName),
-                            this._i18n["Confirm.BtnConfirmDelete"],
-                            this._i18n["Groups.BtnCancelEditTag"],
-                            async () =>
-                            {
-                                _ = await this._vm.DeleteManagedBrowserProfileAsync(opt).ConfigureAwait(true);
-                                RefreshFilteredProfiles();
-                            });
-                    };
+                        AuditSeverity.Error);
                     Grid.SetColumn(deleteProfileBtn, 4);
                     rowGrid.Children.Add(deleteProfileBtn);
                 }
