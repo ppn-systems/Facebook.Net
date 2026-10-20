@@ -138,21 +138,21 @@ public sealed partial class MainWindow : Window
 
         Image brandLogoImage = new()
         {
-            Width = 34,
-            Height = 34,
+            Width = 30,
+            Height = 30,
             Stretch = Stretch.UniformToFill
         };
         RenderOptions.SetBitmapInterpolationMode(brandLogoImage, BitmapInterpolationMode.HighQuality);
-        using (Stream logoStream = AssetLoader.Open(new Uri("avares://Facebook.Net.App/Assets/icon.png")))
+        using (Stream logoStream = AssetLoader.Open(new Uri("avares://FacebookOneClient/Assets/icon.png")))
         {
             brandLogoImage.Source = new Bitmap(logoStream);
         }
 
         Border brandBadge = new()
         {
-            Width = 34,
-            Height = 34,
-            CornerRadius = new CornerRadius(8),
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(7),
             ClipToBounds = true,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
@@ -161,30 +161,13 @@ public sealed partial class MainWindow : Window
 
         TextBlock brandTitle = new()
         {
-            Text = "Facebook One",
+            Text = "Facebook One Client",
             FontSize = 13,
             FontWeight = FontWeight.Bold,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-        TextBlock brandSubtitle = new()
-        {
-            Text = "Client",
-            FontSize = 10.5,
-            FontWeight = FontWeight.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-        StackPanel brandTitleStack = new()
-        {
-            Spacing = 1,
-            Margin = new Thickness(10, 0, 6, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                brandTitle,
-                brandSubtitle
-            }
+            Margin = new Thickness(9, 0, 6, 0),
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         Button collapseBtn = AppButton.CreateIcon(
@@ -194,10 +177,10 @@ public sealed partial class MainWindow : Window
             this._vm.ToggleSidebarCommand);
 
         Grid.SetColumn(brandBadge, 0);
-        Grid.SetColumn(brandTitleStack, 1);
+        Grid.SetColumn(brandTitle, 1);
         Grid.SetColumn(collapseBtn, 2);
         topHeader.Children.Add(brandBadge);
-        topHeader.Children.Add(brandTitleStack);
+        topHeader.Children.Add(brandTitle);
         topHeader.Children.Add(collapseBtn);
         Grid.SetRow(topHeader, 0);
         sidebarGrid.Children.Add(topHeader);
@@ -244,16 +227,15 @@ public sealed partial class MainWindow : Window
             ThemePalette p = this._theme.Palette;
             bool collapsed = this._vm.IsSidebarCollapsed;
 
-            sidebar.Width = collapsed ? 60 : 206;
+            sidebar.Width = collapsed ? 60 : 232;
             sidebar.Background = p.ElevatedSurface;
             sidebar.BorderBrush = p.SubtleBorder;
 
             brandBadge.IsVisible = !collapsed;
-            brandTitleStack.IsVisible = !collapsed;
+            brandTitle.IsVisible = !collapsed;
             brandTitle.Foreground = p.TextPrimary;
-            brandSubtitle.Foreground = p.BrandPrimary;
             ToolTip.SetTip(brandBadge, this._i18n["App.Title"]);
-            ToolTip.SetTip(brandTitleStack, this._i18n["App.Title"]);
+            ToolTip.SetTip(brandTitle, this._i18n["App.Title"]);
 
             Grid.SetColumn(collapseBtn, collapsed ? 0 : 2);
             collapseBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right;

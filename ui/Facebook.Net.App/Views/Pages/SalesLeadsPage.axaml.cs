@@ -172,7 +172,8 @@ public sealed partial class SalesLeadsPage : UserControl
                     _ => 0
                 };
                 UpdateLeadFilterActiveState();
-            });
+            },
+            borderless: true);
 
         ObservableCollection<object> groupFilterItems = new() { "ALL" };
         for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -180,7 +181,7 @@ public sealed partial class SalesLeadsPage : UserControl
             groupFilterItems.Add(this._vm.TargetGroups[i]);
         }
 
-        ComboBox groupFilterCombo = FormField.CreateComboBox<object>(
+        ListBox groupFilterList = FormField.CreateListBox<object>(
             this._theme,
             groupFilterItems,
             obj =>
@@ -191,12 +192,14 @@ public sealed partial class SalesLeadsPage : UserControl
                     {
                         ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                         ColumnSpacing = 8,
+                        Margin = new Thickness(6, 3),
                         VerticalAlignment = VerticalAlignment.Center
                     };
-                    Border badge = AvatarBadge.Create(this._theme, grp.GroupName, 22, grp.AvatarUrl);
+                    Border badge = AvatarBadge.Create(this._theme, grp.GroupName, 24, grp.AvatarUrl);
                     TextBlock grpItemTb = SectionHeader.CreateLabel(this._theme, grp.GroupName, 12.5, FontWeight.Medium);
                     grpItemTb.MaxLines = 1;
                     grpItemTb.TextTrimming = TextTrimming.CharacterEllipsis;
+                    grpItemTb.VerticalAlignment = VerticalAlignment.Center;
                     Grid.SetColumn(badge, 0);
                     Grid.SetColumn(grpItemTb, 1);
                     grpItemRow.Children.Add(badge);
@@ -204,17 +207,30 @@ public sealed partial class SalesLeadsPage : UserControl
                     return grpItemRow;
                 }
 
-                TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Leads.FilterAllGroups"], 12.5, FontWeight.Medium);
+                Grid allRow = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    ColumnSpacing = 8,
+                    Margin = new Thickness(6, 4),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Control allIcon = VectorIcons.Create(VectorIcons.Groups, 16, margin: new Thickness(4, 0));
+                VectorIcons.SetForeground(allIcon, this._theme.Palette.BrandPrimary);
+                TextBlock allTb = SectionHeader.CreateLabel(this._theme, this._i18n["Leads.FilterAllGroups"], 12.5, FontWeight.SemiBold);
+                allTb.VerticalAlignment = VerticalAlignment.Center;
                 this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Leads.FilterAllGroups"];
-                return allTb;
+                Grid.SetColumn(allIcon, 0);
+                Grid.SetColumn(allTb, 1);
+                allRow.Children.Add(allIcon);
+                allRow.Children.Add(allTb);
+                return allRow;
             },
-            selectedItem: "ALL",
-            placeholderText: this._i18n["Leads.FilterAllGroups"]);
-        groupFilterCombo.Height = 36;
+            selectedItem: "ALL");
+        groupFilterList.MaxHeight = 230;
 
         this._vm.TargetGroups.CollectionChanged += (_, _) =>
         {
-            object? prev = groupFilterCombo.SelectedItem;
+            object? prev = groupFilterList.SelectedItem;
             groupFilterItems.Clear();
             groupFilterItems.Add("ALL");
             object? restored = "ALL";
@@ -229,12 +245,12 @@ public sealed partial class SalesLeadsPage : UserControl
                 }
             }
 
-            groupFilterCombo.SelectedItem = restored;
+            groupFilterList.SelectedItem = restored;
         };
 
-        groupFilterCombo.SelectionChanged += (_, _) =>
+        groupFilterList.SelectionChanged += (_, _) =>
         {
-            if (groupFilterCombo.SelectedItem is SavedTargetGroup grp)
+            if (groupFilterList.SelectedItem is SavedTargetGroup grp)
             {
                 this._vm.SelectedTargetGroup = grp;
                 this._vm.FilterScrapedGroupId = grp.GroupId;
@@ -250,10 +266,10 @@ public sealed partial class SalesLeadsPage : UserControl
         StackPanel groupFilterField = FormField.CreateLabeled(
             this._theme,
             this._i18n["Leads.FilterGroupLabel"],
-            groupFilterCombo,
+            groupFilterList,
             out TextBlock groupFilterLbl);
 
-        StackPanel filterFlyoutStack = new() { Spacing = 12, Width = 330 };
+        StackPanel filterFlyoutStack = new() { Spacing = 12, Width = 340 };
         filterFlyoutStack.Children.Add(statusSegmentPill);
         filterFlyoutStack.Children.Add(groupFilterField);
         Border filterFlyoutCard = SurfaceCard.Create(this._theme, filterFlyoutStack, new Thickness(14));
@@ -283,11 +299,9 @@ public sealed partial class SalesLeadsPage : UserControl
             this._theme,
             [
                 new DataTableColumn("150", this._i18n["Leads.ColAuthor"]),
-                new DataTableColumn("140", this._i18n["Leads.ColGroup"]),
+                new DataTableColumn("145", this._i18n["Leads.ColGroup"]),
                 new DataTableColumn("*", this._i18n["Leads.ColMessage"]),
-                new DataTableColumn("120", this._i18n["Leads.ColIntent"]),
-                new DataTableColumn("85", this._i18n["Leads.ColTime"]),
-                new DataTableColumn("125", this._i18n["Leads.ColStatus"])
+                new DataTableColumn("135", this._i18n["Leads.ColStatus"])
             ],
             this._vm.ScrapedPosts,
             post => LeadPostTableRow.Create(
@@ -590,15 +604,12 @@ public sealed partial class SalesLeadsPage : UserControl
                 this._i18n["Leads.FilterSegAll"]
             ]);
             groupFilterLbl.Text = this._i18n["Leads.FilterGroupLabel"];
-            groupFilterCombo.PlaceholderText = this._i18n["Leads.FilterAllGroups"];
             dbSearchBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
             postsTable.UpdateHeadersAndEmptyText(
                 [
                     this._i18n["Leads.ColAuthor"],
                     this._i18n["Leads.ColGroup"],
                     this._i18n["Leads.ColMessage"],
-                    this._i18n["Leads.ColIntent"],
-                    this._i18n["Leads.ColTime"],
                     this._i18n["Leads.ColStatus"]
                 ],
                 this._i18n["Empty.Leads"],

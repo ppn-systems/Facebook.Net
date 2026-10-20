@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
@@ -169,14 +168,12 @@ public sealed partial class AccountsPage : UserControl
                 this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter);
             });
 
-        Border filterFlyoutCard = SurfaceCard.Create(this._theme, statusPill, new Thickness(12));
-
         accountSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Accounts.SearchPlaceholder"],
             this._vm.AccountFilterText,
-            filterFlyoutContent: filterFlyoutCard);
+            filterFlyoutContent: statusPill);
         accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter);
         accountSearchBar.SearchButton.Click += (_, _) =>

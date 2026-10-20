@@ -157,8 +157,9 @@ public static class FormField
         {
             IsVisible = isVisible,
             CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(4),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
             ItemsSource = itemsSource,
             SelectedItem = selectedItem,
             ItemTemplate = new FuncDataTemplate<T>((item, _) =>
@@ -169,20 +170,11 @@ public static class FormField
         {
             if (e.Container is ListBoxItem item)
             {
-                item.Padding = new Thickness(4, 3);
-                item.CornerRadius = new CornerRadius(6);
+                item.Padding = new Thickness(0, 3);
+                item.CornerRadius = new CornerRadius(8);
             }
         };
 
-        void ApplyColors()
-        {
-            ThemePalette p = theme.Palette;
-            listBox.Background = p.SecondarySurface;
-            listBox.BorderBrush = p.SubtleBorder;
-        }
-
-        ApplyColors();
-        ThemeLifecycle.Bind(listBox, theme, ApplyColors);
         return listBox;
     }
 

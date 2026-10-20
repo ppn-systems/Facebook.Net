@@ -22,7 +22,7 @@ public static class LeadPostTableRow
     /// <summary>
     /// Creates a themed multi-column table row for a scraped <paramref name="post"/>.
     /// </summary>
-    public static Grid Create(
+    public static Border Create(
         ThemeService theme,
         LocalizationService i18n,
         PostSummary post,
@@ -37,23 +37,34 @@ public static class LeadPostTableRow
 
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("155,145,*,120,85,125"),
+            ColumnDefinitions = new ColumnDefinitions("150,145,*,135"),
             ColumnSpacing = 12,
-            MinHeight = 46,
+            MinHeight = 52,
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Col 0: Author Avatar + Name
+        // Col 0: Author Avatar + Author Name + Timestamp
         string authorDisplay = string.IsNullOrWhiteSpace(post.AuthorName)
             ? i18n["Leads.DefaultAuthor"]
             : post.AuthorName;
 
-        Border avatarBadge = AvatarBadge.Create(theme, authorDisplay, size: 30, imageUrl: post.AuthorAvatarUrl);
+        Border avatarBadge = AvatarBadge.Create(theme, authorDisplay, size: 32, imageUrl: post.AuthorAvatarUrl);
         TextBlock authorTb = SectionHeader.CreateLabel(theme, authorDisplay, 12.5, FontWeight.SemiBold);
-        authorTb.MaxLines = 2;
-        authorTb.TextWrapping = TextWrapping.Wrap;
+        authorTb.MaxLines = 1;
+        authorTb.TextWrapping = TextWrapping.NoWrap;
         authorTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        authorTb.VerticalAlignment = VerticalAlignment.Center;
+
+        string timeText = post.CreatedAt.HasValue
+            ? post.CreatedAt.Value.ToLocalTime().ToString("HH:mm dd/MM", CultureInfo.InvariantCulture)
+            : i18n["Leads.TimeRecent"];
+        TextBlock timeTb = SectionHeader.CreateLabel(theme, timeText, 11, FontWeight.Medium, isSecondary: true);
+
+        StackPanel authorInfoStack = new()
+        {
+            Spacing = 2,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { authorTb, timeTb }
+        };
 
         Grid authorCell = new()
         {
@@ -62,9 +73,9 @@ public static class LeadPostTableRow
             VerticalAlignment = VerticalAlignment.Center
         };
         Grid.SetColumn(avatarBadge, 0);
-        Grid.SetColumn(authorTb, 1);
+        Grid.SetColumn(authorInfoStack, 1);
         authorCell.Children.Add(avatarBadge);
-        authorCell.Children.Add(authorTb);
+        authorCell.Children.Add(authorInfoStack);
 
         // Col 1: Group Avatar + Group Name
         string groupText = string.IsNullOrWhiteSpace(post.GroupName)
@@ -181,27 +192,25 @@ public static class LeadPostTableRow
         Grid.SetColumn(messageTextStack, 1);
         messageCell.Children.Add(messageTextStack);
 
-        // Col 3: Buyer-Intent Score Pill
-        AuditSeverity intentSeverity = intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning;
-        Border intentPill = StatusPill.Create(theme, formatIntentBadge(), intentSeverity);
-        intentPill.HorizontalAlignment = HorizontalAlignment.Left;
-        intentPill.VerticalAlignment = VerticalAlignment.Center;
-
-        // Col 4: Timestamp
-        string timeText = post.CreatedAt.HasValue
-            ? post.CreatedAt.Value.ToLocalTime().ToString("HH:mm dd/MM", CultureInfo.InvariantCulture)
-            : i18n["Leads.TimeRecent"];
-        TextBlock timeTb = SectionHeader.CreateLabel(theme, timeText, 11.5, FontWeight.Medium, isSecondary: true);
-        timeTb.VerticalAlignment = VerticalAlignment.Center;
-
-        // Col 5: Comment Status Pill ("✓ Đã bình luận" vs "● Chưa bình luận")
+        // Col 3: Stacked Comment Status Pill + Buyer-Intent Score Pill
         string statusLabel = isCommented
             ? i18n["Leads.StatusCommented"]
             : i18n["Leads.StatusPending"];
         AuditSeverity statusSeverity = isCommented ? AuditSeverity.Success : AuditSeverity.Info;
         Border statusPill = StatusPill.Create(theme, statusLabel, statusSeverity);
         statusPill.HorizontalAlignment = HorizontalAlignment.Left;
-        statusPill.VerticalAlignment = VerticalAlignment.Center;
+
+        AuditSeverity intentSeverity = intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning;
+        Border intentPill = StatusPill.Create(theme, formatIntentBadge(), intentSeverity);
+        intentPill.HorizontalAlignment = HorizontalAlignment.Left;
+
+        StackPanel statusStack = new()
+        {
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Children = { statusPill, intentPill }
+        };
 
         i18n.LanguageChanged += (_, _) =>
         {
@@ -227,17 +236,24 @@ public static class LeadPostTableRow
         Grid.SetColumn(authorCell, 0);
         Grid.SetColumn(groupCell, 1);
         Grid.SetColumn(messageCell, 2);
-        Grid.SetColumn(intentPill, 3);
-        Grid.SetColumn(timeTb, 4);
-        Grid.SetColumn(statusPill, 5);
+        Grid.SetColumn(statusStack, 3);
 
         row.Children.Add(authorCell);
         row.Children.Add(groupCell);
         row.Children.Add(messageCell);
-        row.Children.Add(intentPill);
-        row.Children.Add(timeTb);
-        row.Children.Add(statusPill);
+        row.Children.Add(statusStack);
 
-        return row;
+        Border rowContainer = new()
+        {
+            BorderThickness = new Avalonia.Thickness(0, 0, 0, 1),
+            Padding = new Avalonia.Thickness(0, 4, 0, 6),
+            Child = row
+        };
+
+        void ApplyRowBorder() => rowContainer.BorderBrush = theme.Palette.SubtleBorder;
+        ApplyRowBorder();
+        ThemeLifecycle.Bind(rowContainer, theme, ApplyRowBorder);
+
+        return rowContainer;
     }
 }

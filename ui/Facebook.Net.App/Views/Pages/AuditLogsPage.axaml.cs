@@ -329,6 +329,6 @@ public sealed partial class AuditLogsPage : UserControl
             errCountTb.Text = drawerVm.ErrorCount.ToString(CultureInfo.InvariantCulture);
         };
 
-        return SurfaceCard.Create(this._theme, pageGrid);
+        return pageGrid;
     }
 }

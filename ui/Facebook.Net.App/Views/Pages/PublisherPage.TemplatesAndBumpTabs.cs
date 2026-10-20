@@ -42,12 +42,12 @@ public sealed partial class PublisherPage
             this._vm.SavedTemplates,
             tpl =>
             {
-                StackPanel sp = new() { Spacing = 4, Margin = new Thickness(6, 4) };
+                StackPanel sp = new() { Spacing = 4 };
                 sp.Children.Add(SectionHeader.CreateLabel(this._theme, tpl.Title, 13.5, FontWeight.SemiBold));
                 TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, tpl.SpintaxContent, 12, FontWeight.Normal, isSecondary: true);
                 bodyTb.MaxLines = 2;
                 sp.Children.Add(bodyTb);
-                return sp;
+                return SurfaceCard.Create(this._theme, sp, new Thickness(12, 10));
             },
             selectedItem: this._vm.SelectedTemplate,
             isVisible: this._vm.SavedTemplates.Count > 0);
@@ -99,7 +99,7 @@ public sealed partial class PublisherPage
             AppButton.SetText(deleteTplBtn, this._i18n["Publisher.BtnDeleteTemplate"]);
         };
 
-        return SurfaceCard.Create(this._theme, tplGrid, new Thickness(18));
+        return tplGrid;
     }
 
     private Control BuildBumpTab(out Action refreshI18n)

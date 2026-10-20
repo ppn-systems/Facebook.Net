@@ -29,7 +29,8 @@ public sealed class SegmentedFilterPill : Border
         ThemeService theme,
         IReadOnlyList<string> labels,
         int initialIndex = 0,
-        Action<int>? onSelected = null)
+        Action<int>? onSelected = null,
+        bool borderless = false)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(labels);
@@ -42,8 +43,8 @@ public sealed class SegmentedFilterPill : Border
         this._selectedIndex = Math.Clamp(initialIndex, 0, labels.Count - 1);
 
         this.CornerRadius = new CornerRadius(8);
-        this.BorderThickness = new Thickness(1);
-        this.Padding = new Thickness(3);
+        this.BorderThickness = new Thickness(borderless ? 0 : 1);
+        this.Padding = new Thickness(4);
         this.VerticalAlignment = VerticalAlignment.Center;
 
         StackPanel row = new()
@@ -92,8 +93,8 @@ public sealed class SegmentedFilterPill : Border
         void ApplyColors()
         {
             ThemePalette p = this._theme.Palette;
-            this.Background = p.SecondarySurface;
-            this.BorderBrush = p.SubtleBorder;
+            this.Background = borderless ? p.SecondarySurface : p.ElevatedSurface;
+            this.BorderBrush = borderless ? Brushes.Transparent : p.InteractiveBorder;
             this.RefreshSegmentVisuals();
         }
 

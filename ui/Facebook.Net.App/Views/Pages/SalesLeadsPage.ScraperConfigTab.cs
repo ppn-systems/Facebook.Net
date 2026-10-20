@@ -126,12 +126,11 @@ public sealed partial class SalesLeadsPage
                 RefreshFilteredGroups();
             });
 
-        Border groupFilterFlyoutCard = SurfaceCard.Create(this._theme, groupStatePill, new Thickness(12));
         groupSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.FilterPlaceholder"],
-            filterFlyoutContent: groupFilterFlyoutCard);
+            filterFlyoutContent: groupStatePill);
 
         groupSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredGroups();
         groupSearchBar.SearchButton.Click += (_, _) => RefreshFilteredGroups();

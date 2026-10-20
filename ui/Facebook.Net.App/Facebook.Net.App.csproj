@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>FacebookOneClient</AssemblyName>
     <Title>Facebook One Client</Title>
     <Product>Facebook One Client</Product>
     <Description>Facebook One Client — Cross-platform Desktop Application built with Avalonia UI and Native AOT.</Description>

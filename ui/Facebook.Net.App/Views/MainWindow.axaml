@@ -9,7 +9,7 @@
         MinHeight="720"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
-        Icon="avares://Facebook.Net.App/Assets/app.ico">
+        Icon="avares://FacebookOneClient/Assets/app.ico">
     <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*">
         <Border x:Name="SidebarContainer" Grid.Column="0" />
         <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="22,12,22,10">

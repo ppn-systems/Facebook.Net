@@ -92,14 +92,90 @@ public static class AvatarBadge
             return "FB";
         }
 
-        string[] parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 1)
+        string[] rawParts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        char firstChar = '\0';
+        char lastChar = '\0';
+        string? singleValidWord = null;
+
+        for (int i = 0; i < rawParts.Length; i++)
         {
-            return parts[0].Length >= 2
-                ? parts[0][..2].ToUpperInvariant()
-                : parts[0].ToUpperInvariant();
+            string word = rawParts[i];
+            char ch = FirstValidLetterOrDigit(word);
+            if (ch == '\0')
+            {
+                continue;
+            }
+
+            if (firstChar == '\0')
+            {
+                firstChar = ch;
+                singleValidWord = word;
+            }
+            else
+            {
+                lastChar = ch;
+            }
         }
 
-        return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        if (firstChar == '\0')
+        {
+            return "FB";
+        }
+
+        if (lastChar == '\0' && singleValidWord is not null)
+        {
+            char second = SecondValidLetterOrDigit(singleValidWord);
+            return second != '\0'
+                ? $"{char.ToUpperInvariant(firstChar)}{char.ToUpperInvariant(second)}"
+                : char.ToUpperInvariant(firstChar).ToString();
+        }
+
+        return $"{char.ToUpperInvariant(firstChar)}{char.ToUpperInvariant(lastChar)}";
+    }
+
+    private static char FirstValidLetterOrDigit(string word)
+    {
+        for (int i = 0; i < word.Length; i++)
+        {
+            char c = word[i];
+            if (char.IsSurrogate(c))
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(c))
+            {
+                return c;
+            }
+        }
+
+        return '\0';
+    }
+
+    private static char SecondValidLetterOrDigit(string word)
+    {
+        bool foundFirst = false;
+        for (int i = 0; i < word.Length; i++)
+        {
+            char c = word[i];
+            if (char.IsSurrogate(c))
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(c))
+            {
+                if (!foundFirst)
+                {
+                    foundFirst = true;
+                }
+                else
+                {
+                    return c;
+                }
+            }
+        }
+
+        return '\0';
     }
 }

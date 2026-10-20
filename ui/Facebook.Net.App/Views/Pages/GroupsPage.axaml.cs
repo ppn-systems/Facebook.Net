@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -177,12 +176,11 @@ public sealed partial class GroupsPage : UserControl
                 RefreshFilteredTargets();
             });
 
-        Border targetFilterFlyoutCard = SurfaceCard.Create(this._theme, targetStatePill, new Thickness(12));
         targetSearchBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.FilterPlaceholder"],
-            filterFlyoutContent: targetFilterFlyoutCard);
+            filterFlyoutContent: targetStatePill);
 
         targetSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredTargets();
         targetSearchBar.SearchButton.Click += (_, _) => RefreshFilteredTargets();
@@ -268,7 +266,7 @@ public sealed partial class GroupsPage : UserControl
             AppButton.SetText(removeTargetBtn, this._i18n["Groups.BtnRemoveTarget"]);
         };
 
-        return SurfaceCard.Create(this._theme, targetsPane, new Thickness(16));
+        return targetsPane;
     }
 
     private Control BuildDiscoverTab(out Action refreshI18n)
@@ -333,14 +331,6 @@ public sealed partial class GroupsPage : UserControl
         }
 
         SearchFilterBar searchFilterBar = null!;
-        TextBox localFilterBox = null!;
-
-        void UpdateDiscoverFilterActive()
-        {
-            searchFilterBar?.SetFilterActive(
-                membershipFilter != 2 ||
-                !string.IsNullOrWhiteSpace(localFilterBox?.Text));
-        }
 
         SegmentedFilterPill membershipPill = new(
             this._theme,
@@ -353,30 +343,16 @@ public sealed partial class GroupsPage : UserControl
             onSelected: idx =>
             {
                 membershipFilter = idx;
-                UpdateDiscoverFilterActive();
+                searchFilterBar?.SetFilterActive(idx != 2);
                 RefreshCatalogFilter();
             });
-
-        localFilterBox = FormField.CreateTextBox(
-            this._theme,
-            this._i18n["Groups.FilterPlaceholder"]);
-        localFilterBox.TextChanged += (_, _) =>
-        {
-            UpdateDiscoverFilterActive();
-            this._vm.ApplyLocalGroupFilter(localFilterBox.Text);
-        };
-
-        StackPanel filterPopoverStack = new() { Spacing = 10, Width = 310 };
-        filterPopoverStack.Children.Add(membershipPill);
-        filterPopoverStack.Children.Add(localFilterBox);
-        Border filterPopoverCard = SurfaceCard.Create(this._theme, filterPopoverStack, new Thickness(12));
 
         searchFilterBar = new SearchFilterBar(
             this._theme,
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.SearchKeywordPlaceholder"],
             this._vm.GroupSearchKeyword,
-            filterPopoverCard,
+            membershipPill,
             this._vm.SearchGroupsByKeywordCommand);
 
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
@@ -490,13 +466,12 @@ public sealed partial class GroupsPage : UserControl
                 this._i18n["Groups.FilterSegJoined"],
                 this._i18n["Groups.FilterSegAll"]
             ]);
-            localFilterBox.PlaceholderText = this._i18n["Groups.FilterPlaceholder"];
             AppButton.SetText(syncJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
             AppButton.SetText(saveTargetBtn, this._i18n["Groups.BtnSaveTarget"]);
             AppButton.SetText(joinBtn, this._i18n["Groups.BtnJoinSelected"]);
             AppButton.SetText(autoJoinAllBtn, this._i18n["Groups.BtnAutoJoinDiscovered"]);
         };
 
-        return SurfaceCard.Create(this._theme, catalogPane, new Thickness(16));
+        return catalogPane;
     }
 }
