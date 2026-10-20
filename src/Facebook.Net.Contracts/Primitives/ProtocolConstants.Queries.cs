@@ -161,7 +161,7 @@ public static partial class ProtocolConstants
         public const string GroupNewMembersName = "GroupsCometMembersPageNewMembersSectionRefetchQuery";
 
         /// <summary>Join group mutation.</summary>
-        public const string GroupJoinDocId = "23945723458372755";
+        public const string GroupJoinDocId = "28723044743989470";
 
         /// <summary>Join group friendly name.</summary>
         public const string GroupJoinName = "GroupCometJoinForumMutation";

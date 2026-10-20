@@ -122,6 +122,25 @@ public sealed class CometClientTests
     }
 
     [Fact]
+    public void ParsePosts_MergesMultipleRelayFragmentsForSamePostId_WithoutShadowing()
+    {
+        string ndjson =
+            "{\"data\":{\"node\":{\"__typename\":\"Story\",\"post_id\":\"1128631936701984\",\"group_id\":\"945603251671521\"}}}\n" +
+            "{\"data\":{\"node\":{\"post_id\":\"1128631936701984\",\"comet_sections\":{\"context_layout\":{\"story\":{\"actors\":[{\"id\":\"1000888\",\"name\":\"Đặng Minh Tuyên\"}]}},\"content\":{\"story\":{\"comet_sections\":{\"message\":{\"story\":{\"message\":{\"text\":\"Lại vọc linh tinh rồi hẹ hẹ\"}}}}}},\"feedback\":{\"story\":{\"feedback_context\":{\"feedback_target_with_context\":{\"reaction_count\":{\"count\":12},\"total_comment_count\":{\"count\":5}}}}}}}}}";
+
+        GraphQlResult result = ResponseParser.ParseGraphQlResult("10001", ndjson);
+        PagedResult<PostSummary> parsed = ResponseParser.ParsePosts(result);
+
+        PostSummary post = Assert.Single(parsed.Items);
+        Assert.Equal("1128631936701984", post.PostId);
+        Assert.Equal("1000888", post.AuthorUid);
+        Assert.Equal("Đặng Minh Tuyên", post.AuthorName);
+        Assert.Equal("Lại vọc linh tinh rồi hẹ hẹ", post.MessageText);
+        Assert.Equal(12, post.ReactionCount);
+        Assert.Equal(5, post.CommentCount);
+    }
+
+    [Fact]
     public void SpinText_ExpandsDynamicMacros_Date_Time_Day_And_RandomId()
     {
         string input = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";

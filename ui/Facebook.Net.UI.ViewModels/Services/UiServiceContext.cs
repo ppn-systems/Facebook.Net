@@ -51,8 +51,8 @@ public sealed class ConfigurableBrowserAdapter : IBrowserAdapter
         ArgumentNullException.ThrowIfNull(options);
         string? preferredExe = this._settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions effectiveOptions = !string.IsNullOrWhiteSpace(preferredExe) && string.IsNullOrWhiteSpace(options.ExecutablePath)
-            ? options with { ExecutablePath = preferredExe, Headless = this._settings.Current.RunBrowserHeadless }
-            : options with { Headless = this._settings.Current.RunBrowserHeadless };
+            ? options with { ExecutablePath = preferredExe }
+            : options;
 
         return this._inner.LaunchProcessAsync(effectiveOptions, ct);
     }

@@ -41,8 +41,48 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
+    private readonly List<PostSummary> _allScrapedPosts = new();
+
+    /// <summary>
+    /// Filters the cached <see cref="ScrapedPosts"/> locally by buyer-intent keywords without re-fetching from Facebook.
+    /// </summary>
+    public void ApplyLocalLeadFilter(string? keywordsText)
+    {
+        this.BuyerIntentKeywords = keywordsText ?? string.Empty;
+        if (this._allScrapedPosts.Count == 0)
+        {
+            return;
+        }
+
+        string[] keywords = string.IsNullOrWhiteSpace(this.BuyerIntentKeywords)
+            ? Array.Empty<string>()
+            : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        List<PostSummary> matched = new(this._allScrapedPosts.Count);
+        for (int i = 0; i < this._allScrapedPosts.Count; i++)
+        {
+            PostSummary post = this._allScrapedPosts[i];
+            if (MatchesBuyerKeywords(post.MessageText, keywords))
+            {
+                matched.Add(post);
+            }
+        }
+
+        matched.Sort((a, b) =>
+            CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
+                .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+
+        this.ScrapedPosts.ReplaceAll(matched);
+        this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+    }
+
     private async Task ScanGroupLeadsAsync()
     {
+        if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
+        {
+            this.SelectedTargetGroup = this.TargetGroups[0];
+        }
+
         string? targetGroupId = this.SelectedTargetGroup?.GroupId ?? this.SelectedGroup?.GroupId;
         string targetGroupName = this.SelectedTargetGroup?.GroupName ?? this.SelectedGroup?.Name ?? this._context.Localization["Audit.Cat.Group"];
 
@@ -79,6 +119,9 @@ public sealed partial class ShellViewModel
                 .GetGroupFeedAsync(session, targetGroupId, count: 15, ct: ct)
                 .ConfigureAwait(true);
 
+            this._allScrapedPosts.Clear();
+            this._allScrapedPosts.AddRange(feed.Items);
+
             string[] keywords = string.IsNullOrWhiteSpace(this.BuyerIntentKeywords)
                 ? Array.Empty<string>()
                 : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -93,6 +136,12 @@ public sealed partial class ShellViewModel
                 }
             }
 
+            bool fallbackToAll = matched.Count == 0 && feed.Items.Count > 0 && keywords.Length > 0;
+            if (fallbackToAll)
+            {
+                matched.AddRange(feed.Items);
+            }
+
             matched.Sort((a, b) =>
                 CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
                     .CompareTo(CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
@@ -100,13 +149,19 @@ public sealed partial class ShellViewModel
             this.ScrapedPosts.ReplaceAll(matched);
             this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
 
+            string logMessage = fallbackToAll
+                ? this.Msg(
+                    $"Đã thu thập {this.ScrapedPosts.Count} bài viết mới nhất từ nhóm '{targetGroupName}' (không có bài khớp chính xác từ khóa '{this.BuyerIntentKeywords}', hiển thị toàn bộ bài viết trong nhóm).",
+                    $"Discovered {this.ScrapedPosts.Count} latest posts in '{targetGroupName}' (none matched keyword '{this.BuyerIntentKeywords}' exactly; showing all group posts).")
+                : this.Msg(
+                    $"Đã thu thập {this.ScrapedPosts.Count} bài viết tiềm năng từ nhóm '{targetGroupName}'.",
+                    $"Discovered {this.ScrapedPosts.Count} potential buyer posts in '{targetGroupName}'.");
+
             _ = await this.LogAuditAsync(
                 AuditCategory.Scrape,
                 AuditSeverity.Success,
                 targetGroupName,
-                this.Msg(
-                    $"Đã thu thập {this.ScrapedPosts.Count} bài viết tiềm năng từ nhóm '{targetGroupName}'.",
-                    $"Discovered {this.ScrapedPosts.Count} potential buyer posts in '{targetGroupName}'.")).ConfigureAwait(true);
+                logMessage).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {

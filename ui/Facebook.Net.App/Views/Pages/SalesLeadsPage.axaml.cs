@@ -67,7 +67,7 @@ public sealed partial class SalesLeadsPage : UserControl
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,240,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -79,6 +79,22 @@ public sealed partial class SalesLeadsPage : UserControl
             out TextBlock titleTb,
             out TextBlock descTb);
 
+        ComboBox targetGroupCombo = FormField.CreateComboBox<SavedTargetGroup>(
+            this._theme,
+            this._vm.TargetGroups,
+            grp => SectionHeader.CreateLabel(this._theme, grp.GroupName, 12, Avalonia.Media.FontWeight.Medium),
+            this._vm.SelectedTargetGroup ?? (this._vm.TargetGroups.Count > 0 ? this._vm.TargetGroups[0] : null),
+            this._i18n["Groups.TargetListTitle"]);
+        targetGroupCombo.Height = 36;
+        targetGroupCombo.VerticalAlignment = VerticalAlignment.Center;
+        targetGroupCombo.SelectionChanged += (_, _) =>
+        {
+            if (targetGroupCombo.SelectedItem is SavedTargetGroup grp)
+            {
+                this._vm.SelectedTargetGroup = grp;
+            }
+        };
+
         Button scanBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnScanGroupPosts"],
@@ -86,8 +102,10 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Search);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(scanBtn, 1);
+        Grid.SetColumn(targetGroupCombo, 1);
+        Grid.SetColumn(scanBtn, 2);
         topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(targetGroupCombo);
         topHeaderRow.Children.Add(scanBtn);
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
@@ -112,7 +130,7 @@ public sealed partial class SalesLeadsPage : UserControl
             this._vm.ScanGroupLeadsCommand);
 
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.BuyerIntentKeywords = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+            this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
 
         Grid.SetRow(searchFilterBar, 1);
         pageGrid.Children.Add(searchFilterBar);
@@ -256,12 +274,18 @@ public sealed partial class SalesLeadsPage : UserControl
             {
                 postsList.SelectedItem = this._vm.SelectedScrapedPost;
             }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedTargetGroup), StringComparison.Ordinal) &&
+                     !ReferenceEquals(targetGroupCombo.SelectedItem, this._vm.SelectedTargetGroup))
+            {
+                targetGroupCombo.SelectedItem = this._vm.SelectedTargetGroup;
+            }
         };
 
         this._i18n.LanguageChanged += (_, _) =>
         {
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
+            targetGroupCombo.PlaceholderText = this._i18n["Groups.TargetListTitle"];
             emptyLeadsTb.Text = this._i18n["Empty.Leads"];
             searchFilterBar.UpdateLocalization(this._i18n["Common.FilterButton"], this._i18n["Leads.BuyerKeywordPlaceholder"]);
             autoReactFilterLbl.Text = this._i18n["Leads.AutoReactToggle"];

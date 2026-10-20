@@ -152,7 +152,9 @@ public sealed partial class ChromiumSession : IBrowserSession
 
         const string waitReadyJs = """
             new Promise((resolve) => {
+                const isFbOrigin = () => window.location.hostname.endsWith('facebook.com');
                 const hasCometTokens = () => {
+                    if (!isFbOrigin()) return false;
                     try {
                         if (typeof window.require === 'function') {
                             const dtsg = window.require('DTSGInitialData') || window.require('DTSGInitData') || window.require('DTSG');
@@ -164,7 +166,7 @@ public sealed partial class ChromiumSession : IBrowserSession
                     return html.includes('DTSGInitialData') || html.includes('"fb_dtsg"');
                 };
 
-                if (hasCometTokens() || document.readyState === 'complete') {
+                if (hasCometTokens()) {
                     resolve(true);
                     return;
                 }
@@ -181,7 +183,7 @@ public sealed partial class ChromiumSession : IBrowserSession
 
                 const onDomReady = () => {
                     if (hasCometTokens()) finish();
-                    else setTimeout(finish, 80);
+                    else setTimeout(finish, 250);
                 };
                 const onLoad = () => finish();
 
@@ -189,16 +191,12 @@ public sealed partial class ChromiumSession : IBrowserSession
                 window.addEventListener('load', onLoad, { once: true });
 
                 const timer = setInterval(() => {
-                    if (hasCometTokens() || document.readyState === 'complete') {
+                    if (hasCometTokens() || (isFbOrigin() && document.readyState === 'complete')) {
                         finish();
                     }
-                }, 50);
+                }, 80);
 
-                if (document.readyState === 'interactive') {
-                    setTimeout(finish, 100);
-                } else {
-                    setTimeout(finish, 4000);
-                }
+                setTimeout(finish, 5000);
             })
             """;
 
@@ -307,20 +305,35 @@ public sealed partial class ChromiumSession : IBrowserSession
         string resolvedFbDtsg = snapshot.FbDtsg;
         if (string.IsNullOrWhiteSpace(resolvedFbDtsg))
         {
-            // If the user is authenticated via c_user cookie, give the Comet DOM a brief moment to hydrate DTSG
-            await Task.Delay(350, ct).ConfigureAwait(false);
-            string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
-            DomMaterialSnapshot? retrySnapshot = JsonSerializer.Deserialize(retryJson, BrowserJsonContext.Default.DomMaterialSnapshot);
-            if (retrySnapshot is not null && !string.IsNullOrWhiteSpace(retrySnapshot.FbDtsg))
+            // Poll the active browser tab while Comet hydrates DTSGInitialData
+            for (int attempt = 0; attempt < 8 && string.IsNullOrWhiteSpace(resolvedFbDtsg); attempt++)
             {
-                snapshot = retrySnapshot;
-                resolvedFbDtsg = retrySnapshot.FbDtsg;
+                await Task.Delay(250, ct).ConfigureAwait(false);
+                string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);
+                DomMaterialSnapshot? retrySnapshot = JsonSerializer.Deserialize(retryJson, BrowserJsonContext.Default.DomMaterialSnapshot);
+                if (retrySnapshot is not null && !string.IsNullOrWhiteSpace(retrySnapshot.FbDtsg))
+                {
+                    snapshot = retrySnapshot;
+                    resolvedFbDtsg = retrySnapshot.FbDtsg;
+                    break;
+                }
             }
-            else
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(cookieHeader))
+        {
+            // If the browser tab was still on about:blank or before cookies were injected, fetch real tokens via direct HTTP GET
+            DomMaterialSnapshot? httpSnapshot = await this.TryFetchMaterialFromHttpHtmlAsync(cookieHeader, snapshot.UserAgent, ct).ConfigureAwait(false);
+            if (httpSnapshot is not null && !string.IsNullOrWhiteSpace(httpSnapshot.FbDtsg))
             {
-                // Account is logged in (valid c_user/UID); synthesize a fallback token rather than falsely reporting CookieExpired
-                resolvedFbDtsg = string.Concat("AQH_", resolvedUid);
+                snapshot = httpSnapshot;
+                resolvedFbDtsg = httpSnapshot.FbDtsg;
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedFbDtsg))
+        {
+            resolvedFbDtsg = string.Concat("AQH_", resolvedUid);
         }
 
         string jazoest = ProtocolCodec.ComputeJazoest(resolvedFbDtsg.AsSpan());

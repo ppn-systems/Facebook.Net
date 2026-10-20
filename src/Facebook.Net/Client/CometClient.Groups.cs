@@ -90,6 +90,64 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
+        PagedResult<PostSummary> firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor, ct).ConfigureAwait(false);
+        if (cursor is not null ||
+            count <= 5 ||
+            firstPage.Items.Count == 0 ||
+            firstPage.Items.Count >= count ||
+            !firstPage.HasNextPage ||
+            string.IsNullOrWhiteSpace(firstPage.EndCursor))
+        {
+            return firstPage;
+        }
+
+        try
+        {
+            PagedResult<PostSummary> secondPage = await this.FetchGroupFeedPageAsync(
+                session,
+                groupId,
+                count - firstPage.Items.Count,
+                firstPage.EndCursor,
+                ct).ConfigureAwait(false);
+
+            if (secondPage.Items.Count == 0)
+            {
+                return firstPage;
+            }
+
+            List<PostSummary> combined = new(firstPage.Items.Count + secondPage.Items.Count);
+            HashSet<string> seenIds = new(StringComparer.Ordinal);
+            for (int i = 0; i < firstPage.Items.Count; i++)
+            {
+                if (seenIds.Add(firstPage.Items[i].PostId))
+                {
+                    combined.Add(firstPage.Items[i]);
+                }
+            }
+
+            for (int i = 0; i < secondPage.Items.Count && combined.Count < count; i++)
+            {
+                if (seenIds.Add(secondPage.Items[i].PostId))
+                {
+                    combined.Add(secondPage.Items[i]);
+                }
+            }
+
+            return new PagedResult<PostSummary>(combined, secondPage.EndCursor ?? firstPage.EndCursor, secondPage.HasNextPage);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return firstPage;
+        }
+    }
+
+    private async Task<PagedResult<PostSummary>> FetchGroupFeedPageAsync(
+        IBrowserSession session,
+        string groupId,
+        int count,
+        string? cursor,
+        CancellationToken ct)
+    {
         string variablesJson = BuildJson(w =>
         {
             w.WriteNumber("count"u8, count);
@@ -113,7 +171,7 @@ public sealed partial class CometClient
             FriendlyName: ProtocolConstants.Queries.GroupFeedName,
             DocId: ProtocolConstants.Queries.GroupFeedDocId,
             VariablesJson: variablesJson,
-            PreNavigateUrl: cursor is null ? $"/{groupId}" : null,
+            PreNavigateUrl: cursor is null ? $"/groups/{groupId}" : null,
             IsMultipartStream: true);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
@@ -158,19 +216,30 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{groupId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        await session.NavigateAsync(ResolveFullUrl($"/groups/{groupId}"), ct).ConfigureAwait(false);
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
+            w.WriteString("feedType"u8, "DISCUSSION");
+            w.WriteString("groupID"u8, groupId);
+            w.WriteString("imageMediaType"u8, "image/x-auto");
             w.WritePropertyName("input"u8);
             w.WriteStartObject();
+            w.WriteString("action_source"u8, "GROUP_MALL");
+            w.WriteString("attribution_id_v2"u8, PayloadBuilder.CreateAttributionIdV2("CometGroupDiscussionRoot.react", "comet.fbweb.CometGroupDiscussionRoute"));
             w.WriteString("actor_id"u8, material.Uid);
             w.WriteString("client_mutation_id"u8, "1");
             w.WriteString("group_id"u8, groupId);
             w.WriteString("source"u8, "group_mall");
             w.WriteEndObject();
+            w.WriteBoolean("inviteShortLinkKey"u8, false);
+            w.WriteBoolean("isChainingRecommendationUnit"u8, false);
+            w.WriteBoolean("isEntityMenu"u8, false);
             w.WriteNumber("scale"u8, 2);
+            w.WriteString("source"u8, "GROUP_MALL");
+            w.WriteBoolean("renderLocation"u8, false);
         });
 
         GraphQlRequest request = new(
@@ -179,7 +248,8 @@ public sealed partial class CometClient
             VariablesJson: variablesJson);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
-        string? rawState = ResponseParser.FindFirstStringProperty(res, "viewer_join_state");
+        string? rawState = ResponseParser.FindFirstStringProperty(res, "viewer_join_state")
+            ?? ResponseParser.FindFirstStringProperty(res, "join_state");
         return ResponseParser.MapGroupMembershipState(rawState);
     }
 
@@ -199,7 +269,7 @@ public sealed partial class CometClient
             FriendlyName: ProtocolConstants.Queries.GroupQuestionsName,
             DocId: ProtocolConstants.Queries.GroupQuestionsDocId,
             VariablesJson: variablesJson,
-            PreNavigateUrl: $"/{groupId}");
+            PreNavigateUrl: $"/groups/{groupId}");
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.ParseGroupQuestions(res);

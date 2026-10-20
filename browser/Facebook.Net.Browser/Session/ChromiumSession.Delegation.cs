@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Browser.Protocol;
@@ -60,7 +61,14 @@ public sealed partial class ChromiumSession
             })()
             """;
 
-        return await this.EvaluateStringAsync(fetchJs, awaitPromise: true, ct).ConfigureAwait(false);
+        try
+        {
+            return await this.EvaluateStringAsync(fetchJs, awaitPromise: true, ct).ConfigureAwait(false);
+        }
+        catch (ProtocolException) when (this.CurrentMaterial is not null && !ct.IsCancellationRequested)
+        {
+            return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -354,4 +362,80 @@ public sealed partial class ChromiumSession
 
         return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
     }
+
+    private async Task<DomMaterialSnapshot?> TryFetchMaterialFromHttpHtmlAsync(
+        string cookieHeader,
+        string? userAgent,
+        CancellationToken ct)
+    {
+        try
+        {
+            HttpClient client = this.GetOrCreateDetachedHttpClient();
+            string resolvedUa = !string.IsNullOrWhiteSpace(userAgent)
+                ? userAgent
+                : ProtocolConstants.Protocol.DefaultWindowsUserAgent;
+
+            using HttpRequestMessage req = new(HttpMethod.Get, string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/"));
+            _ = req.Headers.TryAddWithoutValidation("User-Agent", resolvedUa);
+            _ = req.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+            _ = req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "document");
+            _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
+            _ = req.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "none");
+
+            using HttpResponseMessage resp = await client.SendAsync(req, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            string html = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            Match dtsgMatch = DtsgInitialDataRegex().Match(html);
+            if (!dtsgMatch.Success)
+            {
+                dtsgMatch = FbDtsgPropertyRegex().Match(html);
+            }
+
+            if (!dtsgMatch.Success || string.IsNullOrWhiteSpace(dtsgMatch.Groups[1].Value))
+            {
+                return null;
+            }
+
+            Match lsdMatch = LsdTokenRegex().Match(html);
+            Match revMatch = ClientRevisionRegex().Match(html);
+            Match hsMatch = HasteSessionRegex().Match(html);
+            Match uidMatch = UserIdRegex().Match(html);
+
+            return new DomMaterialSnapshot(
+                Uid: uidMatch.Success ? uidMatch.Groups[1].Value : this.AccountUid,
+                FbDtsg: dtsgMatch.Groups[1].Value,
+                Lsd: lsdMatch.Success ? lsdMatch.Groups[1].Value : string.Empty,
+                ClientRevision: revMatch.Success ? revMatch.Groups[1].Value : "1020000000",
+                HasteSession: hsMatch.Success ? hsMatch.Groups[1].Value : "20745.HYP:comet_pkg.2.1...1",
+                WebSessionId: string.Concat(Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6]),
+                UserAgent: resolvedUa);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [GeneratedRegex(@"DTSGInit(?:ial)?Data[""\]]*\s*,\s*\[\]\s*,\s*\{[^}]*""token""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex DtsgInitialDataRegex();
+
+    [GeneratedRegex(@"""fb_dtsg""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex FbDtsgPropertyRegex();
+
+    [GeneratedRegex(@"""LSD""\s*,\s*\[\]\s*,\s*\{[^}]*""token""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex LsdTokenRegex();
+
+    [GeneratedRegex(@"""client_revision""\s*:\s*(\d+)", RegexOptions.CultureInvariant)]
+    private static partial Regex ClientRevisionRegex();
+
+    [GeneratedRegex(@"""haste_session""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex HasteSessionRegex();
+
+    [GeneratedRegex(@"""USER_ID""\s*:\s*""(\d+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex UserIdRegex();
 }

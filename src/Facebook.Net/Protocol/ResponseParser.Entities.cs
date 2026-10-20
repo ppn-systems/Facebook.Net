@@ -13,25 +13,33 @@ public static partial class ResponseParser
 {
     /// <summary>
     /// Extracts feed or group <see cref="PostSummary"/> items from a <see cref="GraphQlResult"/>.
+    /// Merges fields across multiple Relay fragments sharing the same <c>post_id</c> so partial
+    /// header/composer fragments never shadow full story message and author fragments.
     /// </summary>
     public static PagedResult<PostSummary> ParsePosts(GraphQlResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        List<PostSummary> posts = new();
-        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        List<string> orderedIds = new();
+        Dictionary<string, PostSummary> postsById = new(StringComparer.Ordinal);
 
         foreach (string payload in result.JsonPayloads)
         {
             try
             {
                 using JsonDocument doc = JsonDocument.Parse(payload);
-                CollectPostsRecursive(doc.RootElement, posts, seenIds);
+                CollectPostsRecursive(doc.RootElement, orderedIds, postsById);
             }
             catch (JsonException)
             {
                 // Skip invalid chunk
             }
+        }
+
+        List<PostSummary> posts = new(orderedIds.Count);
+        for (int i = 0; i < orderedIds.Count; i++)
+        {
+            posts.Add(postsById[orderedIds[i]]);
         }
 
         return new PagedResult<PostSummary>(posts, result.NextCursor, result.HasNextPage);
@@ -113,7 +121,10 @@ public static partial class ResponseParser
         return questions;
     }
 
-    private static void CollectPostsRecursive(JsonElement element, List<PostSummary> posts, HashSet<string> seenIds)
+    private static void CollectPostsRecursive(
+        JsonElement element,
+        List<string> orderedIds,
+        Dictionary<string, PostSummary> postsById)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -121,43 +132,91 @@ public static partial class ResponseParser
                 postIdEl.ValueKind == JsonValueKind.String)
             {
                 string? postId = postIdEl.GetString();
-                if (!string.IsNullOrWhiteSpace(postId) && seenIds.Add(postId))
+                if (!string.IsNullOrWhiteSpace(postId))
                 {
                     string? text = FindPostMessageText(element);
-                    string authorUid = FindActorUid(element) ?? string.Empty;
+                    string? authorUid = FindActorUid(element);
                     string? authorName = FindActorName(element);
-                    string? permalink = FindStringRecursive(element, "wwwURL")
-                        ?? string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/", postId);
+                    string? wwwUrl = FindStringRecursive(element, "wwwURL");
                     int reactionCount = FindNestedCount(element, "reaction_count");
                     int commentCount = FindNestedCount(element, "total_comment_count");
                     DateTimeOffset? createdAt = FindCreationTime(element);
 
-                    posts.Add(new PostSummary(postId, authorUid, authorName, text, permalink, reactionCount, commentCount, createdAt));
+                    if (!postsById.TryGetValue(postId, out PostSummary? existing))
+                    {
+                        orderedIds.Add(postId);
+                        string permalink = !string.IsNullOrWhiteSpace(wwwUrl)
+                            ? wwwUrl
+                            : string.Concat(ProtocolConstants.Endpoints.BaseOrigin, "/", postId);
+
+                        postsById[postId] = new PostSummary(
+                            postId,
+                            authorUid ?? string.Empty,
+                            authorName,
+                            text,
+                            permalink,
+                            reactionCount,
+                            commentCount,
+                            createdAt);
+                    }
+                    else
+                    {
+                        string mergedAuthorUid = !string.IsNullOrWhiteSpace(existing.AuthorUid)
+                            ? existing.AuthorUid
+                            : (authorUid ?? string.Empty);
+                        string? mergedAuthorName = !string.IsNullOrWhiteSpace(existing.AuthorName)
+                            ? existing.AuthorName
+                            : authorName;
+                        string? mergedText = !string.IsNullOrWhiteSpace(text) &&
+                            (string.IsNullOrWhiteSpace(existing.MessageText) || text.Length > existing.MessageText.Length)
+                            ? text
+                            : existing.MessageText;
+                        string? mergedPermalink = !string.IsNullOrWhiteSpace(wwwUrl)
+                            ? wwwUrl
+                            : existing.PermalinkUrl;
+                        int mergedReactions = Math.Max(existing.ReactionCount, reactionCount);
+                        int mergedComments = Math.Max(existing.CommentCount, commentCount);
+                        DateTimeOffset? mergedCreatedAt = existing.CreatedAt ?? createdAt;
+
+                        postsById[postId] = new PostSummary(
+                            postId,
+                            mergedAuthorUid,
+                            mergedAuthorName,
+                            mergedText,
+                            mergedPermalink,
+                            mergedReactions,
+                            mergedComments,
+                            mergedCreatedAt);
+                    }
                 }
             }
 
             foreach (JsonProperty prop in element.EnumerateObject())
             {
-                CollectPostsRecursive(prop.Value, posts, seenIds);
+                CollectPostsRecursive(prop.Value, orderedIds, postsById);
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
             foreach (JsonElement item in element.EnumerateArray())
             {
-                CollectPostsRecursive(item, posts, seenIds);
+                CollectPostsRecursive(item, orderedIds, postsById);
             }
         }
     }
 
     private static string? FindPostMessageText(JsonElement storyElement)
     {
-        if (storyElement.TryGetProperty("message"u8, out JsonElement msgEl) &&
-            msgEl.ValueKind == JsonValueKind.Object &&
-            msgEl.TryGetProperty("text"u8, out JsonElement txtEl) &&
-            txtEl.ValueKind == JsonValueKind.String)
+        string? messageText = FindNestedContainerText(storyElement, "message");
+        if (!string.IsNullOrWhiteSpace(messageText))
         {
-            return txtEl.GetString();
+            return messageText;
+        }
+
+        string? descriptionText = FindNestedContainerText(storyElement, "description");
+        if (!string.IsNullOrWhiteSpace(descriptionText))
+        {
+            return descriptionText;
         }
 
         if (storyElement.TryGetProperty("comet_sections"u8, out JsonElement sectionsEl))
@@ -168,16 +227,39 @@ public static partial class ResponseParser
         return null;
     }
 
-    private static string? FindActorUid(JsonElement storyElement)
+    private static string? FindNestedContainerText(JsonElement element, string containerPropertyName)
     {
-        if (storyElement.TryGetProperty("actors"u8, out JsonElement actorsEl) &&
-            actorsEl.ValueKind == JsonValueKind.Array)
+        if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (JsonElement actor in actorsEl.EnumerateArray())
+            if (element.TryGetProperty(containerPropertyName, out JsonElement containerEl) &&
+                containerEl.ValueKind == JsonValueKind.Object &&
+                containerEl.TryGetProperty("text"u8, out JsonElement txtEl) &&
+                txtEl.ValueKind == JsonValueKind.String)
             {
-                if (actor.TryGetProperty("id"u8, out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String)
+                string? val = txtEl.GetString();
+                if (!string.IsNullOrWhiteSpace(val))
                 {
-                    return idEl.GetString();
+                    return val;
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                string? nested = FindNestedContainerText(prop.Value, containerPropertyName);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? nested = FindNestedContainerText(item, containerPropertyName);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
                 }
             }
         }
@@ -185,16 +267,51 @@ public static partial class ResponseParser
         return null;
     }
 
-    private static string? FindActorName(JsonElement storyElement)
+    private static string? FindActorUid(JsonElement storyElement) =>
+        FindActorPropertyRecursive(storyElement, "id");
+
+    private static string? FindActorName(JsonElement storyElement) =>
+        FindActorPropertyRecursive(storyElement, "name");
+
+    private static string? FindActorPropertyRecursive(JsonElement element, string actorField)
     {
-        if (storyElement.TryGetProperty("actors"u8, out JsonElement actorsEl) &&
-            actorsEl.ValueKind == JsonValueKind.Array)
+        if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (JsonElement actor in actorsEl.EnumerateArray())
+            if (element.TryGetProperty("actors"u8, out JsonElement actorsEl) &&
+                actorsEl.ValueKind == JsonValueKind.Array)
             {
-                if (actor.TryGetProperty("name"u8, out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                foreach (JsonElement actor in actorsEl.EnumerateArray())
                 {
-                    return nameEl.GetString();
+                    if (actor.ValueKind == JsonValueKind.Object &&
+                        actor.TryGetProperty(actorField, out JsonElement fieldEl) &&
+                        fieldEl.ValueKind == JsonValueKind.String)
+                    {
+                        string? val = fieldEl.GetString();
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            return val;
+                        }
+                    }
+                }
+            }
+
+            foreach (JsonProperty prop in element.EnumerateObject())
+            {
+                string? nested = FindActorPropertyRecursive(prop.Value, actorField);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? nested = FindActorPropertyRecursive(item, actorField);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
                 }
             }
         }

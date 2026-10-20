@@ -168,6 +168,10 @@ public sealed partial class ShellViewModel
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await this._context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
         this.TargetGroups.ReplaceAll(storedGroups);
+        if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
+        {
+            this.SelectedTargetGroup = this.TargetGroups[0];
+        }
 
         // Only seed _allCatalogGroups and JoinedGroups from storedGroups if no live catalog has been loaded yet
         if (this._allCatalogGroups.Count == 0)
