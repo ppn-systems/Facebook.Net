@@ -449,7 +449,7 @@
   "Audit.FilterCatTimeRange": "Khoảng thời gian",
   "Audit.FilterCatAccount": "Tài khoản",
 
-  "Settings.TabStorage": "Dung lượng & Bộ nhớ",
+  "Settings.TabStorage": "Dung lượng",
   "Settings.BtnRescanBrowsers": "Quét lại",
   "Settings.BrowserDetectedPrefix": "Trình duyệt phát hiện trên máy",
   "Settings.BrowserNotDetectedWarning": "Chưa phát hiện trình duyệt tương thích tại đường dẫn mặc định",
@@ -461,7 +461,7 @@
   "Settings.BtnCreateProfile": "+ Tạo Profile mới",
   "Settings.LogProfileAssigned": "Đã gắn hồ sơ trình duyệt '{0}' cho tài khoản '{1}'.",
 
-  "Storage.Header": "Theo dõi Dung lượng Lưu trữ & Bộ nhớ Hệ thống",
+  "Storage.Header": "Theo dõi Dung lượng Lưu trữ Hệ thống",
   "Storage.Desc": "Thống kê chi tiết dung lượng đĩa đang sử dụng bởi cơ sở dữ liệu SQLite, các hồ sơ trình duyệt và bộ nhớ đệm với biểu đồ tròn trực quan.",
   "Storage.BtnRefresh": "Quét lại dung lượng",
   "Storage.BtnCleanCache": "Dọn bộ nhớ đệm trình duyệt",
