@@ -214,6 +214,15 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
         }
 
+        public Task<PagedResult<PostSummary>> GetTimelinePostsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
+        {
+            List<PostSummary> items =
+            [
+                new PostSummary("tl_1", session.AccountUid, "Nick Bán Hàng Chủ Lực", "Bài đăng trang cá nhân số 1", "https://www.facebook.com/posts/tl_1", 15, 4, DateTimeOffset.UtcNow)
+            ];
+            return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
+        }
+
         public Task<PostSummary?> GetSinglePostAsync(IBrowserSession session, string postId, CancellationToken ct = default) =>
             Task.FromResult<PostSummary?>(new PostSummary(postId, "1001", "Alice", "Full post text", null, 1, 1, null));
 
@@ -398,6 +407,34 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         // Duplicate comment prevention check
         await vm.SendSalesCommentOnSelectedPostCommand.ExecuteAsync(null);
         Assert.Equal(3, cometClient.CreatedCommentsCount);
+
+        // 7. Custom Color Group Tags + Tag Filtering + 1-Click Tag Selection
+        Assert.True(vm.GroupTags.Count >= 5);
+        vm.NewGroupTagName = "Nhóm BĐS VIP";
+        vm.NewGroupTagColorHex = "#EC4899";
+        await vm.CreateGroupTagAsync();
+        GroupTag? customTag = null;
+        for (int i = 0; i < vm.GroupTags.Count; i++)
+        {
+            if (vm.GroupTags[i].Name == "Nhóm BĐS VIP")
+            {
+                customTag = vm.GroupTags[i];
+                break;
+            }
+        }
+
+        Assert.NotNull(customTag);
+        await vm.ToggleGroupTagAsync("grp_101", "Chợ Cư Dân Vinhomes", null, customTag.Id);
+        SavedTargetGroup? taggedGrp = vm.FindTargetGroupById("grp_101");
+        Assert.NotNull(taggedGrp);
+        Assert.True(taggedGrp.HasTag(customTag.Id));
+
+        // 8. Sync Personal Profile Timeline Posts & Repost to Groups
+        await vm.SyncPersonalTimelinePostsAsync();
+        Assert.Contains(vm.PublishedPosts, p => p.PostId == "tl_1" && p.IsPersonalProfilePost);
+        vm.SelectedPublishedPost = vm.PublishedPosts[0];
+        await vm.RepostSelectedPostToGroupsAsync();
+        Assert.True(vm.PublishedPosts.Count >= 3);
     }
 
     [Fact]

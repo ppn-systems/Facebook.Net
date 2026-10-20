@@ -50,7 +50,7 @@ public sealed partial class ChromiumSession
                     const lines = [];
                     for (const s of scripts) {
                         const t = s.textContent;
-                        if (t && (t.includes('"post_id"') || t.includes('"Story"') || t.includes('"comet_sections"') || t.includes('"page_info"'))) {
+                        if (t && (t.includes('"post_id"') || t.includes('"Story"') || t.includes('"comet_sections"') || t.includes('"page_info"') || t.includes('"Group"') || t.includes('"viewer_join_state"') || t.includes('"timeline_list_feed_units"'))) {
                             lines.push(t.trim());
                         }
                     }
@@ -463,21 +463,75 @@ public sealed partial class ChromiumSession
             Match revMatch = ClientRevisionRegex().Match(html);
             Match hsMatch = HasteSessionRegex().Match(html);
             Match uidMatch = UserIdRegex().Match(html);
+            string resolvedUid = uidMatch.Success ? uidMatch.Groups[1].Value : this.AccountUid;
+
+            Match nameMatch = CurrentUserNameRegex().Match(html);
+            if (!nameMatch.Success)
+            {
+                nameMatch = FallbackNamePropertyRegex().Match(html);
+            }
+
+            string? displayName = null;
+            if (nameMatch.Success && !string.IsNullOrWhiteSpace(nameMatch.Groups[1].Value))
+            {
+                displayName = UnescapeJsonString(nameMatch.Groups[1].Value);
+            }
+
+            string? avatarUrl = null;
+            if (!string.IsNullOrWhiteSpace(resolvedUid))
+            {
+                Match picMatch = Regex.Match(
+                    html,
+                    @"""" + Regex.Escape(resolvedUid) + @"""[^}]{0,400}""profile_picture""\s*:\s*\{\s*""uri""\s*:\s*""([^""]+)""",
+                    RegexOptions.CultureInvariant);
+                if (!picMatch.Success)
+                {
+                    picMatch = ViewerProfilePictureRegex().Match(html);
+                }
+
+                if (picMatch.Success && !string.IsNullOrWhiteSpace(picMatch.Groups[1].Value))
+                {
+                    avatarUrl = UnescapeJsonString(picMatch.Groups[1].Value);
+                }
+            }
 
             return new DomMaterialSnapshot(
-                Uid: uidMatch.Success ? uidMatch.Groups[1].Value : this.AccountUid,
+                Uid: resolvedUid,
                 FbDtsg: dtsgMatch.Groups[1].Value,
                 Lsd: lsdMatch.Success ? lsdMatch.Groups[1].Value : string.Empty,
                 ClientRevision: revMatch.Success ? revMatch.Groups[1].Value : "1020000000",
                 HasteSession: hsMatch.Success ? hsMatch.Groups[1].Value : "20745.HYP:comet_pkg.2.1...1",
                 WebSessionId: string.Concat(Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6], ":", Guid.NewGuid().ToString("N")[..6]),
-                UserAgent: resolvedUa);
+                UserAgent: resolvedUa,
+                DisplayName: displayName,
+                AvatarUrl: avatarUrl);
         }
         catch
         {
             return null;
         }
     }
+
+    private static string UnescapeJsonString(string rawEscaped)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(string.Concat("\"", rawEscaped, "\""), ContractsJsonContext.Default.String) ?? rawEscaped;
+        }
+        catch
+        {
+            return rawEscaped.Replace("\\/", "/", StringComparison.Ordinal);
+        }
+    }
+
+    [GeneratedRegex(@"""CurrentUserInitialData""\s*,\s*\[\]\s*,\s*\{[^}]*""NAME""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex CurrentUserNameRegex();
+
+    [GeneratedRegex(@"""NAME""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex FallbackNamePropertyRegex();
+
+    [GeneratedRegex(@"""viewer""\s*:\s*\{[^}]{0,400}""profile_picture""\s*:\s*\{\s*""uri""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex ViewerProfilePictureRegex();
 
     [GeneratedRegex(@"DTSGInit(?:ial)?Data[""\]]*\s*,\s*\[\]\s*,\s*\{[^}]*""token""\s*:\s*""([^""]+)""", RegexOptions.CultureInvariant)]
     private static partial Regex DtsgInitialDataRegex();
@@ -516,7 +570,10 @@ public sealed partial class ChromiumSession
                 (json.Contains("\"post_id\"", StringComparison.Ordinal) ||
                  json.Contains("\"Story\"", StringComparison.Ordinal) ||
                  json.Contains("\"comet_sections\"", StringComparison.Ordinal) ||
-                 json.Contains("\"page_info\"", StringComparison.Ordinal)))
+                 json.Contains("\"page_info\"", StringComparison.Ordinal) ||
+                 json.Contains("\"Group\"", StringComparison.Ordinal) ||
+                 json.Contains("\"viewer_join_state\"", StringComparison.Ordinal) ||
+                 json.Contains("\"timeline_list_feed_units\"", StringComparison.Ordinal)))
             {
                 if (sb.Length > 0)
                 {

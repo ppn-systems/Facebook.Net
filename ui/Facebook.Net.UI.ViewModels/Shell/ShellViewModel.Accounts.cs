@@ -209,7 +209,9 @@ public sealed partial class ShellViewModel
             this.SelectedGroup = this.JoinedGroups[0];
         }
 
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+        await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
         await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
         this.SyncBackgroundScraperLoop();
     }
@@ -432,13 +434,16 @@ public sealed partial class ShellViewModel
             string realUid = isHealthy ? material.Uid : current.Uid;
             string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
             bool isDefaultPlaceholder =
-                current.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
-                current.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
-                current.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+                current.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
 
-            string displayName = isDefaultPlaceholder && isHealthy
-                ? $"Tài khoản {suffix}"
-                : current.DisplayName;
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder && isHealthy
+                    ? $"Tài khoản {suffix}"
+                    : current.DisplayName);
 
             AccountProfile checkedProfile = current with
             {
@@ -447,7 +452,8 @@ public sealed partial class ShellViewModel
                 CookieHeader = !string.IsNullOrWhiteSpace(material.CookieHeader) ? material.CookieHeader : current.CookieHeader,
                 UserAgent = !string.IsNullOrWhiteSpace(material.UserAgent) ? material.UserAgent : current.UserAgent,
                 Status = resolvedStatus,
-                LastActiveAt = DateTimeOffset.UtcNow
+                LastActiveAt = DateTimeOffset.UtcNow,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : current.AvatarUrl
             };
 
             if (!string.Equals(current.Uid, realUid, StringComparison.Ordinal))
@@ -576,13 +582,16 @@ public sealed partial class ShellViewModel
             string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
             string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
             bool isDefaultPlaceholder =
-                account.DisplayName.StartsWith("Tài khoản Đăng nhập", StringComparison.Ordinal) ||
-                account.DisplayName.StartsWith("Browser Login", StringComparison.Ordinal) ||
-                account.DisplayName.StartsWith("Facebook Login", StringComparison.Ordinal);
+                account.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
 
-            string displayName = isDefaultPlaceholder
-                ? $"{this._context.Localization["Accounts.DefaultImportedName"]} {suffix}"
-                : account.DisplayName;
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder
+                    ? $"{this._context.Localization["Accounts.DefaultImportedName"]} {suffix}"
+                    : account.DisplayName);
 
             AccountProfile updated = account with
             {
@@ -591,7 +600,8 @@ public sealed partial class ShellViewModel
                 CookieHeader = material.CookieHeader,
                 UserAgent = material.UserAgent,
                 Status = AccountStatus.Active,
-                LastActiveAt = material.ExtractedAt
+                LastActiveAt = material.ExtractedAt,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : account.AvatarUrl
             };
 
             if (!string.Equals(account.Uid, realUid, StringComparison.Ordinal))

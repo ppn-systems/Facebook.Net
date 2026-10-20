@@ -335,15 +335,32 @@ public sealed partial class MainWindow : Window
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            acc => SectionHeader.CreateLabel(
-                this._theme,
-                $"{acc.DisplayName} — {this._i18n.FormatAccountStatus(acc.Status)}",
-                12,
-                FontWeight.Medium),
+            acc =>
+            {
+                Grid itemRow = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Border av = AvatarBadge.Create(this._theme, acc.DisplayName, 20, acc.AvatarUrl);
+                TextBlock tb = SectionHeader.CreateLabel(
+                    this._theme,
+                    $"{acc.DisplayName} — {this._i18n.FormatAccountStatus(acc.Status)}",
+                    12,
+                    FontWeight.SemiBold);
+                tb.MaxLines = 1;
+                tb.TextTrimming = TextTrimming.CharacterEllipsis;
+                Grid.SetColumn(av, 0);
+                Grid.SetColumn(tb, 1);
+                itemRow.Children.Add(av);
+                itemRow.Children.Add(tb);
+                return itemRow;
+            },
             selectedItem: this._vm.SelectedAccount,
             placeholderText: this._i18n["TopBar.NoAccount"]);
-        activeAccCombo.MinWidth = 195;
-        activeAccCombo.MaxWidth = 230;
+        activeAccCombo.MinWidth = 215;
+        activeAccCombo.MaxWidth = 265;
         activeAccCombo.Height = 32;
         AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
         ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);

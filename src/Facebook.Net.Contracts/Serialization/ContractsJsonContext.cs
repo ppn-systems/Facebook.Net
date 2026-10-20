@@ -28,6 +28,8 @@ namespace Facebook.Net.Contracts.Serialization;
 [JsonSerializable(typeof(NotificationItem))]
 [JsonSerializable(typeof(ManagedPageSummary))]
 [JsonSerializable(typeof(SavedTargetGroup))]
+[JsonSerializable(typeof(GroupTag))]
+[JsonSerializable(typeof(PublishedPostRecord))]
 [JsonSerializable(typeof(CampaignTemplate))]
 [JsonSerializable(typeof(ActionHistoryEntry))]
 [JsonSerializable(typeof(SessionStateChangedEvent))]

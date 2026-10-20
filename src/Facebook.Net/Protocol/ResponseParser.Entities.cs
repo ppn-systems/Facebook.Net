@@ -442,7 +442,8 @@ public static partial class ResponseParser
         string? messageText = FindNestedContainerText(storyElement, "message")
             ?? FindNestedContainerText(storyElement, "description")
             ?? FindNestedContainerText(storyElement, "card_description")
-            ?? FindNestedContainerText(storyElement, "translation");
+            ?? FindNestedContainerText(storyElement, "translation")
+            ?? FindNestedContainerText(storyElement, "value");
 
         if (!string.IsNullOrWhiteSpace(listingTitle) && !string.IsNullOrWhiteSpace(messageText))
         {

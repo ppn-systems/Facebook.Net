@@ -38,7 +38,7 @@ public static class AccountRowCard
             Margin = new Thickness(4, 4)
         };
 
-        Border avatar = AvatarBadge.Create(theme, item.DisplayName, 34);
+        Border avatar = AvatarBadge.Create(theme, item.DisplayName, 34, item.AvatarUrl);
         Grid.SetColumn(avatar, 0);
 
         string FormatSubInfo()

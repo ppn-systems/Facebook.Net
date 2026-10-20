@@ -33,12 +33,26 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string GroupFilterText { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the name input for creating a new custom color-coded group tag.</summary>
+    [ObservableProperty]
+    public partial string NewGroupTagName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the selected color hex (<c>#RRGGBB</c>) when creating a new group tag.</summary>
+    [ObservableProperty]
+    public partial string NewGroupTagColorHex { get; set; } = "#F6821F";
+
+    /// <summary>Gets or sets the currently active tag filter ID on the Groups page (<see langword="null"/> = all tags).</summary>
+    [ObservableProperty]
+    public partial string? ActiveTagFilterId { get; set; }
+
     private readonly System.Collections.Generic.List<GroupSummary> _allCatalogGroups = new();
+    private GroupMembershipState? _activeStateFilter;
 
     /// <summary>
-    /// Filters the displayed <see cref="JoinedGroups"/> catalog locally by <see cref="GroupFilterText"/>.
+    /// Filters the displayed <see cref="JoinedGroups"/> catalog locally by <see cref="GroupFilterText"/>,
+    /// optional membership state, and optional tag filter.
     /// </summary>
-    public void ApplyLocalGroupFilter(string? filterText)
+    public void ApplyLocalGroupFilter(string? filterText, GroupMembershipState? stateFilter = null, string? tagIdFilter = "__KEEP__")
     {
         if (this._allCatalogGroups.Count == 0 && this.JoinedGroups.Count > 0)
         {
@@ -48,10 +62,26 @@ public sealed partial class ShellViewModel
             }
         }
 
-        this.GroupFilterText = filterText ?? string.Empty;
-        string kw = this.GroupFilterText.Trim();
+        if (filterText is not null)
+        {
+            this.GroupFilterText = filterText;
+        }
 
-        if (string.IsNullOrWhiteSpace(kw))
+        if (stateFilter.HasValue || filterText is null)
+        {
+            this._activeStateFilter = stateFilter;
+        }
+
+        if (!string.Equals(tagIdFilter, "__KEEP__", StringComparison.Ordinal))
+        {
+            this.ActiveTagFilterId = tagIdFilter;
+        }
+
+        string kw = this.GroupFilterText.Trim();
+        GroupMembershipState? state = this._activeStateFilter;
+        string? tagId = this.ActiveTagFilterId;
+
+        if (string.IsNullOrWhiteSpace(kw) && state is null && string.IsNullOrWhiteSpace(tagId))
         {
             this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
             return;
@@ -61,13 +91,352 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < this._allCatalogGroups.Count; i++)
         {
             GroupSummary grp = this._allCatalogGroups[i];
-            if (grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            if (state.HasValue)
             {
-                filtered.Add(grp);
+                if (state.Value == GroupMembershipState.Member && grp.MembershipState != GroupMembershipState.Member)
+                {
+                    continue;
+                }
+
+                if (state.Value == GroupMembershipState.CanJoin && grp.MembershipState == GroupMembershipState.Member)
+                {
+                    continue;
+                }
             }
+
+            if (!string.IsNullOrWhiteSpace(tagId))
+            {
+                SavedTargetGroup? tg = this.FindTargetGroupById(grp.GroupId);
+                if (tg is null || !tg.HasTag(tagId))
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(kw) && !grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            filtered.Add(grp);
         }
 
         this.JoinedGroups.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Finds a saved target group by <paramref name="groupId"/> if present.
+    /// </summary>
+    public SavedTargetGroup? FindTargetGroupById(string? groupId)
+    {
+        if (string.IsNullOrWhiteSpace(groupId))
+        {
+            return null;
+        }
+
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            if (string.Equals(this.TargetGroups[i].GroupId, groupId, StringComparison.Ordinal))
+            {
+                return this.TargetGroups[i];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the list of resolved <see cref="GroupTag"/> badges assigned to a group.
+    /// </summary>
+    public System.Collections.Generic.IReadOnlyList<GroupTag> GetGroupTagsForGroup(string? groupId)
+    {
+        SavedTargetGroup? tg = this.FindTargetGroupById(groupId);
+        if (tg is null || string.IsNullOrWhiteSpace(tg.TagsCsv))
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        System.Collections.Generic.IReadOnlyList<string> tagIds = tg.GetTagIds();
+        if (tagIds.Count == 0)
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        System.Collections.Generic.List<GroupTag> resolved = new(tagIds.Count);
+        for (int i = 0; i < tagIds.Count; i++)
+        {
+            string id = tagIds[i];
+            for (int j = 0; j < this.GroupTags.Count; j++)
+            {
+                if (string.Equals(this.GroupTags[j].Id, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    resolved.Add(this.GroupTags[j]);
+                    break;
+                }
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Creates a new color-coded <see cref="GroupTag"/> and persists it to SQLite.
+    /// </summary>
+    public async Task CreateGroupTagAsync()
+    {
+        string name = this.NewGroupTagName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        string color = string.IsNullOrWhiteSpace(this.NewGroupTagColorHex) ? "#F6821F" : this.NewGroupTagColorHex.Trim();
+        GroupTag tag = new(
+            Id: $"tag_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+            Name: name,
+            ColorHex: color);
+
+        await this._context.AccountStore.UpsertGroupTagAsync(tag).ConfigureAwait(true);
+        this.NewGroupTagName = string.Empty;
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Group,
+            AuditSeverity.Success,
+            tag.Name,
+            this._context.Localization.Format("Log.GroupTagCreated", tag.Name)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Deletes a <see cref="GroupTag"/> from SQLite and removes it from any tagged groups.
+    /// </summary>
+    public async Task DeleteGroupTagAsync(GroupTag? tag)
+    {
+        if (tag is null)
+        {
+            return;
+        }
+
+        _ = await this._context.AccountStore.DeleteGroupTagAsync(tag.Id).ConfigureAwait(true);
+
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (tg.HasTag(tag.Id))
+            {
+                System.Collections.Generic.List<string> remaining = new();
+                System.Collections.Generic.IReadOnlyList<string> currentIds = tg.GetTagIds();
+                for (int j = 0; j < currentIds.Count; j++)
+                {
+                    if (!string.Equals(currentIds[j], tag.Id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        remaining.Add(currentIds[j]);
+                    }
+                }
+
+                SavedTargetGroup updated = tg with { TagsCsv = remaining.Count > 0 ? string.Join(',', remaining) : null };
+                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                this.TargetGroups[i] = updated;
+            }
+        }
+
+        if (string.Equals(this.ActiveTagFilterId, tag.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            this.ActiveTagFilterId = null;
+        }
+
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Toggles a <paramref name="tagId"/> on a group and persists the change to SQLite.
+    /// </summary>
+    public async Task ToggleGroupTagAsync(string groupId, string groupName, string? avatarUrl, string tagId)
+    {
+        if (string.IsNullOrWhiteSpace(groupId) || string.IsNullOrWhiteSpace(tagId))
+        {
+            return;
+        }
+
+        SavedTargetGroup existing = this.FindTargetGroupById(groupId)
+            ?? new SavedTargetGroup(groupId, groupName, IsEnabled: true, Notes: null, AvatarUrl: avatarUrl, TagsCsv: null);
+
+        System.Collections.Generic.List<string> ids = [.. existing.GetTagIds()];
+        bool removed = false;
+        for (int i = ids.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(ids[i], tagId, StringComparison.OrdinalIgnoreCase))
+            {
+                ids.RemoveAt(i);
+                removed = true;
+            }
+        }
+
+        if (!removed)
+        {
+            ids.Add(tagId);
+        }
+
+        SavedTargetGroup updated = existing with
+        {
+            GroupName = !string.IsNullOrWhiteSpace(groupName) ? groupName : existing.GroupName,
+            AvatarUrl = existing.AvatarUrl ?? avatarUrl,
+            TagsCsv = ids.Count > 0 ? string.Join(',', ids) : null
+        };
+
+        await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+
+        bool foundInList = false;
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            if (string.Equals(this.TargetGroups[i].GroupId, groupId, StringComparison.Ordinal))
+            {
+                this.TargetGroups[i] = updated;
+                foundInList = true;
+                break;
+            }
+        }
+
+        if (!foundInList)
+        {
+            this.TargetGroups.Add(updated);
+        }
+    }
+
+    /// <summary>
+    /// Batch-assigns <paramref name="tagId"/> to all currently displayed <see cref="JoinedGroups"/>.
+    /// </summary>
+    public async Task AssignTagToFilteredGroupsAsync(string tagId)
+    {
+        if (string.IsNullOrWhiteSpace(tagId) || this.JoinedGroups.Count == 0)
+        {
+            return;
+        }
+
+        int taggedCount = 0;
+        for (int i = 0; i < this.JoinedGroups.Count; i++)
+        {
+            GroupSummary grp = this.JoinedGroups[i];
+            SavedTargetGroup? tg = this.FindTargetGroupById(grp.GroupId);
+            if (tg is null || !tg.HasTag(tagId))
+            {
+                await this.ToggleGroupTagAsync(grp.GroupId, grp.Name, grp.AvatarUrl, tagId).ConfigureAwait(true);
+                taggedCount++;
+            }
+        }
+
+        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        _ = await this.LogAuditAsync(
+            AuditCategory.Group,
+            AuditSeverity.Success,
+            this._context.Localization["Audit.Cat.Group"],
+            this._context.Localization.Format("Log.BatchTaggedGroups", taggedCount)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Enables or disables all target groups that carry the specified <paramref name="tagId"/>.
+    /// If all groups with <paramref name="tagId"/> are already enabled, toggles them off; otherwise enables them.
+    /// </summary>
+    public async Task ToggleSelectTargetGroupsByTagAsync(string tagId)
+    {
+        if (string.IsNullOrWhiteSpace(tagId))
+        {
+            return;
+        }
+
+        int totalWithTag = 0;
+        int enabledWithTag = 0;
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            if (this.TargetGroups[i].HasTag(tagId))
+            {
+                totalWithTag++;
+                if (this.TargetGroups[i].IsEnabled)
+                {
+                    enabledWithTag++;
+                }
+            }
+        }
+
+        if (totalWithTag == 0)
+        {
+            return;
+        }
+
+        bool targetState = enabledWithTag < totalWithTag;
+        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (tg.HasTag(tagId) && tg.IsEnabled != targetState)
+            {
+                SavedTargetGroup updated = tg with { IsEnabled = targetState };
+                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                nextList.Add(updated);
+            }
+            else
+            {
+                nextList.Add(tg);
+            }
+        }
+
+        this.TargetGroups.ReplaceAll(nextList);
+    }
+
+    /// <summary>
+    /// Selects a random subset of <paramref name="randomCount"/> target groups (and unchecks the rest) for anti-spam rotation.
+    /// </summary>
+    public async Task SelectRandomTargetGroupsAsync(int randomCount)
+    {
+        if (this.TargetGroups.Count == 0)
+        {
+            return;
+        }
+
+        int count = Math.Clamp(randomCount, 1, this.TargetGroups.Count);
+        System.Collections.Generic.List<int> indices = new(this.TargetGroups.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            indices.Add(i);
+        }
+
+        for (int i = indices.Count - 1; i > 0; i--)
+        {
+            int swapIdx = Random.Shared.Next(i + 1);
+            (indices[i], indices[swapIdx]) = (indices[swapIdx], indices[i]);
+        }
+
+        System.Collections.Generic.HashSet<int> chosen = new();
+        for (int i = 0; i < count; i++)
+        {
+            _ = chosen.Add(indices[i]);
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            bool shouldEnable = chosen.Contains(i);
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (tg.IsEnabled != shouldEnable)
+            {
+                SavedTargetGroup updated = tg with { IsEnabled = shouldEnable };
+                await this._context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                nextList.Add(updated);
+            }
+            else
+            {
+                nextList.Add(tg);
+            }
+        }
+
+        this.TargetGroups.ReplaceAll(nextList);
+    }
+
+    private async Task ReloadGroupTagsOnlyAsync()
+    {
+        System.Collections.Generic.IReadOnlyList<GroupTag> tags =
+            await this._context.AccountStore.GetAllGroupTagsAsync().ConfigureAwait(true);
+        this.GroupTags.ReplaceAll(tags);
     }
 
     /// <summary>
@@ -145,21 +514,63 @@ public sealed partial class ShellViewModel
     private async Task SyncJoinedGroupsCoreAsync(IBrowserSession session, System.Threading.CancellationToken ct = default)
     {
         PagedResult<GroupSummary> result = await this._context.CometClient
-            .GetJoinedGroupsAsync(session, count: 30, ct: ct)
+            .GetJoinedGroupsAsync(session, count: 500, ct: ct)
             .ConfigureAwait(true);
 
+        if (this.SelectedAccount is not null && session.CurrentMaterial is not null)
+        {
+            SessionMaterial mat = session.CurrentMaterial;
+            bool isGenericName =
+                this.SelectedAccount.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                this.SelectedAccount.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                this.SelectedAccount.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
+
+            string nextName = !string.IsNullOrWhiteSpace(mat.DisplayName) && isGenericName
+                ? mat.DisplayName
+                : this.SelectedAccount.DisplayName;
+            string? nextAvatar = !string.IsNullOrWhiteSpace(mat.AvatarUrl)
+                ? mat.AvatarUrl
+                : this.SelectedAccount.AvatarUrl;
+
+            if (!string.Equals(nextName, this.SelectedAccount.DisplayName, StringComparison.Ordinal) ||
+                !string.Equals(nextAvatar, this.SelectedAccount.AvatarUrl, StringComparison.Ordinal))
+            {
+                AccountProfile updatedAcc = this.SelectedAccount with
+                {
+                    DisplayName = nextName,
+                    AvatarUrl = nextAvatar
+                };
+                await this._context.AccountStore.UpsertAccountAsync(updatedAcc, ct).ConfigureAwait(true);
+                this.SelectedAccount = updatedAcc;
+            }
+        }
+
+        System.Collections.Generic.Dictionary<string, SavedTargetGroup> existingTargets = new(StringComparer.Ordinal);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            existingTargets[this.TargetGroups[i].GroupId] = this.TargetGroups[i];
+        }
+
         this._allCatalogGroups.Clear();
-        this.JoinedGroups.Clear();
+        System.Collections.Generic.List<GroupSummary> nextCatalog = new(result.Items.Count);
         for (int i = 0; i < result.Items.Count; i++)
         {
             GroupSummary group = result.Items[i];
             this._allCatalogGroups.Add(group);
-            this.JoinedGroups.Add(group);
+            nextCatalog.Add(group);
 
-            // Auto-save into SQLite TargetGroups so they persist across app restarts
-            SavedTargetGroup target = new(group.GroupId, group.Name, IsEnabled: true, Notes: null, AvatarUrl: group.AvatarUrl);
+            bool hasExisting = existingTargets.TryGetValue(group.GroupId, out SavedTargetGroup? prev);
+            SavedTargetGroup target = new(
+                group.GroupId,
+                group.Name,
+                IsEnabled: !hasExisting || prev!.IsEnabled,
+                Notes: hasExisting ? prev!.Notes : null,
+                AvatarUrl: group.AvatarUrl ?? prev?.AvatarUrl,
+                TagsCsv: hasExisting ? prev!.TagsCsv : null);
             await this._context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
         }
+
+        this.JoinedGroups.ReplaceAll(nextCatalog);
 
         if (this.JoinedGroups.Count > 0)
         {
@@ -204,16 +615,16 @@ public sealed partial class ShellViewModel
                 this._context.Localization.Format("Log.SearchingGroups", keyword)).ConfigureAwait(true);
 
             PagedResult<GroupSummary> result = await this._context.CometClient
-                .SearchGroupsAsync(session, keyword, count: 15, ct: ct)
+                .SearchGroupsAsync(session, keyword, count: 35, ct: ct)
                 .ConfigureAwait(true);
 
             this._allCatalogGroups.Clear();
-            this.JoinedGroups.Clear();
             for (int i = 0; i < result.Items.Count; i++)
             {
                 this._allCatalogGroups.Add(result.Items[i]);
-                this.JoinedGroups.Add(result.Items[i]);
             }
+
+            this.JoinedGroups.ReplaceAll(this._allCatalogGroups);
 
             if (this.JoinedGroups.Count > 0)
             {

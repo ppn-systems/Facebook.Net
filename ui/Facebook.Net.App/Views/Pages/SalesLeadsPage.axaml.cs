@@ -304,13 +304,19 @@ public sealed partial class SalesLeadsPage : UserControl
                 new DataTableColumn("135", this._i18n["Leads.ColStatus"])
             ],
             this._vm.ScrapedPosts,
-            post => LeadPostTableRow.Create(
-                this._theme,
-                this._i18n,
-                post,
-                ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords),
-                () => this._vm.FormatBuyerIntentBadge(post),
-                this._vm.IsPostCommented(post.PostId)),
+            post =>
+            {
+                PostSummary enriched = string.IsNullOrWhiteSpace(post.GroupAvatarUrl)
+                    ? post with { GroupAvatarUrl = this._vm.FindTargetGroupById(post.GroupId)?.AvatarUrl }
+                    : post;
+                return LeadPostTableRow.Create(
+                    this._theme,
+                    this._i18n,
+                    enriched,
+                    ShellViewModel.CalculateBuyerIntentScore(enriched.MessageText, this._vm.BuyerIntentKeywords),
+                    () => this._vm.FormatBuyerIntentBadge(enriched),
+                    this._vm.IsPostCommented(enriched.PostId));
+            },
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
             this._i18n["Leads.TableTitlePrefix"]);
@@ -430,7 +436,10 @@ public sealed partial class SalesLeadsPage : UserControl
                 ColumnSpacing = 6,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Border grpTinyAvatar = AvatarBadge.Create(this._theme, groupName, 16, post.GroupAvatarUrl);
+            string? resolvedGroupAvatar = !string.IsNullOrWhiteSpace(post.GroupAvatarUrl)
+                ? post.GroupAvatarUrl
+                : this._vm.FindTargetGroupById(post.GroupId)?.AvatarUrl;
+            Border grpTinyAvatar = AvatarBadge.Create(this._theme, groupName, 18, resolvedGroupAvatar);
             TextBlock grpTb = SectionHeader.CreateLabel(this._theme, groupName, 11.5, FontWeight.Medium, isSecondary: true);
             grpTb.MaxLines = 1;
             grpTb.TextTrimming = TextTrimming.CharacterEllipsis;

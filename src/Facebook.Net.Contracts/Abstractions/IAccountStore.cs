@@ -119,4 +119,34 @@ public interface IAccountStore
     /// Deletes scraped posts from the local SQLite database (all posts or only posts for a specific group).
     /// </summary>
     Task<int> ClearScrapedPostsAsync(string? groupId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves all user-defined color-coded group tags.
+    /// </summary>
+    Task<IReadOnlyList<GroupTag>> GetAllGroupTagsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a user-defined group tag.
+    /// </summary>
+    Task UpsertGroupTagAsync(GroupTag tag, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a user-defined group tag by ID.
+    /// </summary>
+    Task<bool> DeleteGroupTagAsync(string tagId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves stored published posts and synchronized personal profile posts.
+    /// </summary>
+    Task<IReadOnlyList<PublishedPostRecord>> GetPublishedPostsAsync(string? accountUid = null, int limit = 200, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a published post or synchronized personal profile post record.
+    /// </summary>
+    Task UpsertPublishedPostAsync(PublishedPostRecord post, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a published post record by ID.
+    /// </summary>
+    Task<bool> DeletePublishedPostAsync(string postId, CancellationToken ct = default);
 }

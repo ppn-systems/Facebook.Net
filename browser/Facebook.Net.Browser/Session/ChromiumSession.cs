@@ -262,10 +262,12 @@ public sealed partial class ChromiumSession : IBrowserSession
                     const hs = html.match(/"haste_session"\s*:\s*"([^"]+)"/);
 
                     let reqUid = '';
+                    let reqName = '';
                     if (userMod) {
                         try {
                             const candidate = userMod.USER_ID || userMod.ACCOUNT_ID || (typeof userMod.getID === 'function' ? userMod.getID() : '');
                             if (candidate && String(candidate) !== '0') reqUid = String(candidate);
+                            if (typeof userMod.NAME === 'string' && userMod.NAME.trim()) reqName = userMod.NAME.trim();
                         } catch {}
                     }
                     let cookieStr = '';
@@ -281,6 +283,26 @@ public sealed partial class ChromiumSession : IBrowserSession
                     const resolvedRev = reqRev || (rev ? rev[1] : '1020000000');
                     const resolvedHs = reqHs || (hs ? hs[1] : '20745.HYP:comet_pkg.2.1...1');
 
+                    let resolvedName = reqName;
+                    if (!resolvedName) {
+                        const nm = html.match(/"CurrentUserInitialData"\s*,\s*\[\]\s*,\s*\{[^}]*"NAME"\s*:\s*"([^"]+)"/)
+                            || html.match(/"NAME"\s*:\s*"([^"]+)"/);
+                        if (nm && nm[1]) {
+                            try { resolvedName = JSON.parse('"' + nm[1] + '"'); } catch { resolvedName = nm[1]; }
+                        }
+                    }
+
+                    let resolvedAvatar = '';
+                    if (resolvedUid) {
+                        try {
+                            const avRe = new RegExp('"' + resolvedUid + '"[^}]{0,400}"profile_picture"\\s*:\\s*\\{\\s*"uri"\\s*:\\s*"([^"]+)"');
+                            const avMatch = html.match(avRe) || html.match(/"viewer"\s*:\s*\{[^}]{0,400}"profile_picture"\s*:\s*\{\s*"uri"\s*:\s*"([^"]+)"/);
+                            if (avMatch && avMatch[1]) {
+                                try { resolvedAvatar = JSON.parse('"' + avMatch[1] + '"'); } catch { resolvedAvatar = avMatch[1].replace(/\\\//g, '/'); }
+                            }
+                        } catch {}
+                    }
+
                     return JSON.stringify({
                         uid: resolvedUid,
                         fbDtsg: resolvedDtsg,
@@ -288,7 +310,9 @@ public sealed partial class ChromiumSession : IBrowserSession
                         clientRevision: resolvedRev,
                         hasteSession: resolvedHs,
                         webSessionId: rand6() + ':' + rand6() + ':' + rand6(),
-                        userAgent: navigator.userAgent || ''
+                        userAgent: navigator.userAgent || '',
+                        displayName: resolvedName || null,
+                        avatarUrl: resolvedAvatar || null
                     });
                 } catch {
                     return JSON.stringify({
@@ -360,14 +384,26 @@ public sealed partial class ChromiumSession : IBrowserSession
             }
         }
 
-        if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(cookieHeader))
+        if ((string.IsNullOrWhiteSpace(resolvedFbDtsg) || string.IsNullOrWhiteSpace(snapshot.DisplayName)) &&
+            !string.IsNullOrWhiteSpace(cookieHeader))
         {
-            // If the browser tab was still on about:blank or before cookies were injected, fetch real tokens via direct HTTP GET
+            // If the browser tab was still on about:blank or missing profile metadata, fetch tokens & profile identity via direct HTTP GET
             DomMaterialSnapshot? httpSnapshot = await this.TryFetchMaterialFromHttpHtmlAsync(cookieHeader, snapshot.UserAgent, ct).ConfigureAwait(false);
-            if (httpSnapshot is not null && !string.IsNullOrWhiteSpace(httpSnapshot.FbDtsg))
+            if (httpSnapshot is not null)
             {
-                snapshot = httpSnapshot;
-                resolvedFbDtsg = httpSnapshot.FbDtsg;
+                if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(httpSnapshot.FbDtsg))
+                {
+                    snapshot = httpSnapshot;
+                    resolvedFbDtsg = httpSnapshot.FbDtsg;
+                }
+                else
+                {
+                    snapshot = snapshot with
+                    {
+                        DisplayName = !string.IsNullOrWhiteSpace(snapshot.DisplayName) ? snapshot.DisplayName : httpSnapshot.DisplayName,
+                        AvatarUrl = !string.IsNullOrWhiteSpace(snapshot.AvatarUrl) ? snapshot.AvatarUrl : httpSnapshot.AvatarUrl
+                    };
+                }
             }
         }
 
@@ -388,7 +424,9 @@ public sealed partial class ChromiumSession : IBrowserSession
             HasteSession: snapshot.HasteSession,
             WebSessionId: snapshot.WebSessionId,
             UserAgent: snapshot.UserAgent,
-            ExtractedAt: DateTimeOffset.UtcNow);
+            ExtractedAt: DateTimeOffset.UtcNow,
+            DisplayName: snapshot.DisplayName,
+            AvatarUrl: snapshot.AvatarUrl);
 
         this.CurrentMaterial = material;
 

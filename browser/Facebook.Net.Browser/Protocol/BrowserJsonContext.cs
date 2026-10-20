@@ -85,7 +85,9 @@ public sealed record DomMaterialSnapshot(
     [property: JsonPropertyName("clientRevision")] string ClientRevision,
     [property: JsonPropertyName("hasteSession")] string HasteSession,
     [property: JsonPropertyName("webSessionId")] string WebSessionId,
-    [property: JsonPropertyName("userAgent")] string UserAgent);
+    [property: JsonPropertyName("userAgent")] string UserAgent,
+    [property: JsonPropertyName("displayName")] string? DisplayName = null,
+    [property: JsonPropertyName("avatarUrl")] string? AvatarUrl = null);
 
 /// <summary>
 /// Parameters for <c>Network.setCookies</c> CDP command.
