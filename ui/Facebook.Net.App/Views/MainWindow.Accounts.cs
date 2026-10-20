@@ -4,7 +4,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Input.Platform;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
@@ -116,16 +115,12 @@ public sealed partial class MainWindow
         pageGrid.Children.Add(topActionBar);
 
         // Visual Account List using shared UiControls.CreateAccountItemCard
-        ListBox accountList = new()
-        {
-            IsVisible = this._vm.Accounts.Count > 0,
-            ItemsSource = this._vm.Accounts,
-            SelectedItem = this._vm.SelectedAccount,
-            ItemTemplate = new FuncDataTemplate<AccountProfile>((item, _) =>
-                item is null
-                    ? new Border()
-                    : UiControls.CreateAccountItemCard(this._theme, this._i18n, item))
-        };
+        ListBox accountList = UiControls.CreateListBox<AccountProfile>(
+            this._theme,
+            this._vm.Accounts,
+            item => UiControls.CreateAccountItemCard(this._theme, this._i18n, item),
+            selectedItem: this._vm.SelectedAccount,
+            isVisible: this._vm.Accounts.Count > 0);
 
         accountList.SelectionChanged += (_, _) =>
         {

@@ -5,7 +5,6 @@ using System;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -70,27 +69,21 @@ public sealed partial class MainWindow
         };
 
         // Saved Templates Flyout
-        ListBox tplList = new()
-        {
-            Height = 200,
-            IsVisible = this._vm.SavedTemplates.Count > 0,
-            ItemsSource = this._vm.SavedTemplates,
-            SelectedItem = this._vm.SelectedTemplate,
-            ItemTemplate = new FuncDataTemplate<CampaignTemplate>((tpl, _) =>
+        ListBox tplList = UiControls.CreateListBox<CampaignTemplate>(
+            this._theme,
+            this._vm.SavedTemplates,
+            tpl =>
             {
-                if (tpl is null)
-                {
-                    return new Border();
-                }
-
                 StackPanel sp = new() { Spacing = 2, Margin = new Thickness(4) };
                 sp.Children.Add(UiControls.CreateThemedLabel(this._theme, tpl.Title, 13, FontWeight.SemiBold));
                 TextBlock bodyTb = UiControls.CreateThemedLabel(this._theme, tpl.SpintaxContent, 11, FontWeight.Normal, isSecondary: true);
                 bodyTb.MaxLines = 2;
                 sp.Children.Add(bodyTb);
                 return sp;
-            })
-        };
+            },
+            selectedItem: this._vm.SelectedTemplate,
+            isVisible: this._vm.SavedTemplates.Count > 0);
+        tplList.Height = 200;
 
         tplList.SelectionChanged += (_, _) =>
         {
@@ -186,21 +179,19 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        CheckBox targetModeCheck = new()
-        {
-            Content = this._i18n["Publisher.TargetModeGroup"],
-            IsChecked = this._vm.PublishToTargetGroups,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        CheckBox targetModeCheck = UiControls.CreateCheckBox(
+            this._theme,
+            this._i18n["Publisher.TargetModeGroup"],
+            this._vm.PublishToTargetGroups,
+            out TextBlock targetModeLbl);
         targetModeCheck.IsCheckedChanged += (_, _) =>
             this._vm.PublishToTargetGroups = targetModeCheck.IsChecked ?? false;
 
-        CheckBox autoReactOwnPostCheck = new()
-        {
-            Content = this._i18n["Publisher.AutoReactOwnPost"],
-            IsChecked = this._vm.AutoReactPublishedPost,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        CheckBox autoReactOwnPostCheck = UiControls.CreateCheckBox(
+            this._theme,
+            this._i18n["Publisher.AutoReactOwnPost"],
+            this._vm.AutoReactPublishedPost,
+            out TextBlock autoReactOwnPostLbl);
         autoReactOwnPostCheck.IsCheckedChanged += (_, _) =>
             this._vm.AutoReactPublishedPost = autoReactOwnPostCheck.IsChecked ?? false;
 
@@ -325,8 +316,8 @@ public sealed partial class MainWindow
             titleTb.Text = this._i18n["Publisher.Header"];
             descTb.Text = this._i18n["Publisher.Desc"];
             emptyTplTb.Text = this._i18n["Empty.Templates"];
-            targetModeCheck.Content = this._i18n["Publisher.TargetModeGroup"];
-            autoReactOwnPostCheck.Content = this._i18n["Publisher.AutoReactOwnPost"];
+            targetModeLbl.Text = this._i18n["Publisher.TargetModeGroup"];
+            autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             contentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             UiControls.SetButtonText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);

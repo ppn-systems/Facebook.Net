@@ -3,7 +3,6 @@
 
 using System;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
@@ -46,18 +45,16 @@ public sealed partial class MainWindow
             ColumnSpacing = 12
         };
 
-        ComboBox themeCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
-            SelectedItem = this._vm.SelectedThemeMode,
-            ItemTemplate = new FuncDataTemplate<AppThemeMode>((m, _) =>
+        ComboBox themeCombo = UiControls.CreateComboBox<AppThemeMode>(
+            this._theme,
+            new AppThemeMode[] { AppThemeMode.Dark, AppThemeMode.Light },
+            m =>
             {
                 TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatThemeMode(m);
                 return tb;
-            })
-        };
+            },
+            selectedItem: this._vm.SelectedThemeMode);
         themeCombo.SelectionChanged += (_, _) =>
         {
             if (themeCombo.SelectedItem is AppThemeMode mode && this._vm.SelectedThemeMode != mode)
@@ -72,14 +69,11 @@ public sealed partial class MainWindow
             themeCombo,
             out TextBlock themeLabel);
 
-        ComboBox langCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
-            SelectedItem = this._vm.SelectedLanguage,
-            ItemTemplate = new FuncDataTemplate<AppLanguage>((l, _) =>
-                UiControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12))
-        };
+        ComboBox langCombo = UiControls.CreateComboBox<AppLanguage>(
+            this._theme,
+            new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
+            l => UiControls.CreateThemedLabel(this._theme, LocalizationService.FormatLanguage(l), 12),
+            selectedItem: this._vm.SelectedLanguage);
         langCombo.SelectionChanged += (_, _) =>
         {
             if (langCombo.SelectedItem is AppLanguage lang && this._vm.SelectedLanguage != lang)
@@ -101,24 +95,22 @@ public sealed partial class MainWindow
         formStack.Children.Add(appearanceRow);
 
         // 2. Browser Engine Selector
-        ComboBox browserCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = new PreferredBrowserKind[]
+        ComboBox browserCombo = UiControls.CreateComboBox<PreferredBrowserKind>(
+            this._theme,
+            new PreferredBrowserKind[]
             {
                 PreferredBrowserKind.AutoDetect,
                 PreferredBrowserKind.Edge,
                 PreferredBrowserKind.Chrome,
                 PreferredBrowserKind.Brave
             },
-            SelectedItem = this._vm.SelectedBrowserKind,
-            ItemTemplate = new FuncDataTemplate<PreferredBrowserKind>((k, _) =>
+            k =>
             {
                 TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatBrowserKind(k);
                 return tb;
-            })
-        };
+            },
+            selectedItem: this._vm.SelectedBrowserKind);
         browserCombo.SelectionChanged += (_, _) =>
         {
             if (browserCombo.SelectedItem is PreferredBrowserKind kind && this._vm.SelectedBrowserKind != kind)
@@ -158,11 +150,11 @@ public sealed partial class MainWindow
             }
         };
 
-        CheckBox headlessCheck = new()
-        {
-            Content = this._i18n["Settings.HeadlessLabel"],
-            IsChecked = this._vm.RunBrowserHeadless
-        };
+        CheckBox headlessCheck = UiControls.CreateCheckBox(
+            this._theme,
+            this._i18n["Settings.HeadlessLabel"],
+            this._vm.RunBrowserHeadless,
+            out TextBlock headlessLabelTb);
         headlessCheck.IsCheckedChanged += (_, _) =>
         {
             bool next = headlessCheck.IsChecked ?? false;
@@ -262,7 +254,7 @@ public sealed partial class MainWindow
             browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
             customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
             UiControls.SetButtonText(browseExeBtn, this._i18n["Common.BrowseFile"]);
-            headlessCheck.Content = this._i18n["Settings.HeadlessLabel"];
+            headlessLabelTb.Text = this._i18n["Settings.HeadlessLabel"];
             delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
             minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
             maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];

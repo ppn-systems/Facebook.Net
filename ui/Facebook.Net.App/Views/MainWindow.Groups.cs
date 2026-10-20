@@ -4,7 +4,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
@@ -89,16 +88,12 @@ public sealed partial class MainWindow
         Grid.SetRow(localFilterBox, 1);
         catalogPane.Children.Add(localFilterBox);
 
-        ListBox groupsList = new()
-        {
-            IsVisible = this._vm.JoinedGroups.Count > 0,
-            ItemsSource = this._vm.JoinedGroups,
-            SelectedItem = this._vm.SelectedGroup,
-            ItemTemplate = new FuncDataTemplate<GroupSummary>((grp, _) =>
-                grp is null
-                    ? new Border()
-                    : UiControls.CreateGroupCatalogItemCard(this._theme, this._i18n, grp))
-        };
+        ListBox groupsList = UiControls.CreateListBox<GroupSummary>(
+            this._theme,
+            this._vm.JoinedGroups,
+            grp => UiControls.CreateGroupCatalogItemCard(this._theme, this._i18n, grp),
+            selectedItem: this._vm.SelectedGroup,
+            isVisible: this._vm.JoinedGroups.Count > 0);
 
         groupsList.SelectionChanged += (_, _) =>
         {
@@ -200,19 +195,15 @@ public sealed partial class MainWindow
         Grid.SetRow(bulkToggleRow, 1);
         targetsPane.Children.Add(bulkToggleRow);
 
-        ListBox targetList = new()
-        {
-            IsVisible = this._vm.TargetGroups.Count > 0,
-            ItemsSource = this._vm.TargetGroups,
-            SelectedItem = this._vm.SelectedTargetGroup,
-            ItemTemplate = new FuncDataTemplate<SavedTargetGroup>((tg, ns) =>
-                tg is null
-                    ? new Border()
-                    : UiControls.CreateTargetGroupItemCard(
-                        this._theme,
-                        tg,
-                        nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)))
-        };
+        ListBox targetList = UiControls.CreateListBox<SavedTargetGroup>(
+            this._theme,
+            this._vm.TargetGroups,
+            tg => UiControls.CreateTargetGroupItemCard(
+                this._theme,
+                tg,
+                nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState)),
+            selectedItem: this._vm.SelectedTargetGroup,
+            isVisible: this._vm.TargetGroups.Count > 0);
 
         targetList.SelectionChanged += (_, _) =>
         {

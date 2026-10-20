@@ -3,7 +3,6 @@
 
 using System;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
@@ -61,21 +60,17 @@ public sealed partial class MainWindow
         pageGrid.Children.Add(scanBar);
 
         // Discovered Group Posts List using shared UiControls.CreateLeadPostItemCard with SVG icons
-        ListBox postsList = new()
-        {
-            IsVisible = this._vm.ScrapedPosts.Count > 0,
-            ItemsSource = this._vm.ScrapedPosts,
-            SelectedItem = this._vm.SelectedScrapedPost,
-            ItemTemplate = new FuncDataTemplate<PostSummary>((post, _) =>
-                post is null
-                    ? new Border()
-                    : UiControls.CreateLeadPostItemCard(
-                        this._theme,
-                        this._i18n,
-                        post,
-                        ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords),
-                        () => this._vm.FormatBuyerIntentBadge(post)))
-        };
+        ListBox postsList = UiControls.CreateListBox<PostSummary>(
+            this._theme,
+            this._vm.ScrapedPosts,
+            post => UiControls.CreateLeadPostItemCard(
+                this._theme,
+                this._i18n,
+                post,
+                ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords),
+                () => this._vm.FormatBuyerIntentBadge(post)),
+            selectedItem: this._vm.SelectedScrapedPost,
+            isVisible: this._vm.ScrapedPosts.Count > 0);
 
         Border emptyLeadsBanner = UiControls.CreateEmptyState(
             this._theme,
@@ -112,12 +107,11 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        CheckBox autoReactCheck = new()
-        {
-            Content = this._i18n["Leads.AutoReactToggle"],
-            IsChecked = this._vm.AutoReactBeforeComment,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        CheckBox autoReactCheck = UiControls.CreateCheckBox(
+            this._theme,
+            this._i18n["Leads.AutoReactToggle"],
+            this._vm.AutoReactBeforeComment,
+            out TextBlock autoReactLbl);
         autoReactCheck.IsCheckedChanged += (_, _) =>
             this._vm.AutoReactBeforeComment = autoReactCheck.IsChecked ?? false;
 
@@ -215,7 +209,7 @@ public sealed partial class MainWindow
             UiControls.SetButtonText(scanBtn, this._i18n["Leads.BtnScanGroupPosts"]);
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
-            autoReactCheck.Content = this._i18n["Leads.AutoReactToggle"];
+            autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];
             UiControls.SetButtonText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             UiControls.SetButtonText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
             UiControls.SetButtonText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);

@@ -5,7 +5,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
@@ -92,10 +91,9 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        ComboBox categoryCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = new object[]
+        ComboBox categoryCombo = UiControls.CreateComboBox<object>(
+            this._theme,
+            new object[]
             {
                 "ALL",
                 AuditCategory.System,
@@ -105,15 +103,14 @@ public sealed partial class MainWindow
                 AuditCategory.SalesComment,
                 AuditCategory.Scrape
             },
-            SelectedIndex = 0,
-            ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
+            obj =>
             {
                 AuditCategory? cat = obj is AuditCategory c ? c : null;
                 TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditCategory(cat), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditCategory(cat);
                 return tb;
-            })
-        };
+            },
+            selectedItem: "ALL");
         categoryCombo.SelectionChanged += async (_, _) =>
         {
             drawerVm.SelectedCategory = categoryCombo.SelectedItem is AuditCategory cat ? cat : null;
@@ -121,24 +118,22 @@ public sealed partial class MainWindow
         };
         Grid.SetColumn(categoryCombo, 0);
 
-        ComboBox timeRangeCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = new AuditTimeRange[]
+        ComboBox timeRangeCombo = UiControls.CreateComboBox<AuditTimeRange>(
+            this._theme,
+            new AuditTimeRange[]
             {
                 AuditTimeRange.AllTime,
                 AuditTimeRange.LastHour,
                 AuditTimeRange.Today24Hours,
                 AuditTimeRange.Last7Days
             },
-            SelectedIndex = 0,
-            ItemTemplate = new FuncDataTemplate<AuditTimeRange>((r, _) =>
+            r =>
             {
                 TextBlock tb = UiControls.CreateThemedLabel(this._theme, this._i18n.FormatAuditTimeRange(r), 12);
                 this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatAuditTimeRange(r);
                 return tb;
-            })
-        };
+            },
+            selectedItem: AuditTimeRange.AllTime);
         timeRangeCombo.SelectionChanged += async (_, _) =>
         {
             if (timeRangeCombo.SelectedItem is AuditTimeRange range)
@@ -155,13 +150,10 @@ public sealed partial class MainWindow
             accountFilterItems.Add(this._vm.Accounts[i]);
         }
 
-        ComboBox accountFilterCombo = new()
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            PlaceholderText = this._i18n["Audit.FilterAccountAll"],
-            ItemsSource = accountFilterItems,
-            SelectedIndex = 0,
-            ItemTemplate = new FuncDataTemplate<object>((obj, _) =>
+        ComboBox accountFilterCombo = UiControls.CreateComboBox<object>(
+            this._theme,
+            accountFilterItems,
+            obj =>
             {
                 if (obj is AccountProfile acc)
                 {
@@ -171,8 +163,9 @@ public sealed partial class MainWindow
                 TextBlock allTb = UiControls.CreateThemedLabel(this._theme, this._i18n["Audit.FilterAccountAll"], 12);
                 this._i18n.LanguageChanged += (_, _) => allTb.Text = this._i18n["Audit.FilterAccountAll"];
                 return allTb;
-            })
-        };
+            },
+            selectedItem: "ALL",
+            placeholderText: this._i18n["Audit.FilterAccountAll"]);
 
         this._vm.Accounts.CollectionChanged += (_, _) =>
         {
@@ -238,15 +231,11 @@ public sealed partial class MainWindow
             out TextBlock emptyLogsMsg);
         emptyLogsBanner.IsVisible = drawerVm.FilteredLogs.Count == 0;
 
-        ListBox logList = new()
-        {
-            IsVisible = drawerVm.FilteredLogs.Count > 0,
-            ItemsSource = drawerVm.FilteredLogs,
-            ItemTemplate = new FuncDataTemplate<AuditLogRecord>((rec, _) =>
-                rec is null
-                    ? new Border()
-                    : UiControls.CreateAuditLogItemRow(this._theme, this._i18n, rec))
-        };
+        ListBox logList = UiControls.CreateListBox<AuditLogRecord>(
+            this._theme,
+            drawerVm.FilteredLogs,
+            rec => UiControls.CreateAuditLogItemRow(this._theme, this._i18n, rec),
+            isVisible: drawerVm.FilteredLogs.Count > 0);
 
         drawerVm.FilteredLogs.CollectionChanged += (_, _) =>
         {

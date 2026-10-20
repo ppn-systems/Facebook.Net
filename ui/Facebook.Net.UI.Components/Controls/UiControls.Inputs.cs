@@ -2,9 +2,12 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Theming;
@@ -13,10 +16,116 @@ namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
 /// Form and input components of <see cref="UiControls"/>:
-/// Styled TextBoxes, composite File Picker rows, labeled form fields, and numeric delay range selectors.
+/// Styled TextBoxes, ComboBoxes, CheckBoxes, ListBoxes, composite File Picker rows, labeled form fields, and numeric delay range selectors.
 /// </summary>
 public static partial class UiControls
 {
+    /// <summary>
+    /// Creates a styled <see cref="CheckBox"/> whose label is automatically themed for Dark and Light palettes.
+    /// </summary>
+    public static CheckBox CreateCheckBox(
+        ThemeService theme,
+        string initialLabel,
+        bool initialChecked,
+        out TextBlock labelBlock)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        TextBlock lbl = CreateThemedLabel(theme, initialLabel, 12, FontWeight.Medium);
+        CheckBox cb = new()
+        {
+            Content = lbl,
+            IsChecked = initialChecked,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        AutomationProperties.SetName(cb, initialLabel);
+
+        labelBlock = lbl;
+        return cb;
+    }
+
+    /// <summary>
+    /// Creates a styled <see cref="ComboBox"/> bound to <see cref="ThemeService"/> with a typed item template.
+    /// </summary>
+    public static ComboBox CreateComboBox<T>(
+        ThemeService theme,
+        IEnumerable itemsSource,
+        Func<T, Control> itemBuilder,
+        object? selectedItem = null,
+        string? placeholderText = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(itemsSource);
+        ArgumentNullException.ThrowIfNull(itemBuilder);
+
+        ComboBox combo = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10, 6),
+            ItemsSource = itemsSource,
+            PlaceholderText = placeholderText,
+            ItemTemplate = new FuncDataTemplate<T>((item, _) =>
+                item is null ? new Border() : itemBuilder(item))
+        };
+
+        if (selectedItem is not null)
+        {
+            combo.SelectedItem = selectedItem;
+        }
+
+        void ApplyColors()
+        {
+            ThemePalette p = theme.Palette;
+            combo.Background = p.SecondarySurface;
+            combo.BorderBrush = p.InteractiveBorder;
+            combo.Foreground = p.TextPrimary;
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(combo, theme, ApplyColors);
+        return combo;
+    }
+
+    /// <summary>
+    /// Creates a styled <see cref="ListBox"/> bound to <see cref="ThemeService"/> with a typed item template.
+    /// </summary>
+    public static ListBox CreateListBox<T>(
+        ThemeService theme,
+        IEnumerable itemsSource,
+        Func<T, Control> itemBuilder,
+        object? selectedItem = null,
+        bool isVisible = true)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(itemsSource);
+        ArgumentNullException.ThrowIfNull(itemBuilder);
+
+        ListBox listBox = new()
+        {
+            IsVisible = isVisible,
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4),
+            ItemsSource = itemsSource,
+            SelectedItem = selectedItem,
+            ItemTemplate = new FuncDataTemplate<T>((item, _) =>
+                item is null ? new Border() : itemBuilder(item))
+        };
+
+        void ApplyColors()
+        {
+            ThemePalette p = theme.Palette;
+            listBox.Background = p.SecondarySurface;
+            listBox.BorderBrush = p.SubtleBorder;
+        }
+
+        ApplyColors();
+        BindThemeLifecycle(listBox, theme, ApplyColors);
+        return listBox;
+    }
+
     /// <summary>
     /// Creates a styled <see cref="TextBox"/> with 8px corner radius and subtle border.
     /// </summary>
