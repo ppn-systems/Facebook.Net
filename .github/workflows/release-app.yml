@@ -155,10 +155,15 @@ jobs:
 
           # Compile standalone native Windows uninstaller launcher (uninstall.exe)
           $cscPath = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $uninstallerSrc = (Resolve-Path ".\scripts\UninstallLauncher.cs").Path
+          $uninstallerOut = Join-Path $publishDir "uninstall.exe"
           & $cscPath /nologo /target:winexe /optimize+ /platform:x64 `
             /win32icon:"$iconPath" `
-            /out:"$publishDir\uninstall.exe" `
-            "./scripts/UninstallLauncher.cs"
+            /out:"$uninstallerOut" `
+            "$uninstallerSrc"
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $uninstallerOut)) {
+            throw "Failed to compile uninstall.exe (exit code $LASTEXITCODE)."
+          }
 
           $wxsContent = @"
           <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
