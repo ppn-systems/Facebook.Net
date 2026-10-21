@@ -326,9 +326,12 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Returns all available browser profiles matching the currently selected browser family
     /// (managed profiles in <c>Profiles/</c> plus discovered system browser profiles for the active browser).
+    /// Automatically cleans up unauthenticated orphan placeholder folders in <c>Profiles/</c>.
     /// </summary>
     public List<BrowserProfileOption> GetAvailableBrowserProfiles()
     {
+        this.PruneOrphanPlaceholderProfiles();
+
         PreferredBrowserKind effectiveKind = _context.Settings.ResolveEffectiveBrowserKind();
         List<BrowserProfileOption> discovered = AppSettingsService.DiscoverBrowserProfiles(
             _context.ProfilesRootDirectory,
@@ -346,7 +349,11 @@ public sealed partial class ShellViewModel
                 string resolvedLabel = isManaged
                     ? $"One Client — {this.ResolveFriendlyProfileLabel(folderName, item.DirectoryPath)}"
                     : item.DisplayName;
-                list.Add(new BrowserProfileOption(resolvedLabel, item.DirectoryPath, IsManagedByApp: isManaged));
+                list.Add(new BrowserProfileOption(
+                    resolvedLabel,
+                    item.DirectoryPath,
+                    IsManagedByApp: isManaged,
+                    HasFacebookSession: item.HasFacebookSession));
             }
         }
 
@@ -359,10 +366,87 @@ public sealed partial class ShellViewModel
             string folder = Path.GetFileName(acc.ProfileDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             bool isManaged = this.IsProfileInsideManagedRoot(acc.ProfileDirectory);
             string prefix = isManaged ? "One Client" : _context.Localization.FormatBrowserKind(effectiveKind);
-            list.Insert(0, new BrowserProfileOption($"{prefix} — {folder}", acc.ProfileDirectory, IsManagedByApp: isManaged));
+            bool hasFb = this.HasProfileAuthenticatedCookieStore(acc.ProfileDirectory);
+            string friendly = isManaged ? this.ResolveFriendlyProfileLabel(folder, acc.ProfileDirectory) : folder;
+            list.Insert(0, new BrowserProfileOption($"{prefix} — {friendly}", acc.ProfileDirectory, IsManagedByApp: isManaged, HasFacebookSession: hasFb));
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Opens the specified browser profile directory in the OS file manager (Windows Explorer / macOS Finder).
+    /// </summary>
+    public static void OpenProfileFolderInExplorer(string? directoryPath)
+    {
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo(directoryPath)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore shell launch error
+        }
+    }
+
+    private void PruneOrphanPlaceholderProfiles()
+    {
+        if (string.IsNullOrWhiteSpace(_context.ProfilesRootDirectory) || !Directory.Exists(_context.ProfilesRootDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            string[] managedDirs = Directory.GetDirectories(_context.ProfilesRootDirectory);
+            for (int i = 0; i < managedDirs.Length; i++)
+            {
+                string dir = managedDirs[i];
+                string folderName = Path.GetFileName(dir);
+                if (!folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) &&
+                    !folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                bool isAssignedToAnyAccount = false;
+                for (int a = 0; a < this.Accounts.Count; a++)
+                {
+                    AccountProfile acc = this.Accounts[a];
+                    if (string.Equals(acc.ProfileDirectory, dir, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isAssignedToAnyAccount = true;
+                        break;
+                    }
+                }
+
+                if (!isAssignedToAnyAccount && !this.HasProfileAuthenticatedCookieStore(dir))
+                {
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                        _context.StorageUsage.InvalidateCache();
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // Ignore folder locked by an active browser process
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore inaccessible directory
+        }
     }
 
     /// <summary>
@@ -466,6 +550,8 @@ public sealed partial class ShellViewModel
 
     /// <summary>
     /// Assigns an existing or newly created browser profile directory to the active account (or creates an account bound to that profile if none exists).
+    /// When assigning a system browser profile (outside <c>ProfilesRootDirectory</c>), automatically syncs its cookies and preferences into an isolated
+    /// <c>One Client</c> profile directory so it works even while the main browser is running and complies with Chromium's CDP isolation requirements.
     /// </summary>
     public async Task AssignBrowserProfileToSelectedAccountAsync(string profileDirectoryPath, string? friendlyProfileName = null)
     {
@@ -475,22 +561,40 @@ public sealed partial class ShellViewModel
         }
 
         string fullPath = profileDirectoryPath.Trim();
+        string rawLeafName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string folderName = !string.IsNullOrWhiteSpace(friendlyProfileName)
+            ? friendlyProfileName.Trim()
+            : rawLeafName;
+
+        if (!this.IsProfileInsideManagedRoot(fullPath) && Directory.Exists(fullPath))
+        {
+            string safeSlug = SanitizeFolderSlug($"{folderName}_{rawLeafName}");
+            string isolatedDir = Path.Combine(_context.ProfilesRootDirectory, safeSlug);
+            if (_context.AccountVault.TrySyncSystemProfileToIsolatedRoot(fullPath, isolatedDir))
+            {
+                fullPath = isolatedDir;
+                _context.StorageUsage.InvalidateCache();
+            }
+        }
+
         _ = Directory.CreateDirectory(fullPath);
+        bool hasCookies = this.HasProfileAuthenticatedCookieStore(fullPath);
 
         if (this.SelectedAccount is not null)
         {
             AccountProfile current = this.SelectedAccount;
-            if (!string.Equals(current.ProfileDirectory, fullPath, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(current.ProfileDirectory, fullPath, StringComparison.OrdinalIgnoreCase) ||
+                (hasCookies && current.Status != AccountStatus.Active))
             {
                 await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
-                AccountProfile updated = current with { ProfileDirectory = fullPath };
+                AccountProfile updated = current with
+                {
+                    ProfileDirectory = fullPath,
+                    Status = hasCookies ? AccountStatus.Active : current.Status
+                };
                 await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
                 await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
             }
-
-            string folderName = !string.IsNullOrWhiteSpace(friendlyProfileName)
-                ? friendlyProfileName
-                : Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
@@ -500,14 +604,10 @@ public sealed partial class ShellViewModel
         }
         else
         {
-            string folderName = !string.IsNullOrWhiteSpace(friendlyProfileName)
-                ? friendlyProfileName
-                : Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             string newUid = $"profile_{Guid.NewGuid():N}"[..16];
             string ua = OperatingSystem.IsMacOS()
                 ? ProtocolConstants.Protocol.DefaultMacOsUserAgent
                 : ProtocolConstants.Protocol.DefaultWindowsUserAgent;
-            bool hasCookies = this.HasProfileAuthenticatedCookieStore(fullPath);
 
             AccountProfile created = new(
                 Uid: newUid,
@@ -531,6 +631,28 @@ public sealed partial class ShellViewModel
         }
     }
 
+    private static string SanitizeFolderSlug(string raw)
+    {
+        char[] invalid = Path.GetInvalidFileNameChars();
+        System.Text.StringBuilder sb = new(raw.Length);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            if (Array.IndexOf(invalid, c) < 0 && c is not '(' and not ')' and not '—' and not '·')
+            {
+                _ = sb.Append(c == ' ' ? '_' : c);
+            }
+        }
+
+        string slug = sb.ToString().Trim('_');
+        while (slug.Contains("__", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return string.IsNullOrWhiteSpace(slug) ? $"Imported_{DateTimeOffset.UtcNow:yyyyMMdd}" : slug;
+    }
+
     private string ResolveFriendlyProfileLabel(string folderName, string fullDirPath)
     {
         for (int i = 0; i < this.Accounts.Count; i++)
@@ -539,7 +661,15 @@ public sealed partial class ShellViewModel
             if (string.Equals(acc.ProfileDirectory, fullDirPath, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
             {
-                return $"{acc.DisplayName} · {folderName}";
+                bool isAutoGeneratedId =
+                    folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) ||
+                    folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(acc.DisplayName, folderName, StringComparison.OrdinalIgnoreCase);
+
+                return isAutoGeneratedId
+                    ? acc.DisplayName
+                    : $"{acc.DisplayName} · {folderName}";
             }
         }
 

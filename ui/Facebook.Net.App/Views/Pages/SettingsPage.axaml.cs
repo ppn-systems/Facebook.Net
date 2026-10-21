@@ -216,6 +216,15 @@ public sealed partial class SettingsPage : UserControl
         browserSelectorRow.Children.Add(browserCombo);
         browserSelectorRow.Children.Add(rescanBrowsersBtn);
 
+        TextBlock smartBrowserReasonTb = SectionHeader.CreateLabel(
+            _theme,
+            string.Empty,
+            11.5,
+            FontWeight.SemiBold);
+        smartBrowserReasonTb.Foreground = _theme.Palette.BrandPrimary;
+        smartBrowserReasonTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        smartBrowserReasonTb.MaxLines = 1;
+
         TextBlock detectedBrowserInfoTb = SectionHeader.CreateLabel(
             _theme,
             string.Empty,
@@ -231,6 +240,34 @@ public sealed partial class SettingsPage : UserControl
             detectedBrowserInfoTb.Text = !string.IsNullOrWhiteSpace(resolvedExe)
                 ? $"{_i18n["Settings.BrowserDetectedPrefix"]}: {resolvedExe}"
                 : _i18n["Settings.BrowserNotDetectedWarning"];
+
+            if (_vm.SelectedBrowserKind == PreferredBrowserKind.AutoDetect &&
+                string.IsNullOrWhiteSpace(_vm.CustomBrowserExecutablePath))
+            {
+                SmartBrowserDetectionResult smart = AppSettingsService.DetectBestBrowser();
+                string browserName = _i18n.FormatBrowserKind(smart.BrowserKind);
+                System.Text.StringBuilder details = new();
+                if (smart.IsOsDefaultBrowser)
+                {
+                    _ = details.Append(_i18n["Settings.BrowserReasonOsDefault"]);
+                }
+
+                if (smart.IsCurrentlyRunning && smart.ActiveUptime.TotalMinutes >= 1.0)
+                {
+                    int totalHours = (int)smart.ActiveUptime.TotalHours;
+                    int mins = smart.ActiveUptime.Minutes;
+                    _ = details.Append(totalHours > 0
+                        ? _i18n.Format("Settings.BrowserReasonRunningHours", totalHours, mins)
+                        : _i18n.Format("Settings.BrowserReasonRunningMinutes", Math.Max(1, mins)));
+                }
+
+                smartBrowserReasonTb.Text = _i18n.Format("Settings.BrowserAutoSelectedReason", browserName, details.ToString());
+                smartBrowserReasonTb.IsVisible = true;
+            }
+            else
+            {
+                smartBrowserReasonTb.IsVisible = false;
+            }
         }
 
         void RefreshInstalledBrowsersList()
@@ -253,8 +290,9 @@ public sealed partial class SettingsPage : UserControl
         rescanBrowsersBtn.Click += (_, _) => RefreshInstalledBrowsersList();
         UpdateDetectedBrowserStatus();
 
-        StackPanel browserStack = new() { Spacing = 5 };
+        StackPanel browserStack = new() { Spacing = 4 };
         browserStack.Children.Add(browserSelectorRow);
+        browserStack.Children.Add(smartBrowserReasonTb);
         browserStack.Children.Add(detectedBrowserInfoTb);
 
         StackPanel browserField = FormField.CreateLabeled(

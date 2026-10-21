@@ -628,5 +628,11 @@
   "Common.VarGroupNameLabel": "Tên hội nhóm",
   "Common.VarDateLabel": "Ngày hiện tại",
   "Common.VarTimeLabel": "Giờ hiện tại",
-  "Common.VarRandomIdLabel": "Mã số ngẫu nhiên"
+  "Common.VarRandomIdLabel": "Mã số ngẫu nhiên",
+  "Settings.BrowserAutoSelectedReason": "Tự động chọn: {0}{1}",
+  "Settings.BrowserReasonOsDefault": " — Mặc định hệ thống",
+  "Settings.BrowserReasonRunningHours": " · Đang bật {0} giờ {1} phút",
+  "Settings.BrowserReasonRunningMinutes": " · Đang bật {0} phút",
+  "Settings.BadgeHasFbSession": "Có phiên FB",
+  "Settings.BtnOpenProfileFolderTip": "Mở thư mục Profile trên máy"
 }

@@ -251,6 +251,7 @@ public sealed partial class ShellViewModel
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
         await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
         await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
+        this.PruneOrphanPlaceholderProfiles();
         this.SyncBackgroundScraperLoop();
     }
 
@@ -642,6 +643,7 @@ public sealed partial class ShellViewModel
         string removedName = this.SelectedAccount.DisplayName;
         string removedUid = this.SelectedAccount.Uid;
         string? removedProxyId = this.SelectedAccount.ProxyId;
+        string? removedProfileDir = this.SelectedAccount.ProfileDirectory;
 
         if (!string.IsNullOrWhiteSpace(removedProxyId))
         {
@@ -652,6 +654,34 @@ public sealed partial class ShellViewModel
         _ = await _context.AccountStore.DeleteAccountAsync(removedUid).ConfigureAwait(true);
         this.SelectedAccount = null;
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+
+        if (!string.IsNullOrWhiteSpace(removedProfileDir) &&
+            this.IsProfileInsideManagedRoot(removedProfileDir) &&
+            Directory.Exists(removedProfileDir))
+        {
+            bool stillUsed = false;
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                if (string.Equals(this.Accounts[i].ProfileDirectory, removedProfileDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    stillUsed = true;
+                    break;
+                }
+            }
+
+            if (!stillUsed)
+            {
+                try
+                {
+                    Directory.Delete(removedProfileDir, recursive: true);
+                    _context.StorageUsage.InvalidateCache();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Ignore locked profile directory
+                }
+            }
+        }
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,

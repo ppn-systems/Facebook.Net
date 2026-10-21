@@ -170,7 +170,7 @@ public sealed partial class SettingsPage
 
                 Grid rowGrid = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,128,142,28"),
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,128,142,28,28"),
                     ColumnSpacing = 10,
                     Margin = new Thickness(4, 4),
                     VerticalAlignment = VerticalAlignment.Center
@@ -209,32 +209,38 @@ public sealed partial class SettingsPage
                 nameTb.TextTrimming = TextTrimming.CharacterEllipsis;
                 nameAndSizeRow.Children.Add(nameTb);
 
-                if (opt.IsManagedByApp)
-                {
-                    string initialSizeText = profileSizeCache.TryGetValue(opt.DirectoryPath, out long cachedBytes)
-                        ? $"•  {ShellViewModel.FormatByteSize(cachedBytes)}"
-                        : string.Empty;
-                    TextBlock sizeTb = SectionHeader.CreateLabel(
-                        this._theme,
-                        initialSizeText,
-                        11.5,
-                        FontWeight.Medium,
-                        isSecondary: true);
-                    nameAndSizeRow.Children.Add(sizeTb);
+                string initialSizeText = profileSizeCache.TryGetValue(opt.DirectoryPath, out long cachedBytes)
+                    ? $"•  {ShellViewModel.FormatByteSize(cachedBytes)}"
+                    : string.Empty;
+                TextBlock sizeTb = SectionHeader.CreateLabel(
+                    this._theme,
+                    initialSizeText,
+                    11.5,
+                    FontWeight.Medium,
+                    isSecondary: true);
+                nameAndSizeRow.Children.Add(sizeTb);
 
-                    if (string.IsNullOrEmpty(initialSizeText))
+                if (string.IsNullOrEmpty(initialSizeText))
+                {
+                    string dirPath = opt.DirectoryPath;
+                    _ = Task.Run(() =>
                     {
-                        string dirPath = opt.DirectoryPath;
-                        _ = Task.Run(() =>
+                        long bytes = ShellViewModel.GetProfileDirectorySizeBytes(dirPath);
+                        Dispatcher.UIThread.Post(() =>
                         {
-                            long bytes = ShellViewModel.GetProfileDirectorySizeBytes(dirPath);
-                            Dispatcher.UIThread.Post(() =>
-                            {
-                                profileSizeCache[dirPath] = bytes;
-                                sizeTb.Text = $"•  {ShellViewModel.FormatByteSize(bytes)}";
-                            });
+                            profileSizeCache[dirPath] = bytes;
+                            sizeTb.Text = $"•  {ShellViewModel.FormatByteSize(bytes)}";
                         });
-                    }
+                    });
+                }
+
+                if (opt.HasFacebookSession)
+                {
+                    Border fbSessionBadge = StatusPill.Create(
+                        this._theme,
+                        this._i18n["Settings.BadgeHasFbSession"],
+                        AuditSeverity.Success);
+                    nameAndSizeRow.Children.Add(fbSessionBadge);
                 }
 
                 TextBlock pathTb = SectionHeader.CreateLabel(this._theme, opt.DirectoryPath, 11.5, FontWeight.Normal, isSecondary: true);
@@ -303,6 +309,15 @@ public sealed partial class SettingsPage
                     rowGrid.Children.Add(useProfileBtn);
                 }
 
+                Button openFolderRowBtn = AppButton.CreateRowIcon(
+                    this._theme,
+                    VectorIcons.Folder,
+                    this._i18n["Settings.BtnOpenProfileFolderTip"],
+                    () => ShellViewModel.OpenProfileFolderInExplorer(opt.DirectoryPath),
+                    AuditSeverity.Info);
+                Grid.SetColumn(openFolderRowBtn, 4);
+                rowGrid.Children.Add(openFolderRowBtn);
+
                 // Strictly allow deletion ONLY for profiles created by our app inside ProfilesRootDirectory
                 if (opt.IsManagedByApp)
                 {
@@ -326,7 +341,7 @@ public sealed partial class SettingsPage
                                 });
                         },
                         AuditSeverity.Error);
-                    Grid.SetColumn(deleteProfileBtn, 4);
+                    Grid.SetColumn(deleteProfileBtn, 5);
                     rowGrid.Children.Add(deleteProfileBtn);
                 }
 
