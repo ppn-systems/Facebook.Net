@@ -107,32 +107,32 @@ public sealed partial class ShellViewModel
 
     private void SyncLocalizedDefaultPrompts()
     {
-        string nextPost = this._context.Localization["Publisher.DefaultPostSpintax"];
+        string nextPost = _context.Localization["Publisher.DefaultPostSpintax"];
         if (string.IsNullOrWhiteSpace(this.PostSpintaxText) ||
-            string.Equals(this.PostSpintaxText, this._lastDefaultPostSpintax, StringComparison.Ordinal))
+            string.Equals(this.PostSpintaxText, _lastDefaultPostSpintax, StringComparison.Ordinal))
         {
             this.PostSpintaxText = nextPost;
         }
 
-        this._lastDefaultPostSpintax = nextPost;
+        _lastDefaultPostSpintax = nextPost;
 
-        string nextBump = this._context.Localization["Publisher.DefaultBumpSpintax"];
+        string nextBump = _context.Localization["Publisher.DefaultBumpSpintax"];
         if (string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText) ||
-            string.Equals(this.BumpCommentSpintaxText, this._lastDefaultBumpSpintax, StringComparison.Ordinal))
+            string.Equals(this.BumpCommentSpintaxText, _lastDefaultBumpSpintax, StringComparison.Ordinal))
         {
             this.BumpCommentSpintaxText = nextBump;
         }
 
-        this._lastDefaultBumpSpintax = nextBump;
+        _lastDefaultBumpSpintax = nextBump;
 
-        string nextSales = this._context.Localization["Leads.DefaultSalesCommentSpintax"];
+        string nextSales = _context.Localization["Leads.DefaultSalesCommentSpintax"];
         if (string.IsNullOrWhiteSpace(this.SalesCommentSpintaxText) ||
-            string.Equals(this.SalesCommentSpintaxText, this._lastDefaultSalesCommentSpintax, StringComparison.Ordinal))
+            string.Equals(this.SalesCommentSpintaxText, _lastDefaultSalesCommentSpintax, StringComparison.Ordinal))
         {
             this.SalesCommentSpintaxText = nextSales;
         }
 
-        this._lastDefaultSalesCommentSpintax = nextSales;
+        _lastDefaultSalesCommentSpintax = nextSales;
         this.GenerateSpintaxPreview();
     }
 
@@ -142,7 +142,7 @@ public sealed partial class ShellViewModel
     public void GenerateSpintaxPreview()
     {
         string spun = PayloadBuilder.SpinText(this.PostSpintaxText);
-        this.SpintaxPreviewText = $"{this._context.Localization["Publisher.SpintaxPreviewPrefix"]} {spun}";
+        this.SpintaxPreviewText = $"{_context.Localization["Publisher.SpintaxPreviewPrefix"]} {spun}";
     }
 
     private async Task SaveTemplateAsync()
@@ -163,14 +163,14 @@ public sealed partial class ShellViewModel
             MediaFilePath: string.IsNullOrWhiteSpace(this.PostMediaFilePath) ? null : this.PostMediaFilePath.Trim(),
             IsCommentTemplate: false);
 
-        await this._context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
+        await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
-            this._context.Localization["Publisher.TemplatesTitle"],
-            this._context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization["Publisher.TemplatesTitle"],
+            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
     }
 
     private async Task SaveBumpTemplateAsync()
@@ -192,14 +192,14 @@ public sealed partial class ShellViewModel
             MediaFilePath: null,
             IsCommentTemplate: true);
 
-        await this._context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
+        await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
-            this._context.Localization["Publisher.TemplatesTitle"],
-            this._context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization["Publisher.TemplatesTitle"],
+            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
     }
 
     private async Task DeleteSelectedTemplateAsync()
@@ -210,15 +210,15 @@ public sealed partial class ShellViewModel
         }
 
         string title = this.SelectedTemplate.Title;
-        _ = await this._context.AccountStore.DeleteCampaignTemplateAsync(this.SelectedTemplate.Id).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeleteCampaignTemplateAsync(this.SelectedTemplate.Id).ConfigureAwait(true);
         this.SelectedTemplate = null;
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
-            this._context.Localization["Publisher.TemplatesTitle"],
-            this._context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
+            _context.Localization["Publisher.TemplatesTitle"],
+            _context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
     }
 
     private async Task PublishCampaignAsync()
@@ -228,8 +228,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization["Log.EnterPostContent"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization["Log.EnterPostContent"]).ConfigureAwait(true);
             return;
         }
 
@@ -242,8 +242,8 @@ public sealed partial class ShellViewModel
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Info,
-                    this._context.Localization["Audit.Cat.Post"],
-                    this._context.Localization.Format("Log.CampaignScheduled", waitMins)).ConfigureAwait(true);
+                    _context.Localization["Audit.Cat.Post"],
+                    _context.Localization.Format("Log.CampaignScheduled", waitMins)).ConfigureAwait(true);
                 await Task.Delay(TimeSpan.FromMinutes(waitMins), ct).ConfigureAwait(true);
             }
 
@@ -259,10 +259,10 @@ public sealed partial class ShellViewModel
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Info,
-                    this._context.Localization["Audit.Cat.Post"],
-                    this._context.Localization["Log.UploadingPhoto"]).ConfigureAwait(true);
+                    _context.Localization["Audit.Cat.Post"],
+                    _context.Localization["Log.UploadingPhoto"]).ConfigureAwait(true);
 
-                string uploadedFbid = await this._context.CometClient
+                string uploadedFbid = await _context.CometClient
                     .UploadUfiPhotoAsync(session, this.PostMediaFilePath.Trim(), ct)
                     .ConfigureAwait(true);
 
@@ -282,7 +282,7 @@ public sealed partial class ShellViewModel
             if (publishToFeed)
             {
                 string feedSpintax = this.PostSpintaxText.Replace("{group_name}", accountName, StringComparison.OrdinalIgnoreCase);
-                string? postId = await this._context.CometClient
+                string? postId = await _context.CometClient
                     .PublishPostAsync(session, feedSpintax, ComposerTarget.Feed, null, photoIds, ct: ct)
                     .ConfigureAwait(true);
 
@@ -292,16 +292,16 @@ public sealed partial class ShellViewModel
 
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
-                    this._recentPublishedPostIds.Add(postId);
+                    _recentPublishedPostIds.Add(postId);
                     if (this.AutoReactPublishedPost)
                     {
-                        _ = await this._context.CometClient
+                        _ = await _context.CometClient
                             .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
                             .ConfigureAwait(true);
                     }
                 }
 
-                await this._context.AccountStore.RecordActionAsync(
+                await _context.AccountStore.RecordActionAsync(
                     new ActionHistoryEntry(
                         session.AccountUid,
                         "POST",
@@ -319,20 +319,20 @@ public sealed partial class ShellViewModel
                     MediaPreviewUrl: null,
                     LocalMediaFilePath: trimmedMediaPath,
                     TargetGroupId: null,
-                    TargetGroupName: this._context.Localization["Publisher.TargetModePersonal"],
+                    TargetGroupName: _context.Localization["Publisher.TargetModePersonal"],
                     TargetGroupAvatarUrl: accountAvatar,
                     PermalinkUrl: !string.IsNullOrWhiteSpace(postId) ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{postId}" : null,
                     CreatedAt: DateTimeOffset.UtcNow,
                     IsPersonalProfilePost: true);
 
-                await this._context.AccountStore.UpsertPublishedPostAsync(feedRecord, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertPublishedPostAsync(feedRecord, ct).ConfigureAwait(true);
                 await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Success,
-                    this._context.Localization["Publisher.TargetModePersonal"],
-                    this._context.Localization["Log.PublishedPersonalTimeline"],
+                    _context.Localization["Publisher.TargetModePersonal"],
+                    _context.Localization["Log.PublishedPersonalTimeline"],
                     feedRecord.PermalinkUrl).ConfigureAwait(true);
 
                 if (!publishToGroups)
@@ -360,8 +360,8 @@ public sealed partial class ShellViewModel
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Warning,
-                    this._context.Localization["Audit.Cat.Group"],
-                    this._context.Localization["Log.NoTargetGroupsForPost"]).ConfigureAwait(true);
+                    _context.Localization["Audit.Cat.Group"],
+                    _context.Localization["Log.NoTargetGroupsForPost"]).ConfigureAwait(true);
                 return;
             }
 
@@ -378,10 +378,10 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     group.GroupName,
-                    this._context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
+                    _context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
                 string groupSpintax = this.PostSpintaxText.Replace("{group_name}", group.GroupName, StringComparison.OrdinalIgnoreCase);
-                string? postId = await this._context.CometClient
+                string? postId = await _context.CometClient
                     .PublishPostAsync(session, groupSpintax, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
                     .ConfigureAwait(true);
 
@@ -391,16 +391,16 @@ public sealed partial class ShellViewModel
 
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
-                    this._recentPublishedPostIds.Add(postId);
+                    _recentPublishedPostIds.Add(postId);
                     if (this.AutoReactPublishedPost)
                     {
-                        _ = await this._context.CometClient
+                        _ = await _context.CometClient
                             .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
                             .ConfigureAwait(true);
                     }
                 }
 
-                await this._context.AccountStore.RecordActionAsync(
+                await _context.AccountStore.RecordActionAsync(
                     new ActionHistoryEntry(
                         session.AccountUid,
                         "POST",
@@ -426,15 +426,15 @@ public sealed partial class ShellViewModel
                     CreatedAt: DateTimeOffset.UtcNow,
                     IsPersonalProfilePost: false);
 
-                await this._context.AccountStore.UpsertPublishedPostAsync(groupRecord, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertPublishedPostAsync(groupRecord, ct).ConfigureAwait(true);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Success,
                     group.GroupName,
                     string.IsNullOrWhiteSpace(postId)
-                        ? this._context.Localization.Format("Log.PostSubmittedPending", group.GroupName)
-                        : this._context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
+                        ? _context.Localization.Format("Log.PostSubmittedPending", group.GroupName)
+                        : _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
                     groupRecord.PermalinkUrl).ConfigureAwait(true);
             }
 
@@ -445,12 +445,12 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, this._context.Localization["Audit.Cat.Post"], ex, ct).ConfigureAwait(true);
+            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, _context.Localization["Audit.Cat.Post"], ex, ct).ConfigureAwait(true);
         }
         finally
         {
@@ -460,7 +460,7 @@ public sealed partial class ShellViewModel
 
     private async Task ReloadPublishedPostsOnlyAsync()
     {
-        IReadOnlyList<PublishedPostRecord> posts = await this._context.AccountStore
+        IReadOnlyList<PublishedPostRecord> posts = await _context.AccountStore
             .GetPublishedPostsAsync(accountUid: null, limit: 250)
             .ConfigureAwait(true);
 
@@ -491,9 +491,9 @@ public sealed partial class ShellViewModel
                 AuditCategory.Post,
                 AuditSeverity.Info,
                 accountName,
-                this._context.Localization.Format("Log.SyncingTimelinePosts", accountName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.SyncingTimelinePosts", accountName)).ConfigureAwait(true);
 
-            PagedResult<PostSummary> timeline = await this._context.CometClient
+            PagedResult<PostSummary> timeline = await _context.CometClient
                 .GetTimelinePostsAsync(session, count: 25, ct: ct)
                 .ConfigureAwait(true);
 
@@ -520,7 +520,7 @@ public sealed partial class ShellViewModel
                         DisplayName = nextName,
                         AvatarUrl = nextAvatar
                     };
-                    await this._context.AccountStore.UpsertAccountAsync(updatedAcc, ct).ConfigureAwait(true);
+                    await _context.AccountStore.UpsertAccountAsync(updatedAcc, ct).ConfigureAwait(true);
                     this.SelectedAccount = updatedAcc;
                     accountName = updatedAcc.DisplayName;
                 }
@@ -537,7 +537,7 @@ public sealed partial class ShellViewModel
 
                 string text = !string.IsNullOrWhiteSpace(p.MessageText)
                     ? p.MessageText
-                    : this._context.Localization["Publisher.SyncedTimelinePostFallback"];
+                    : _context.Localization["Publisher.SyncedTimelinePostFallback"];
 
                 PublishedPostRecord rec = new(
                     PostId: p.PostId,
@@ -548,7 +548,7 @@ public sealed partial class ShellViewModel
                     MediaPreviewUrl: p.MediaPreviewUrl,
                     LocalMediaFilePath: null,
                     TargetGroupId: null,
-                    TargetGroupName: this._context.Localization["Publisher.TargetModePersonal"],
+                    TargetGroupName: _context.Localization["Publisher.TargetModePersonal"],
                     TargetGroupAvatarUrl: p.AuthorAvatarUrl ?? this.SelectedAccount?.AvatarUrl,
                     PermalinkUrl: p.PermalinkUrl ?? $"{ProtocolConstants.Endpoints.BaseOrigin}/{p.PostId}",
                     ReactionCount: p.ReactionCount,
@@ -556,7 +556,7 @@ public sealed partial class ShellViewModel
                     CreatedAt: p.CreatedAt ?? DateTimeOffset.UtcNow,
                     IsPersonalProfilePost: true);
 
-                await this._context.AccountStore.UpsertPublishedPostAsync(rec, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertPublishedPostAsync(rec, ct).ConfigureAwait(true);
                 syncedCount++;
             }
 
@@ -566,23 +566,23 @@ public sealed partial class ShellViewModel
                 AuditCategory.Post,
                 AuditSeverity.Success,
                 accountName,
-                this._context.Localization.Format("Log.SyncedTimelinePostsCount", syncedCount, accountName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.SyncedTimelinePostsCount", syncedCount, accountName)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Error,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization.Format("Log.SyncTimelinePostsFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization.Format("Log.SyncTimelinePostsFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {
@@ -600,8 +600,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization["Log.SelectPostToRepostFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization["Log.SelectPostToRepostFirst"]).ConfigureAwait(true);
             return;
         }
 
@@ -619,8 +619,8 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Group"],
-                this._context.Localization["Log.NoTargetGroupsForPost"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Group"],
+                _context.Localization["Log.NoTargetGroupsForPost"]).ConfigureAwait(true);
             return;
         }
 
@@ -641,7 +641,7 @@ public sealed partial class ShellViewModel
             List<string>? photoIds = null;
             if (!string.IsNullOrWhiteSpace(sourcePost.LocalMediaFilePath) && File.Exists(sourcePost.LocalMediaFilePath))
             {
-                string uploadedFbid = await this._context.CometClient
+                string uploadedFbid = await _context.CometClient
                     .UploadUfiPhotoAsync(session, sourcePost.LocalMediaFilePath, ct)
                     .ConfigureAwait(true);
                 if (!string.IsNullOrWhiteSpace(uploadedFbid))
@@ -670,14 +670,14 @@ public sealed partial class ShellViewModel
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     group.GroupName,
-                    this._context.Localization.Format("Log.RepostingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
+                    _context.Localization.Format("Log.RepostingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
                 string? newPostId = null;
                 if (isRealFbPostId && photoIds is null && sourcePost.IsPersonalProfilePost)
                 {
                     try
                     {
-                        newPostId = await this._context.CometClient
+                        newPostId = await _context.CometClient
                             .SharePostAsync(session, sourcePost.PostId, groupText, group.GroupId, ct)
                             .ConfigureAwait(true);
                     }
@@ -689,17 +689,17 @@ public sealed partial class ShellViewModel
 
                 if (string.IsNullOrWhiteSpace(newPostId))
                 {
-                    newPostId = await this._context.CometClient
+                    newPostId = await _context.CometClient
                         .PublishPostAsync(session, groupText, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
                         .ConfigureAwait(true);
                 }
 
                 if (!string.IsNullOrWhiteSpace(newPostId))
                 {
-                    this._recentPublishedPostIds.Add(newPostId);
+                    _recentPublishedPostIds.Add(newPostId);
                     if (this.AutoReactPublishedPost)
                     {
-                        _ = await this._context.CometClient
+                        _ = await _context.CometClient
                             .ReactToPostAsync(session, newPostId, ReactionKind.Love, ct)
                             .ConfigureAwait(true);
                     }
@@ -726,13 +726,13 @@ public sealed partial class ShellViewModel
                     CreatedAt: DateTimeOffset.UtcNow,
                     IsPersonalProfilePost: false);
 
-                await this._context.AccountStore.UpsertPublishedPostAsync(repostRecord, ct).ConfigureAwait(true);
+                await _context.AccountStore.UpsertPublishedPostAsync(repostRecord, ct).ConfigureAwait(true);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Success,
                     group.GroupName,
-                    this._context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
+                    _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
                     repostRecord.PermalinkUrl).ConfigureAwait(true);
             }
 
@@ -743,12 +743,12 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.Post,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Post"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Post"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, this._context.Localization["Audit.Cat.Post"], ex, ct).ConfigureAwait(true);
+            await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, _context.Localization["Audit.Cat.Post"], ex, ct).ConfigureAwait(true);
         }
         finally
         {
@@ -767,9 +767,9 @@ public sealed partial class ShellViewModel
         string preview = removed.MessageText.Length > 36
             ? string.Concat(removed.MessageText[..36], "...")
             : removed.MessageText;
-        string targetLabel = removed.TargetGroupName ?? this._context.Localization["Publisher.TargetModePersonal"];
+        string targetLabel = removed.TargetGroupName ?? _context.Localization["Publisher.TargetModePersonal"];
 
-        _ = await this._context.AccountStore.DeletePublishedPostAsync(removed.PostId).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeletePublishedPostAsync(removed.PostId).ConfigureAwait(true);
         this.SelectedPublishedPost = null;
         await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
 
@@ -777,7 +777,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Info,
             targetLabel,
-            this._context.Localization.Format("Log.Personal.PublishedPostDeleted", preview)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.PublishedPostDeleted", preview)).ConfigureAwait(true);
     }
 
     private async Task OpenSelectedPublishedPostInBrowserAsync()
@@ -798,13 +798,13 @@ public sealed partial class ShellViewModel
 
     private async Task BumpRecentPostsAsync()
     {
-        if (this._recentPublishedPostIds.Count == 0)
+        if (_recentPublishedPostIds.Count == 0)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Publisher.BumpTitle"],
-                this._context.Localization["Log.NoRecentPostsToBump"]).ConfigureAwait(true);
+                _context.Localization["Publisher.BumpTitle"],
+                _context.Localization["Log.NoRecentPostsToBump"]).ConfigureAwait(true);
             return;
         }
 
@@ -818,27 +818,27 @@ public sealed partial class ShellViewModel
             }
 
             string bumpText = string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText)
-                ? this._context.Localization["Publisher.DefaultBumpSpintax"]
+                ? _context.Localization["Publisher.DefaultBumpSpintax"]
                 : this.BumpCommentSpintaxText;
 
-            for (int i = 0; i < this._recentPublishedPostIds.Count; i++)
+            for (int i = 0; i < _recentPublishedPostIds.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 if (i > 0)
                 {
-                    await this.WaitAntiCheckpointDelayAsync(this._context.Localization["Publisher.TabBump"], ct).ConfigureAwait(true);
+                    await this.WaitAntiCheckpointDelayAsync(_context.Localization["Publisher.TabBump"], ct).ConfigureAwait(true);
                 }
 
-                string postId = this._recentPublishedPostIds[i];
-                _ = await this._context.CometClient
+                string postId = _recentPublishedPostIds[i];
+                _ = await _context.CometClient
                     .CreateCommentAsync(session, postId, bumpText, null, ct: ct)
                     .ConfigureAwait(true);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.SalesComment,
                     AuditSeverity.Success,
-                    this._context.Localization["Publisher.TabBump"],
-                    this._context.Localization.Format("Log.PostBumpedSuccess", i + 1, this._recentPublishedPostIds.Count)).ConfigureAwait(true);
+                    _context.Localization["Publisher.TabBump"],
+                    _context.Localization.Format("Log.PostBumpedSuccess", i + 1, _recentPublishedPostIds.Count)).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)
@@ -846,16 +846,16 @@ public sealed partial class ShellViewModel
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Warning,
-                this._context.Localization["Publisher.TabBump"],
-                this._context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
                 AuditSeverity.Error,
-                this._context.Localization["Publisher.TabBump"],
-                this._context.Localization.Format("Log.PostBumpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization.Format("Log.PostBumpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
         {

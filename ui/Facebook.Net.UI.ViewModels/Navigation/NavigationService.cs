@@ -40,13 +40,13 @@ public sealed class NavigationService : INavigationService
     /// Initializes a new instance of the <see cref="NavigationService"/> class.
     /// </summary>
     public NavigationService(NavigationSection initialSection = NavigationSection.Accounts) =>
-        this._currentSection = initialSection;
+        _currentSection = initialSection;
 
     /// <inheritdoc />
-    public NavigationSection CurrentSection => this._currentSection;
+    public NavigationSection CurrentSection => _currentSection;
 
     /// <inheritdoc />
-    public bool CanGoBack => this._backStack.Count > 0;
+    public bool CanGoBack => _backStack.Count > 0;
 
     /// <inheritdoc />
     public event EventHandler<NavigationSection>? Navigated;
@@ -54,26 +54,26 @@ public sealed class NavigationService : INavigationService
     /// <inheritdoc />
     public void NavigateTo(NavigationSection section)
     {
-        if (this._currentSection == section)
+        if (_currentSection == section)
         {
             return;
         }
 
-        this._backStack.Push(this._currentSection);
-        this._currentSection = section;
+        _backStack.Push(_currentSection);
+        _currentSection = section;
         this.Navigated?.Invoke(this, section);
     }
 
     /// <inheritdoc />
     public bool GoBack()
     {
-        if (this._backStack.Count == 0)
+        if (_backStack.Count == 0)
         {
             return false;
         }
 
-        NavigationSection previous = this._backStack.Pop();
-        this._currentSection = previous;
+        NavigationSection previous = _backStack.Pop();
+        _currentSection = previous;
         this.Navigated?.Invoke(this, previous);
         return true;
     }

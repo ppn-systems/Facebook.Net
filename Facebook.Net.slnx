@@ -9,6 +9,9 @@
     <Project Path="browser/Facebook.Net.Browser.Windows/Facebook.Net.Browser.Windows.csproj" />
     <Project Path="browser/Facebook.Net.Browser.MacOS/Facebook.Net.Browser.MacOS.csproj" />
   </Folder>
+  <Folder Name="/mcp/">
+    <Project Path="mcp/Facebook.Net.Mcp/Facebook.Net.Mcp.csproj" />
+  </Folder>
   <Folder Name="/ui/">
     <Project Path="ui/Facebook.Net.UI.Core/Facebook.Net.UI.Core.csproj" />
     <Project Path="ui/Facebook.Net.UI.Components/Facebook.Net.UI.Components.csproj" />

@@ -120,6 +120,15 @@ public static class VectorIcons
     /// <summary>External link / Open in browser icon asset file name.</summary>
     public const string ExternalLink = "external-link.svg";
 
+    /// <summary>AI Assistant sparkle icon asset file name.</summary>
+    public const string AiSparkle = "ai-sparkle.svg";
+
+    /// <summary>AI Context &amp; Knowledge Memory icon asset file name.</summary>
+    public const string AiContext = "ai-context.svg";
+
+    /// <summary>Conversation history clock icon asset file name.</summary>
+    public const string History = "history.svg";
+
     // ───────────────────────────── Create ─────────────────────────────
 
     /// <summary>
@@ -168,6 +177,38 @@ public static class VectorIcons
         }
 
         return icon;
+    }
+
+    /// <summary>
+    /// Creates an image control displaying the cropped, transparent-background AI Assistant mascot icon (<c>ai-assistant.png</c>),
+    /// falling back to <see cref="AiSparkle"/> in headless environments.
+    /// </summary>
+    public static Control CreateAiAssistantIcon(double size = 22)
+    {
+        try
+        {
+            Assembly asm = typeof(VectorIcons).Assembly;
+            using Stream? stream = asm.GetManifestResourceStream("Assets.Icons.ai-assistant.png");
+            if (stream is not null)
+            {
+                Avalonia.Media.Imaging.Bitmap bitmap = new(stream);
+                Image img = new()
+                {
+                    Source = bitmap,
+                    Width = size,
+                    Height = size,
+                    Stretch = Stretch.Uniform
+                };
+                RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+                return img;
+            }
+        }
+        catch
+        {
+            // Fallback to vector icon when platform imaging is not initialized in headless tests.
+        }
+
+        return Create(AiSparkle, size);
     }
 
     /// <summary>

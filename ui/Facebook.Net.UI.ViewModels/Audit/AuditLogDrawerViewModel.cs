@@ -26,7 +26,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     public AuditLogDrawerViewModel(UiServiceContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        this._context = context;
+        _context = context;
 
         this.IsExpanded = context.Settings.Current.IsAuditDrawerExpanded;
         this.LatestTickerText = context.Localization["Audit.ReadyTicker"];
@@ -36,15 +36,15 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         this.RefreshFilterCommand = new AsyncRelayCommand(this.RefreshLogsAsync);
         this.ClearLogsCommand = new AsyncRelayCommand(this.ClearLogsAsync);
 
-        this._context.AuditStore.LogAppended += this.OnLogAppended;
-        this._context.Localization.LanguageChanged += this.OnLanguageChanged;
+        _context.AuditStore.LogAppended += this.OnLogAppended;
+        _context.Localization.LanguageChanged += this.OnLanguageChanged;
     }
 
     private void OnLanguageChanged(object? sender, Facebook.Net.UI.Core.Localization.AppLanguage e)
     {
         if (this.FilteredLogs.Count == 0)
         {
-            this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
+            this.LatestTickerText = _context.Localization["Audit.ReadyTicker"];
         }
     }
 
@@ -115,7 +115,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             SearchKeyword: this.SearchKeyword,
             Limit: 250);
 
-        List<AuditLogRecord> records = await this._context.AuditStore.QueryAsync(filter).ConfigureAwait(true);
+        List<AuditLogRecord> records = await _context.AuditStore.QueryAsync(filter).ConfigureAwait(true);
 
         int ok = 0;
         int warn = 0;
@@ -153,7 +153,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         }
         else
         {
-            this.LatestTickerText = this._context.Localization["Audit.ReadyTicker"];
+            this.LatestTickerText = _context.Localization["Audit.ReadyTicker"];
         }
     }
 
@@ -170,7 +170,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     private void ToggleDrawer()
     {
         this.IsExpanded = !this.IsExpanded;
-        this._context.Settings.Save(this._context.Settings.Current with
+        _context.Settings.Save(_context.Settings.Current with
         {
             IsAuditDrawerExpanded = this.IsExpanded
         });
@@ -178,7 +178,7 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
 
     private async Task ClearLogsAsync()
     {
-        await this._context.AuditStore.ClearAllAsync().ConfigureAwait(true);
+        await _context.AuditStore.ClearAllAsync().ConfigureAwait(true);
         await this.RefreshLogsAsync().ConfigureAwait(true);
     }
 
@@ -213,14 +213,14 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             }
         }
 
-        this._context.Dispatcher.Post(UpdateUi);
+        _context.Dispatcher.Post(UpdateUi);
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        this._context.AuditStore.LogAppended -= this.OnLogAppended;
-        this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
+        _context.AuditStore.LogAppended -= this.OnLogAppended;
+        _context.Localization.LanguageChanged -= this.OnLanguageChanged;
     }
 
     private bool MatchesFilter(AuditLogRecord record)

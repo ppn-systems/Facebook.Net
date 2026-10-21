@@ -259,6 +259,46 @@ public sealed partial class UiComponentArchitectureGuardTests
     }
 
     [Fact]
+    public void Rule4_AiAssistantPanelAndLocales_MustNotUseEmojiIconsOrSecondBrainNaming_AndSettingsMustHostAiContextTab()
+    {
+        string repoRoot = FindRepositoryRoot();
+        string panelPath = Path.Combine(repoRoot, "ui", "Facebook.Net.App", "Views", "Components", "AiAssistantPanel.cs");
+        Assert.True(File.Exists(panelPath), $"AiAssistantPanel.cs not found at '{panelPath}'.");
+
+        string panelSource = File.ReadAllText(panelPath);
+        string[] forbiddenPanelEmojis = ["🤖", "🧠", "👤", "✅", "✏️", "🔐"];
+        foreach (string emoji in forbiddenPanelEmojis)
+        {
+            Assert.DoesNotContain(emoji, panelSource, StringComparison.Ordinal);
+        }
+
+        string localesDir = Path.Combine(repoRoot, "ui", "Facebook.Net.UI.Core", "Assets", "Locales");
+        string viJson = File.ReadAllText(Path.Combine(localesDir, "vi-VN.json"));
+        string enJson = File.ReadAllText(Path.Combine(localesDir, "en-US.json"));
+
+        Assert.DoesNotContain("Bộ não thứ 2", viJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Second Brain", viJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Bộ não thứ 2", enJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Second Brain", enJson, StringComparison.OrdinalIgnoreCase);
+
+        string[] forbiddenLocaleEmojis = ["🤖", "🧠", "🔐"];
+        foreach (string emoji in forbiddenLocaleEmojis)
+        {
+            Assert.DoesNotContain(emoji, viJson, StringComparison.Ordinal);
+            Assert.DoesNotContain(emoji, enJson, StringComparison.Ordinal);
+        }
+
+        string aiContextTabPath = Path.Combine(repoRoot, "ui", "Facebook.Net.App", "Views", "Pages", "SettingsPage.AiContextTab.cs");
+        Assert.True(File.Exists(aiContextTabPath), $"SettingsPage.AiContextTab.cs not found at '{aiContextTabPath}'.");
+
+        string aiContextTabSource = File.ReadAllText(aiContextTabPath);
+        Assert.True(
+            SearchFilterBarInstantiationRegex().IsMatch(aiContextTabSource),
+            "SettingsPage.AiContextTab.cs must instantiate 'SearchFilterBar'.");
+        Assert.Contains("FilterCategoryDefinition", aiContextTabSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Rule4_AllDestructiveDeleteRemoveClearPages_MustUseConfirmDialogModal()
     {
         string repoRoot = FindRepositoryRoot();

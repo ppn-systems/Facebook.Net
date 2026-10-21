@@ -143,12 +143,12 @@ public sealed partial class ShellViewModel
     /// </summary>
     public void FlushSettingsToDisk()
     {
-        if (this._isLoadingSettings)
+        if (_isLoadingSettings)
         {
             return;
         }
 
-        string? selectedUid = this.SelectedAccount?.Uid ?? this._context.Settings.Current.LastSelectedAccountUid;
+        string? selectedUid = this.SelectedAccount?.Uid ?? _context.Settings.Current.LastSelectedAccountUid;
 
         AppConfig updated = new AppConfig(
             Theme: this.SelectedThemeMode,
@@ -172,15 +172,15 @@ public sealed partial class ShellViewModel
             ScrapeDelayMaxSeconds: this.ScrapeDelayMaxSeconds,
             ScrapeMaxGroupsPerCycle: this.ScrapeMaxGroupsPerCycle).Normalize();
 
-        this._context.Settings.Save(updated);
+        _context.Settings.Save(updated);
     }
 
     private void LoadSettingsIntoProperties()
     {
-        this._isLoadingSettings = true;
+        _isLoadingSettings = true;
         try
         {
-            AppConfig cfg = this._context.Settings.Current;
+            AppConfig cfg = _context.Settings.Current;
             this.IsSidebarCollapsed = cfg.IsSidebarCollapsed;
             this.SelectedThemeMode = cfg.Theme;
             this.SelectedLanguage = cfg.Language;
@@ -200,19 +200,19 @@ public sealed partial class ShellViewModel
         }
         finally
         {
-            this._isLoadingSettings = false;
+            _isLoadingSettings = false;
         }
     }
 
     private void ToggleThemeQuick()
     {
-        this._context.Theme.ToggleTheme();
-        this.SelectedThemeMode = this._context.Theme.CurrentMode;
+        _context.Theme.ToggleTheme();
+        this.SelectedThemeMode = _context.Theme.CurrentMode;
     }
 
     private void ToggleLanguageQuick()
     {
-        AppLanguage next = this._context.Localization.CurrentLanguage == AppLanguage.ViVn
+        AppLanguage next = _context.Localization.CurrentLanguage == AppLanguage.ViVn
             ? AppLanguage.EnUs
             : AppLanguage.ViVn;
 
@@ -221,14 +221,14 @@ public sealed partial class ShellViewModel
 
     private async Task SaveSettingsAsync()
     {
-        AppConfig previous = this._context.Settings.Current;
-        this._context.Theme.SetTheme(this.SelectedThemeMode);
-        this._context.Localization.SetLanguage(this.SelectedLanguage);
+        AppConfig previous = _context.Settings.Current;
+        _context.Theme.SetTheme(this.SelectedThemeMode);
+        _context.Localization.SetLanguage(this.SelectedLanguage);
 
         this.FlushSettingsToDisk();
-        AppConfig updated = this._context.Settings.Current;
+        AppConfig updated = _context.Settings.Current;
 
-        this._isLoadingSettings = true;
+        _isLoadingSettings = true;
         try
         {
             this.MinDelaySeconds = updated.MinDelaySeconds;
@@ -236,7 +236,7 @@ public sealed partial class ShellViewModel
         }
         finally
         {
-            this._isLoadingSettings = false;
+            _isLoadingSettings = false;
         }
 
         // If browser engine or headless mode changed, recycle active browser sessions so the next launch uses the new browser
@@ -246,19 +246,19 @@ public sealed partial class ShellViewModel
         {
             for (int i = 0; i < this.Accounts.Count; i++)
             {
-                await this._context.SessionManager.CloseSessionAsync(this.Accounts[i].Uid).ConfigureAwait(true);
+                await _context.SessionManager.CloseSessionAsync(this.Accounts[i].Uid).ConfigureAwait(true);
             }
         }
 
-        string friendlyTheme = this._context.Localization.FormatThemeMode(updated.Theme);
+        string friendlyTheme = _context.Localization.FormatThemeMode(updated.Theme);
         string friendlyLang = LocalizationService.FormatLanguage(updated.Language);
-        string friendlyBrowser = this._context.Localization.FormatBrowserKind(updated.PreferredBrowser);
+        string friendlyBrowser = _context.Localization.FormatBrowserKind(updated.PreferredBrowser);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
-            this._context.Localization["Nav.Settings"],
-            this._context.Localization.Format("Log.SettingsSaved", friendlyTheme, friendlyLang, friendlyBrowser, updated.MinDelaySeconds, updated.MaxDelaySeconds)).ConfigureAwait(true);
+            _context.Localization["Nav.Settings"],
+            _context.Localization.Format("Log.SettingsSaved", friendlyTheme, friendlyLang, friendlyBrowser, updated.MinDelaySeconds, updated.MaxDelaySeconds)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -271,9 +271,9 @@ public sealed partial class ShellViewModel
     /// Scans the application's local data directory and isolated Chromium profile folders to compute real-time storage usage.
     /// </summary>
     public StorageUsageSnapshot CalculateStorageUsageSnapshot() =>
-        this._context.StorageUsage.CalculateSnapshot(
-            this._context.DataDirectory,
-            this._context.ProfilesRootDirectory,
+        _context.StorageUsage.CalculateSnapshot(
+            _context.DataDirectory,
+            _context.ProfilesRootDirectory,
             this.ResolveFriendlyProfileLabel);
 
     /// <summary>
@@ -282,15 +282,15 @@ public sealed partial class ShellViewModel
     public async Task<long> CleanBrowserProfilesCacheAsync()
     {
         StorageUsageSnapshot before = this.CalculateStorageUsageSnapshot();
-        this._context.StorageUsage.CleanProfileCaches(this._context.ProfilesRootDirectory);
+        _context.StorageUsage.CleanProfileCaches(_context.ProfilesRootDirectory);
         StorageUsageSnapshot after = this.CalculateStorageUsageSnapshot();
         long freedBytes = Math.Max(0, before.TotalUsedBytes - after.TotalUsedBytes);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
-            this._context.Localization["Nav.Settings"],
-            this._context.Localization.Format("Storage.LogCacheCleaned", FormatByteSize(freedBytes), FormatByteSize(after.TotalUsedBytes))).ConfigureAwait(true);
+            _context.Localization["Nav.Settings"],
+            _context.Localization.Format("Storage.LogCacheCleaned", FormatByteSize(freedBytes), FormatByteSize(after.TotalUsedBytes))).ConfigureAwait(true);
 
         return freedBytes;
     }
@@ -301,9 +301,9 @@ public sealed partial class ShellViewModel
     /// </summary>
     public List<BrowserProfileOption> GetAvailableBrowserProfiles()
     {
-        PreferredBrowserKind effectiveKind = this._context.Settings.ResolveEffectiveBrowserKind();
+        PreferredBrowserKind effectiveKind = _context.Settings.ResolveEffectiveBrowserKind();
         List<BrowserProfileOption> discovered = AppSettingsService.DiscoverBrowserProfiles(
-            this._context.ProfilesRootDirectory,
+            _context.ProfilesRootDirectory,
             effectiveKind);
         List<BrowserProfileOption> list = new(discovered.Count + 2);
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
@@ -330,7 +330,7 @@ public sealed partial class ShellViewModel
         {
             string folder = Path.GetFileName(acc.ProfileDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             bool isManaged = this.IsProfileInsideManagedRoot(acc.ProfileDirectory);
-            string prefix = isManaged ? "One Client" : this._context.Localization.FormatBrowserKind(effectiveKind);
+            string prefix = isManaged ? "One Client" : _context.Localization.FormatBrowserKind(effectiveKind);
             list.Insert(0, new BrowserProfileOption($"{prefix} — {folder}", acc.ProfileDirectory, IsManagedByApp: isManaged));
         }
 
@@ -341,7 +341,7 @@ public sealed partial class ShellViewModel
     /// Checks whether the specified <paramref name="directoryPath"/> is strictly inside the application's managed <c>Profiles</c> root directory.
     /// </summary>
     public bool IsProfileInsideManagedRoot(string? directoryPath) =>
-        this._context.StorageUsage.IsProfileInsideManagedRoot(directoryPath, this._context.ProfilesRootDirectory);
+        _context.StorageUsage.IsProfileInsideManagedRoot(directoryPath, _context.ProfilesRootDirectory);
 
     /// <summary>
     /// Computes the total disk size in bytes of a specific profile folder using the fast TTL cache.
@@ -366,7 +366,7 @@ public sealed partial class ShellViewModel
             AccountProfile acc = this.Accounts[i];
             if (string.Equals(acc.ProfileDirectory, targetDir, StringComparison.OrdinalIgnoreCase))
             {
-                await this._context.SessionManager.CloseSessionAsync(acc.Uid).ConfigureAwait(true);
+                await _context.SessionManager.CloseSessionAsync(acc.Uid).ConfigureAwait(true);
             }
         }
 
@@ -382,13 +382,13 @@ public sealed partial class ShellViewModel
             }
         }
 
-        this._context.StorageUsage.InvalidateCache();
+        _context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Info,
             profile.DisplayName,
-            this._context.Localization.Format("Settings.LogProfileDeleted", profile.DisplayName)).ConfigureAwait(true);
+            _context.Localization.Format("Settings.LogProfileDeleted", profile.DisplayName)).ConfigureAwait(true);
 
         return true;
     }
@@ -422,15 +422,15 @@ public sealed partial class ShellViewModel
             safeFolderName = $"Profile_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}";
         }
 
-        string newProfileDir = Path.Combine(this._context.ProfilesRootDirectory, safeFolderName);
+        string newProfileDir = Path.Combine(_context.ProfilesRootDirectory, safeFolderName);
         _ = Directory.CreateDirectory(newProfileDir);
-        this._context.StorageUsage.InvalidateCache();
+        _context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
             trimmed,
-            this._context.Localization.Format("Log.Personal.ProfileCreated", trimmed)).ConfigureAwait(true);
+            _context.Localization.Format("Log.Personal.ProfileCreated", trimmed)).ConfigureAwait(true);
 
         await this.AssignBrowserProfileToSelectedAccountAsync(newProfileDir, trimmed).ConfigureAwait(true);
         return newProfileDir;
@@ -454,9 +454,9 @@ public sealed partial class ShellViewModel
             AccountProfile current = this.SelectedAccount;
             if (!string.Equals(current.ProfileDirectory, fullPath, StringComparison.OrdinalIgnoreCase))
             {
-                await this._context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+                await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
                 AccountProfile updated = current with { ProfileDirectory = fullPath };
-                await this._context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+                await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
                 await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
             }
 
@@ -468,7 +468,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Personal,
                 AuditSeverity.Success,
                 current.DisplayName,
-                this._context.Localization.Format("Settings.LogProfileAssigned", folderName, current.DisplayName)).ConfigureAwait(true);
+                _context.Localization.Format("Settings.LogProfileAssigned", folderName, current.DisplayName)).ConfigureAwait(true);
         }
         else
         {
@@ -492,14 +492,14 @@ public sealed partial class ShellViewModel
                 Status: hasCookies ? AccountStatus.Active : AccountStatus.Idle,
                 LastActiveAt: DateTimeOffset.UtcNow);
 
-            await this._context.AccountStore.UpsertAccountAsync(created).ConfigureAwait(true);
+            await _context.AccountStore.UpsertAccountAsync(created).ConfigureAwait(true);
             await this.ReloadAllStoredDataAsync(created.Uid).ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
                 AuditSeverity.Success,
                 created.DisplayName,
-                this._context.Localization.Format("Settings.LogProfileAssigned", folderName, created.DisplayName)).ConfigureAwait(true);
+                _context.Localization.Format("Settings.LogProfileAssigned", folderName, created.DisplayName)).ConfigureAwait(true);
         }
     }
 

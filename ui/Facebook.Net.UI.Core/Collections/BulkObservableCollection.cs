@@ -26,7 +26,7 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
         ArgumentNullException.ThrowIfNull(items);
 
         this.CheckReentrancy();
-        this._suppressNotification = true;
+        _suppressNotification = true;
         try
         {
             this.Items.Clear();
@@ -37,7 +37,7 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
         }
         finally
         {
-            this._suppressNotification = false;
+            _suppressNotification = false;
         }
 
         this.OnPropertyChanged(new PropertyChangedEventArgs("Count"));
@@ -48,7 +48,7 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
     /// <inheritdoc />
     protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs e)
     {
-        if (!this._suppressNotification)
+        if (!_suppressNotification)
         {
             base.OnCollectionChanged(e);
         }
@@ -57,7 +57,7 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
     /// <inheritdoc />
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
-        if (!this._suppressNotification)
+        if (!_suppressNotification)
         {
             base.OnPropertyChanged(e);
         }

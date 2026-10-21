@@ -105,6 +105,14 @@ public interface IBrowserSession : IAsyncDisposable, IDisposable
     Task NavigateAsync(string url, CancellationToken ct = default);
 
     /// <summary>
+    /// Evaluates a JavaScript expression inside the active tab via CDP <c>Runtime.evaluate</c> and returns its string value.
+    /// </summary>
+    /// <param name="script">The JavaScript expression to evaluate.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The evaluated string result, or <see langword="null"/> if undefined/unavailable.</returns>
+    Task<string?> EvaluateScriptAsync(string script, CancellationToken ct = default) => Task.FromResult<string?>(null);
+
+    /// <summary>
     /// Extracts fresh dynamic tokens (<c>fb_dtsg</c>, <c>jazoest</c>, <c>lsd</c>, <c>client_revision</c>) and cookies from the live page.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>

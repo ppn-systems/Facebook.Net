@@ -64,8 +64,34 @@ public sealed record AppConfig(
     bool ScrapeAllEnabledTargetGroups = true,
     int ScrapeDelayMinSeconds = 8,
     int ScrapeDelayMaxSeconds = 18,
-    int ScrapeMaxGroupsPerCycle = 5)
+    int ScrapeMaxGroupsPerCycle = 5,
+    string AiSystemPrompt = "",
+    string AiModel = AppConfig.DefaultAiModel,
+    string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort)
 {
+    /// <summary>
+    /// Built-in immutable English system prompt always pre-loaded before every AI Assistant conversation.
+    /// </summary>
+    public const string DefaultAiSystemPrompt =
+        "You are the built-in AI Marketing & Automation Copilot inside Facebook One Client. " +
+        "Always reply in the exact language used by the user (defaulting to natural, professional Vietnamese when the user writes in Vietnamese). " +
+        "Be sharp, proactive, and concise — never apologize for delays or explain internal tool mechanics. " +
+        "CRITICAL PERFORMANCE & INTELLIGENCE RULES:\n" +
+        "1. ZERO REDUNDANT TOOL CALLS: The current workspace snapshot (active Facebook account, enabled target groups count, group color tags, saved Spintax templates, anti-checkpoint delay settings, and all AI Context Memory entries) is ALREADY pre-loaded below under [CURRENT WORKSPACE STATE] and [AI CONTEXT MEMORY]. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless the user explicitly asks to query data not shown in the snapshot.\n" +
+        "2. PROACTIVE CAMPAIGN DRAFTING: When the user asks to publish to groups without providing post text (e.g. 'Đăng bài vào nhóm'), immediately look at [AI CONTEXT MEMORY] and [SAVED TEMPLATES] in the snapshot. If templates or product info exist, proactively propose 1 ready-to-use Spintax post draft right away AND emit the `[ACTION:PUBLISH_GROUPS|...]` tag so they can click 1 button to publish, or ask if they want to customize it. Only ask for product details if both memory and templates are completely empty.\n" +
+        "3. ACTION TAG PROTOCOL: Only append `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]` when you have a concrete post text (`content` must NOT be empty). Use `[ACTION:SEARCH_GROUPS|keyword=<text>]` when proposing group discovery, and `[ACTION:SCAN_LEADS|keyword=<text>]` when proposing lead scanning.\n" +
+        "4. AUTOMATIC MEMORY LEARNING: Only call `fb_memory_save` when the user shares NEW product details, pricing, brand voice, or campaign rules.";
+
+    /// <summary>
+    /// Default lightweight, fast AI model ID for <c>agy --model</c>.
+    /// </summary>
+    public const string DefaultAiModel = "gemini-3.8-flash-low";
+
+    /// <summary>
+    /// Default lowest reasoning effort level for <c>agy --effort</c>.
+    /// </summary>
+    public const string DefaultAiReasoningEffort = "low";
+
     /// <summary>
     /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
     /// </summary>
@@ -84,6 +110,16 @@ public sealed record AppConfig(
         string? cleanedUid = string.IsNullOrWhiteSpace(this.LastSelectedAccountUid)
             ? null
             : this.LastSelectedAccountUid.Trim();
+        string cleanedCustomContext = string.IsNullOrWhiteSpace(this.AiSystemPrompt) ||
+                                      string.Equals(this.AiSystemPrompt.Trim(), DefaultAiSystemPrompt, StringComparison.Ordinal)
+            ? string.Empty
+            : this.AiSystemPrompt.Trim();
+        string cleanedModel = string.IsNullOrWhiteSpace(this.AiModel)
+            ? DefaultAiModel
+            : this.AiModel.Trim();
+        string cleanedEffort = string.IsNullOrWhiteSpace(this.AiReasoningEffort)
+            ? DefaultAiReasoningEffort
+            : this.AiReasoningEffort.Trim().ToLowerInvariant();
 
         return this with
         {
@@ -93,10 +129,15 @@ public sealed record AppConfig(
             LastSelectedAccountUid = cleanedUid,
             ScrapeFilterKeywords = this.ScrapeFilterKeywords?.Trim() ?? string.Empty,
             ScrapePostsPerGroup = clampedPerGroup,
+            AutoBackgroundScrapeEnabled = this.AutoBackgroundScrapeEnabled,
             AutoScrapeIntervalMinutes = clampedInterval,
+            ScrapeAllEnabledTargetGroups = this.ScrapeAllEnabledTargetGroups,
             ScrapeDelayMinSeconds = clampedScrapeMin,
             ScrapeDelayMaxSeconds = clampedScrapeMax,
-            ScrapeMaxGroupsPerCycle = clampedMaxGroups
+            ScrapeMaxGroupsPerCycle = clampedMaxGroups,
+            AiSystemPrompt = cleanedCustomContext,
+            AiModel = cleanedModel,
+            AiReasoningEffort = cleanedEffort
         };
     }
 }

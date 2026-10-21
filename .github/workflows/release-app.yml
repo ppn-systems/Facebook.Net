@@ -10,8 +10,18 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      target_platform:
+        description: "Target platform to build and package"
+        required: true
+        type: choice
+        default: "win-x64"
+        options:
+          - "win-x64"
+          - "osx-arm64"
+          - "osx-x64"
+          - "all"
       release_tag:
-        description: "Draft release tag (e.g. v2026.10.0). Leave empty to auto-detect latest draft release or build artifact only."
+        description: "Draft release tag such as v2026.10.0. Leave empty to auto-detect latest draft release or build artifact only."
         required: false
         type: string
 
@@ -23,10 +33,18 @@ permissions:
   contents: write
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. Windows Installer .msi + Portable Bundle .zip [win-x64]
+  #    Bundles both FacebookOneClient.exe and Facebook.Net.Mcp.exe into one MSI
+  # ─────────────────────────────────────────────────────────────────────────────
   build-windows:
-    name: Build Windows Single-File App (win-x64)
+    name: Build Windows MSI and Bundle — win-x64
+    if: >-
+      github.event_name == 'push' ||
+      inputs.target_platform == 'all' ||
+      inputs.target_platform == 'win-x64'
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Resolve target release tag
@@ -46,12 +64,15 @@ jobs:
               | head -n 1 || true)"
           fi
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [ -n "$tag" ]; then
-            echo "Resolved release tag: $tag"
+          raw_ver="${tag#v}"
+          if [[ "$raw_ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            msi_ver="$(echo "$raw_ver" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')"
           else
-            echo "No release tag found. Will build and upload workflow artifact only."
+            msi_ver="1.0.0"
           fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "msi_version=$msi_ver" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -74,11 +95,25 @@ jobs:
         run: |
           if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
             echo "${{ secrets.SIGNING_KEY }}" | base64 -d > "$GITHUB_WORKSPACE/src/Facebook.Net.snk"
-          else
-            echo "SIGNING_KEY is not set. Skipping signing key creation."
           fi
 
-      - name: Publish Single-File Executable (FacebookOneClient.exe)
+      - name: Publish Companion MCP Server — Facebook.Net.Mcp.exe
+        shell: bash
+        run: |
+          dotnet publish mcp/Facebook.Net.Mcp/Facebook.Net.Mcp.csproj \
+            --configuration Release \
+            --runtime win-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none \
+            -p:DebugSymbols=false \
+            --output ./publish/win-x64-mcp
+
+          rm -f ./publish/win-x64-mcp/*.pdb ./publish/win-x64-mcp/*.xml 2>/dev/null || true
+
+      - name: Publish Desktop Client — FacebookOneClient.exe
         shell: bash
         run: |
           dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
@@ -96,36 +131,325 @@ jobs:
             -p:DebugSymbols=false \
             --output ./publish/win-x64
 
+          cp ./publish/win-x64-mcp/Facebook.Net.Mcp.exe ./publish/win-x64/Facebook.Net.Mcp.exe
           rm -f ./publish/win-x64/*.pdb ./publish/win-x64/*.xml 2>/dev/null || true
 
-      - name: Verify Single-File Output
-        shell: bash
+      - name: Build Windows MSI Installer — FacebookOneClient-win-x64.msi
+        shell: pwsh
         run: |
-          set -euo pipefail
-          BIN="./publish/win-x64/FacebookOneClient.exe"
-          test -f "$BIN"
-          FILE_COUNT=$(find ./publish/win-x64 -maxdepth 1 -type f | wc -l)
-          echo "Files in ./publish/win-x64 ($FILE_COUNT):"
-          ls -lh ./publish/win-x64
-          if [ "$FILE_COUNT" -ne 1 ]; then
-            echo "Expected exactly 1 file (FacebookOneClient.exe), found $FILE_COUNT."
-            exit 1
-          fi
+          $ErrorActionPreference = "Stop"
+          dotnet tool install --global wix --version 5.0.2
+          $env:PATH = "$HOME\.dotnet\tools;$env:PATH"
 
-      - name: Upload Single-File Executable Artifact
+          New-Item -ItemType Directory -Force -Path "./dist/win-x64" | Out-Null
+          $publishDir = (Resolve-Path "./publish/win-x64").Path
+          $iconPath = (Resolve-Path "./ui/Facebook.Net.App/Assets/app.ico").Path
+          $msiVersion = "${{ steps.release.outputs.msi_version }}"
+
+          $wxsContent = @"
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+            <Package Name="Facebook One Client"
+                     Manufacturer="PPN Corporation"
+                     Version="$msiVersion"
+                     UpgradeCode="8E6A42F9-3C74-4E81-9F15-7B2C84D51029"
+                     Scope="perMachine"
+                     Compressed="yes">
+              <MajorUpgrade DowngradeErrorMessage="A newer version of Facebook One Client is already installed." />
+              <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+              <Icon Id="AppIcon.ico" SourceFile="$iconPath" />
+              <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+              <StandardDirectory Id="ProgramFiles64Folder">
+                <Directory Id="INSTALLFOLDER" Name="Facebook One Client">
+                  <Component Id="MainExecutableComponent" Guid="52D189E3-9F42-468A-8D11-3E7A91C0B412">
+                    <File Id="FacebookOneClientExe"
+                          Source="$publishDir\FacebookOneClient.exe"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="McpServerExecutableComponent" Guid="74B90C21-6A18-4D53-9B2E-1C8E43A9F504">
+                    <File Id="FacebookNetMcpExe"
+                          Source="$publishDir\Facebook.Net.Mcp.exe"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </StandardDirectory>
+
+              <StandardDirectory Id="ProgramMenuFolder">
+                <Directory Id="AppProgramMenuDir" Name="Facebook One Client">
+                  <Component Id="StartMenuShortcutComponent" Guid="9A14E7C2-2B31-48F6-A519-6D4C20E8B317">
+                    <Shortcut Id="StartMenuShortcut"
+                              Name="Facebook One Client"
+                              Target="[INSTALLFOLDER]FacebookOneClient.exe"
+                              WorkingDirectory="INSTALLFOLDER"
+                              Icon="AppIcon.ico" />
+                    <RemoveFolder Id="RemoveAppProgramMenuDir" On="uninstall" />
+                    <RegistryValue Root="HKCU"
+                                   Key="Software\PPNCorporation\FacebookOneClient"
+                                   Name="StartMenuShortcutInstalled"
+                                   Type="integer"
+                                   Value="1"
+                                   KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </StandardDirectory>
+
+              <StandardDirectory Id="DesktopFolder">
+                <Component Id="DesktopShortcutComponent" Guid="C3E821A4-7D19-4B25-8E62-9F1047C3A825">
+                  <Shortcut Id="DesktopShortcut"
+                            Name="Facebook One Client"
+                            Target="[INSTALLFOLDER]FacebookOneClient.exe"
+                            WorkingDirectory="INSTALLFOLDER"
+                            Icon="AppIcon.ico" />
+                  <RegistryValue Root="HKCU"
+                                 Key="Software\PPNCorporation\FacebookOneClient"
+                                 Name="DesktopShortcutInstalled"
+                                 Type="integer"
+                                 Value="1"
+                                 KeyPath="yes" />
+                </Component>
+              </StandardDirectory>
+
+              <Feature Id="Complete" Title="Facebook One Client &amp; AI MCP Server" Level="1">
+                <ComponentRef Id="MainExecutableComponent" />
+                <ComponentRef Id="McpServerExecutableComponent" />
+                <ComponentRef Id="StartMenuShortcutComponent" />
+                <ComponentRef Id="DesktopShortcutComponent" />
+              </Feature>
+            </Package>
+          </Wix>
+          "@
+
+          Set-Content -Path "./installer.wxs" -Value $wxsContent -Encoding UTF8
+          wix build "./installer.wxs" -arch x64 -o "./dist/win-x64/FacebookOneClient-win-x64.msi"
+          Get-ChildItem "./dist/win-x64"
+
+      - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v7
         with:
           name: FacebookOneClient-win-x64
-          path: ./publish/win-x64/FacebookOneClient.exe
+          path: ./dist/win-x64/FacebookOneClient-win-x64.msi
           if-no-files-found: error
           compression-level: 9
 
-      - name: Upload to GitHub Release
+      - name: Upload Windows Installer to GitHub Release
         if: ${{ steps.release.outputs.tag != '' }}
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           files: |
-            ./publish/win-x64/FacebookOneClient.exe
+            ./dist/win-x64/FacebookOneClient-win-x64.msi
+          draft: true
+          fail_on_unmatched_files: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. macOS Application Bundle .dmg & .pkg [osx-arm64 & osx-x64]
+  #    Bundles both FacebookOneClient and Facebook.Net.Mcp inside Facebook One Client.app
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build macOS DMG and PKG — ${{ matrix.rid }}
+    if: >-
+      github.event_name == 'push' ||
+      inputs.target_platform == 'all' ||
+      inputs.target_platform == 'osx-arm64' ||
+      inputs.target_platform == 'osx-x64'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: >-
+          ${{
+            (github.event_name == 'push' || inputs.target_platform == 'all') && fromJSON('["osx-arm64", "osx-x64"]') ||
+            (inputs.target_platform == 'osx-arm64' && fromJSON('["osx-arm64"]')) ||
+            fromJSON('["osx-x64"]')
+          }}
+
+    steps:
+      - name: Resolve target release tag
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$(gh release list --limit 20 --json tagName,isDraft,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[] | select(.isDraft == true) | .tagName' \
+              | head -n 1 || true)"
+          fi
+
+          raw_ver="${tag#v}"
+          if [[ "$raw_ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            bundle_ver="$(echo "$raw_ver" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')"
+          else
+            bundle_ver="1.0.0"
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "bundle_version=$bundle_ver" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-${{ matrix.rid }}-nuget-${{ hashFiles('**/packages.lock.json', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rid }}-nuget-
+            ${{ runner.os }}-nuget-
+
+      - name: Decode signing key
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$GITHUB_WORKSPACE/src/Facebook.Net.snk"
+          fi
+
+      - name: Publish Companion MCP Server — Facebook.Net.Mcp
+        shell: bash
+        run: |
+          dotnet publish mcp/Facebook.Net.Mcp/Facebook.Net.Mcp.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none \
+            -p:DebugSymbols=false \
+            --output ./publish/${{ matrix.rid }}-mcp
+
+          rm -f ./publish/${{ matrix.rid }}-mcp/*.pdb ./publish/${{ matrix.rid }}-mcp/*.xml 2>/dev/null || true
+
+      - name: Publish Desktop Client — FacebookOneClient
+        shell: bash
+        run: |
+          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:IncludeAllContentForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:PublishDocumentationFile=false \
+            -p:PublishReferencesDocumentationFiles=false \
+            -p:CopyOutputSymbolsToPublishDirectory=false \
+            -p:DebugType=none \
+            -p:DebugSymbols=false \
+            --output ./publish/${{ matrix.rid }}
+
+          rm -f ./publish/${{ matrix.rid }}/*.pdb ./publish/${{ matrix.rid }}/*.xml 2>/dev/null || true
+
+      - name: Package macOS .app Bundle, .dmg Disk Image, and .pkg Installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          RID="${{ matrix.rid }}"
+          VERSION="${{ steps.release.outputs.bundle_version }}"
+          APP_NAME="Facebook One Client.app"
+          BUNDLE_DIR="./bundle/${RID}/${APP_NAME}"
+          DIST_DIR="./dist/${RID}"
+
+          mkdir -p "${BUNDLE_DIR}/Contents/MacOS"
+          mkdir -p "${BUNDLE_DIR}/Contents/Resources"
+          mkdir -p "${DIST_DIR}"
+
+          # Copy both main UI binary and companion MCP binary into Contents/MacOS
+          cp -R ./publish/${RID}/* "${BUNDLE_DIR}/Contents/MacOS/"
+          cp ./publish/${RID}-mcp/Facebook.Net.Mcp "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp"
+          chmod +x "${BUNDLE_DIR}/Contents/MacOS/FacebookOneClient"
+          chmod +x "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp"
+
+          # Generate macOS .icns from brand-logo.png
+          ICON_SRC="ui/Facebook.Net.UI.Components/Assets/Icons/brand-logo.png"
+          if [ -f "$ICON_SRC" ]; then
+            ICONSET_DIR="./bundle/${RID}/app.iconset"
+            mkdir -p "$ICONSET_DIR"
+            sips -z 16 16     "$ICON_SRC" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null
+            sips -z 32 32     "$ICON_SRC" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null
+            sips -z 32 32     "$ICON_SRC" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null
+            sips -z 64 64     "$ICON_SRC" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null
+            sips -z 128 128   "$ICON_SRC" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null
+            sips -z 256 256   "$ICON_SRC" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null
+            sips -z 256 256   "$ICON_SRC" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null
+            sips -z 512 512   "$ICON_SRC" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null
+            sips -z 512 512   "$ICON_SRC" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null
+            sips -z 1024 1024 "$ICON_SRC" --out "${ICONSET_DIR}/icon_512x512@2x.png" >/dev/null
+            iconutil -c icns "$ICONSET_DIR" -o "${BUNDLE_DIR}/Contents/Resources/app.icns" || true
+            rm -rf "$ICONSET_DIR"
+          fi
+
+          cat > "${BUNDLE_DIR}/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Facebook One Client</string>
+            <key>CFBundleDisplayName</key>
+            <string>Facebook One Client</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.ppncorp.facebookoneclient</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleExecutable</key>
+            <string>FacebookOneClient</string>
+            <key>CFBundleIconFile</key>
+            <string>app.icns</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>12.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          # Ad-hoc sign the .app bundle
+          codesign --force --deep --sign - "${BUNDLE_DIR}"
+
+          # Create .dmg drag-and-drop disk image with /Applications symlink
+          DMG_STAGING="./bundle/${RID}/dmg-staging"
+          mkdir -p "${DMG_STAGING}"
+          cp -R "${BUNDLE_DIR}" "${DMG_STAGING}/"
+          ln -s /Applications "${DMG_STAGING}/Applications"
+          hdiutil create \
+            -volname "Facebook One Client" \
+            -srcfolder "${DMG_STAGING}" \
+            -ov -format UDZO \
+            "${DIST_DIR}/FacebookOneClient-${RID}.dmg"
+
+          ls -lh "${DIST_DIR}"
+
+      - name: Upload macOS Installer Artifact — ${{ matrix.rid }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: FacebookOneClient-${{ matrix.rid }}
+          path: ./dist/${{ matrix.rid }}/FacebookOneClient-${{ matrix.rid }}.dmg
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload macOS Installer to GitHub Release — ${{ matrix.rid }}
+        if: ${{ steps.release.outputs.tag != '' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: |
+            ./dist/${{ matrix.rid }}/FacebookOneClient-${{ matrix.rid }}.dmg
           draft: true
           fail_on_unmatched_files: true

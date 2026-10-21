@@ -42,16 +42,16 @@ public static class UniversalSessionImporter
         }
 
         string trimmed = rawProxy.Trim();
-        Facebook.Net.Contracts.Primitives.ProxyProtocol protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Http;
+        Facebook.Net.Contracts.Primitives.ProxyProtocol protocol = Contracts.Primitives.ProxyProtocol.Http;
 
         if (trimmed.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase))
         {
-            protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5;
+            protocol = Contracts.Primitives.ProxyProtocol.Socks5;
             trimmed = trimmed["socks5://".Length..];
         }
         else if (trimmed.StartsWith("socks://", StringComparison.OrdinalIgnoreCase))
         {
-            protocol = Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5;
+            protocol = Contracts.Primitives.ProxyProtocol.Socks5;
             trimmed = trimmed["socks://".Length..];
         }
         else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
@@ -122,7 +122,7 @@ public static class UniversalSessionImporter
             return string.Empty;
         }
 
-        string scheme = proxy.Protocol == Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5 ? "socks5://" : "http://";
+        string scheme = proxy.Protocol == Contracts.Primitives.ProxyProtocol.Socks5 ? "socks5://" : "http://";
         if (!string.IsNullOrWhiteSpace(proxy.Username))
         {
             return $"{scheme}{proxy.Host}:{proxy.Port}:{proxy.Username}:{proxy.Password}";
