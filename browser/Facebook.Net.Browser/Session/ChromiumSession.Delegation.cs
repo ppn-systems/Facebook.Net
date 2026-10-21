@@ -37,7 +37,7 @@ public sealed partial class ChromiumSession
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(formUrlEncodedBody);
 
-        if (_isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached || (!_isOnFacebookOrigin && this.CurrentMaterial is not null))
         {
             return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
         }
@@ -98,6 +98,7 @@ public sealed partial class ChromiumSession
         }
         catch (ProtocolException) when (this.CurrentMaterial is not null && !ct.IsCancellationRequested)
         {
+            _isOnFacebookOrigin = false;
             return await this.ExecuteDetachedHttpPostAsync(url, headers, formUrlEncodedBody, ct).ConfigureAwait(false);
         }
     }
@@ -119,7 +120,7 @@ public sealed partial class ChromiumSession
             throw new FileNotFoundException("Local file for DOM bridge upload was not found.", localFilePath);
         }
 
-        if (_isDetached || !this.IsBrowserProcessAttached)
+        if (_isDetached || !this.IsBrowserProcessAttached || (!_isOnFacebookOrigin && this.CurrentMaterial is not null))
         {
             return await this.ExecuteDetachedMultipartUploadAsync(uploadUrl, localFilePath, fileFieldName, additionalFields, ct).ConfigureAwait(false);
         }
@@ -184,6 +185,11 @@ public sealed partial class ChromiumSession
                 """;
 
             return await this.EvaluateStringAsync(submitJs, awaitPromise: true, ct).ConfigureAwait(false);
+        }
+        catch (ProtocolException) when (this.CurrentMaterial is not null && !ct.IsCancellationRequested)
+        {
+            _isOnFacebookOrigin = false;
+            return await this.ExecuteDetachedMultipartUploadAsync(uploadUrl, localFilePath, fileFieldName, additionalFields, ct).ConfigureAwait(false);
         }
         finally
         {

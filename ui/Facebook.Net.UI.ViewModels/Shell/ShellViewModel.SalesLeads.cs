@@ -380,38 +380,71 @@ public sealed partial class ShellViewModel
             int perGroupLimit = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
             List<PostSummary> collectedForDb = new();
 
-            for (int gIdx = 0; gIdx < targets.Count; gIdx++)
+            if (targets.Count > 1 && session.CurrentMaterial is null)
+            {
+                _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+
+            int parallelChunkSize = this.ScrapeDelayMinSeconds <= 1 ? 3 : 1;
+            for (int chunkStart = 0; chunkStart < targets.Count; chunkStart += parallelChunkSize)
             {
                 ct.ThrowIfCancellationRequested();
-                (string groupId, string groupName, string? groupAvatarUrl) = targets[gIdx];
+                int chunkCount = Math.Min(parallelChunkSize, targets.Count - chunkStart);
 
-                if (gIdx > 0)
+                if (chunkStart > 0)
                 {
-                    await this.WaitScraperRateLimitDelayAsync(groupName, ct).ConfigureAwait(true);
+                    await this.WaitScraperRateLimitDelayAsync(targets[chunkStart].GroupName, ct).ConfigureAwait(true);
                 }
 
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Scrape,
-                    AuditSeverity.Info,
-                    groupName,
-                    _context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
-
-                PagedResult<PostSummary> feed = await _context.CometClient
-                    .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
-                    .ConfigureAwait(true);
-
-                for (int i = 0; i < feed.Items.Count; i++)
+                for (int offset = 0; offset < chunkCount; offset++)
                 {
-                    PostSummary post = feed.Items[i] with
-                    {
-                        GroupId = groupId,
-                        GroupName = groupName,
-                        GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
-                    };
+                    int gIdx = chunkStart + offset;
+                    string groupName = targets[gIdx].GroupName;
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Scrape,
+                        AuditSeverity.Info,
+                        groupName,
+                        _context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
+                }
 
-                    if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                PagedResult<PostSummary>[] feeds;
+                if (chunkCount == 1)
+                {
+                    (string groupId, _, _) = targets[chunkStart];
+                    PagedResult<PostSummary> singleFeed = await _context.CometClient
+                        .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
+                        .ConfigureAwait(true);
+                    feeds = [singleFeed];
+                }
+                else
+                {
+                    Task<PagedResult<PostSummary>>[] feedTasks = new Task<PagedResult<PostSummary>>[chunkCount];
+                    for (int offset = 0; offset < chunkCount; offset++)
                     {
-                        collectedForDb.Add(post);
+                        string groupId = targets[chunkStart + offset].GroupId;
+                        feedTasks[offset] = _context.CometClient.GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct);
+                    }
+
+                    feeds = await Task.WhenAll(feedTasks).ConfigureAwait(true);
+                }
+
+                for (int offset = 0; offset < chunkCount; offset++)
+                {
+                    (string groupId, string groupName, string? groupAvatarUrl) = targets[chunkStart + offset];
+                    PagedResult<PostSummary> feed = feeds[offset];
+                    for (int i = 0; i < feed.Items.Count; i++)
+                    {
+                        PostSummary post = feed.Items[i] with
+                        {
+                            GroupId = groupId,
+                            GroupName = groupName,
+                            GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
+                        };
+
+                        if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                        {
+                            collectedForDb.Add(post);
+                        }
                     }
                 }
             }
@@ -535,15 +568,36 @@ public sealed partial class ShellViewModel
                 return;
             }
 
-            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            List<PostSummary> postsToComment = [.. this.ScrapedPosts];
+            string? batchAttachmentFbid = null;
+            if (!string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) && File.Exists(this.SalesCommentPhotoPath.Trim()))
             {
-                ct.ThrowIfCancellationRequested();
-                if (i > 0)
-                {
-                    await this.WaitAntiCheckpointDelayAsync(this.ScrapedPosts[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
-                }
+                batchAttachmentFbid = await _context.CometClient
+                    .UploadUfiPhotoAsync(session, this.SalesCommentPhotoPath.Trim(), ct)
+                    .ConfigureAwait(true);
+            }
 
-                await this.ExecuteSingleSalesCommentAsync(session, this.ScrapedPosts[i], ct).ConfigureAwait(true);
+            try
+            {
+                for (int i = 0; i < postsToComment.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (i > 0)
+                    {
+                        await this.WaitAntiCheckpointDelayAsync(postsToComment[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
+                    }
+
+                    await this.ExecuteSingleSalesCommentAsync(
+                        session,
+                        postsToComment[i],
+                        ct,
+                        refreshListAfterComment: false,
+                        preUploadedAttachmentFbid: batchAttachmentFbid).ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                this.FilterCachedPostsFromDb();
             }
         }
         catch (OperationCanceledException)
@@ -664,15 +718,21 @@ public sealed partial class ShellViewModel
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
 
-    private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
+    private async Task ExecuteSingleSalesCommentAsync(
+        IBrowserSession session,
+        PostSummary post,
+        CancellationToken ct,
+        bool refreshListAfterComment = true,
+        string? preUploadedAttachmentFbid = null)
     {
         string targetLabel = !string.IsNullOrWhiteSpace(post.AuthorName)
             ? _context.Localization.Format("Log.PostAuthorLabel", post.AuthorName)
             : _context.Localization["Leads.DefaultAuthor"];
 
-        bool alreadyCommented = await _context.AccountStore
-            .HasExecutedActionAsync(session.AccountUid, "COMMENT", post.PostId, ct)
-            .ConfigureAwait(true);
+        bool alreadyCommented = _commentedPostIds.Contains(post.PostId) ||
+            await _context.AccountStore
+                .HasExecutedActionAsync(session.AccountUid, "COMMENT", post.PostId, ct)
+                .ConfigureAwait(true);
 
         if (alreadyCommented)
         {
@@ -693,8 +753,10 @@ public sealed partial class ShellViewModel
                 .ConfigureAwait(true);
         }
 
-        string? attachmentFbid = null;
-        if (!string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) && File.Exists(this.SalesCommentPhotoPath.Trim()))
+        string? attachmentFbid = preUploadedAttachmentFbid;
+        if (string.IsNullOrWhiteSpace(attachmentFbid) &&
+            !string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) &&
+            File.Exists(this.SalesCommentPhotoPath.Trim()))
         {
             attachmentFbid = await _context.CometClient
                 .UploadUfiPhotoAsync(session, this.SalesCommentPhotoPath.Trim(), ct)
@@ -716,7 +778,10 @@ public sealed partial class ShellViewModel
                     commentId,
                     DateTimeOffset.UtcNow),
                 ct).ConfigureAwait(true);
-            this.FilterCachedPostsFromDb();
+            if (refreshListAfterComment)
+            {
+                this.FilterCachedPostsFromDb();
+            }
         }
 
         _ = await this.LogAuditAsync(

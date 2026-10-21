@@ -32,6 +32,7 @@ public sealed partial class ChromiumSession : IBrowserSession
     private readonly IBrowserProcess _process;
     private readonly CdpConnection _cdp;
     private readonly BrowserLaunchOptions? _options;
+    private bool _isOnFacebookOrigin = true;
     private bool _isDetached;
     private bool _isDisposed;
 
@@ -149,6 +150,8 @@ public sealed partial class ChromiumSession : IBrowserSession
             "Page.navigate",
             new CdpNavigateParams(url),
             ct).ConfigureAwait(false);
+
+        _isOnFacebookOrigin = url.Contains("facebook.com", StringComparison.OrdinalIgnoreCase);
 
         const string waitReadyJs = """
             new Promise((resolve) => {
@@ -396,6 +399,7 @@ public sealed partial class ChromiumSession : IBrowserSession
         }
 
         string resolvedFbDtsg = snapshot.FbDtsg;
+        _isOnFacebookOrigin = !string.IsNullOrWhiteSpace(resolvedFbDtsg) || !string.IsNullOrWhiteSpace(snapshot.Uid);
         if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(snapshot.Uid))
         {
             // Poll the active browser tab only when already on facebook.com while Comet hydrates DTSGInitialData

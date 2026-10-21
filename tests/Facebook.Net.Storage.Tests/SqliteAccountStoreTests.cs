@@ -115,6 +115,45 @@ public sealed class SqliteAccountStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task UpsertTargetGroupsBatchAsync_InsertsAndUpdatesBatchInSingleTransaction()
+    {
+        await this._store.InitializeAsync();
+
+        List<SavedTargetGroup> batch = new(50);
+        for (int i = 0; i < 50; i++)
+        {
+            batch.Add(new SavedTargetGroup(
+                GroupId: $"grp_{i:D3}",
+                GroupName: $"Nhóm Số {i:D3}",
+                IsEnabled: i % 2 == 0,
+                Notes: "Batch test",
+                AvatarUrl: $"https://example.com/{i}.png",
+                TagsCsv: "tag_a"));
+        }
+
+        await this._store.UpsertTargetGroupsBatchAsync(batch);
+
+        IReadOnlyList<SavedTargetGroup> stored = await this._store.GetAllTargetGroupsAsync();
+        Assert.Equal(50, stored.Count);
+
+        List<SavedTargetGroup> disableAll = new(50);
+        for (int i = 0; i < stored.Count; i++)
+        {
+            disableAll.Add(stored[i] with { IsEnabled = false, TagsCsv = "tag_b" });
+        }
+
+        await this._store.UpsertTargetGroupsBatchAsync(disableAll);
+
+        IReadOnlyList<SavedTargetGroup> afterUpdate = await this._store.GetAllTargetGroupsAsync();
+        Assert.Equal(50, afterUpdate.Count);
+        Assert.All(afterUpdate, g =>
+        {
+            Assert.False(g.IsEnabled);
+            Assert.Equal("tag_b", g.TagsCsv);
+        });
+    }
+
+    [Fact]
     public async Task ScrapedPostsRepository_UpsertQueryFilterAndClear_WorksCorrectly()
     {
         await this._store.InitializeAsync();

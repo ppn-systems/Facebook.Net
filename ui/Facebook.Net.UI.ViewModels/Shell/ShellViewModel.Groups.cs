@@ -279,7 +279,7 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        int modifiedCount = 0;
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         foreach (SavedTargetGroup grp in groups)
         {
             if (grp is null)
@@ -290,12 +290,15 @@ public sealed partial class ShellViewModel
             (SavedTargetGroup updated, bool changed) = _context.GroupTagService.ApplyTagChange(grp, tagId, assignTag);
             if (changed)
             {
-                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
-                modifiedCount++;
+                modified.Add(updated);
             }
         }
 
-        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        }
 
         string tagName = this.FindGroupTagById(tagId)?.Name ?? tagId;
         _ = await this.LogAuditAsync(
@@ -305,7 +308,7 @@ public sealed partial class ShellViewModel
             _context.Localization.Format(
                 assignTag ? "Log.Personal.BatchTagAssigned" : "Log.Personal.BatchTagRemoved",
                 tagName,
-                modifiedCount)).ConfigureAwait(true);
+                modified.Count)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -320,17 +323,30 @@ public sealed partial class ShellViewModel
 
         _ = await _context.AccountStore.DeleteGroupTagAsync(tag.Id).ConfigureAwait(true);
 
+        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
+            SavedTargetGroup current = this.TargetGroups[i];
             (SavedTargetGroup updated, bool changed) = _context.GroupTagService.ApplyTagChange(
-                this.TargetGroups[i],
+                current,
                 tag.Id,
                 assignTag: false);
             if (changed)
             {
-                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
-                this.TargetGroups[i] = updated;
+                modified.Add(updated);
+                nextList.Add(updated);
             }
+            else
+            {
+                nextList.Add(current);
+            }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            this.TargetGroups.ReplaceAll(nextList);
         }
 
         if (string.Equals(this.ActiveTagFilterId, tag.Id, StringComparison.OrdinalIgnoreCase))
@@ -407,24 +423,40 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        int taggedCount = 0;
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         for (int i = 0; i < this.JoinedGroups.Count; i++)
         {
             GroupSummary grp = this.JoinedGroups[i];
             SavedTargetGroup? tg = this.FindTargetGroupById(grp.GroupId);
             if (tg is null || !tg.HasTag(tagId))
             {
-                await this.ToggleGroupTagAsync(grp.GroupId, grp.Name, grp.AvatarUrl, tagId).ConfigureAwait(true);
-                taggedCount++;
+                SavedTargetGroup existing = tg ?? new SavedTargetGroup(
+                    grp.GroupId,
+                    grp.Name,
+                    IsEnabled: true,
+                    Notes: null,
+                    AvatarUrl: grp.AvatarUrl,
+                    TagsCsv: null);
+                (SavedTargetGroup updated, _) = _context.GroupTagService.ToggleTagOnGroup(
+                    existing,
+                    grp.Name,
+                    grp.AvatarUrl,
+                    tagId);
+                modified.Add(updated);
             }
         }
 
-        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+        }
+
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
             _context.Localization["Audit.Cat.Group"],
-            _context.Localization.Format("Log.BatchTaggedGroups", taggedCount)).ConfigureAwait(true);
+            _context.Localization.Format("Log.BatchTaggedGroups", modified.Count)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -459,19 +491,25 @@ public sealed partial class ShellViewModel
 
         bool targetState = enabledWithTag < totalWithTag;
         System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
             SavedTargetGroup tg = this.TargetGroups[i];
             if (tg.HasTag(tagId) && tg.IsEnabled != targetState)
             {
                 SavedTargetGroup updated = tg with { IsEnabled = targetState };
-                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                modified.Add(updated);
                 nextList.Add(updated);
             }
             else
             {
                 nextList.Add(tg);
             }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
         }
 
         this.TargetGroups.ReplaceAll(nextList);
@@ -492,6 +530,7 @@ public sealed partial class ShellViewModel
             _context.GroupTagService.SelectRandomIndices(this.TargetGroups.Count, randomCount);
 
         System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
             bool shouldEnable = chosen.Contains(i);
@@ -499,13 +538,18 @@ public sealed partial class ShellViewModel
             if (tg.IsEnabled != shouldEnable)
             {
                 SavedTargetGroup updated = tg with { IsEnabled = shouldEnable };
-                await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
+                modified.Add(updated);
                 nextList.Add(updated);
             }
             else
             {
                 nextList.Add(tg);
             }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
         }
 
         this.TargetGroups.ReplaceAll(nextList);
@@ -552,11 +596,27 @@ public sealed partial class ShellViewModel
 
     private async Task SetAllTargetGroupsEnabledAsync(bool isEnabled)
     {
+        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        System.Collections.Generic.List<SavedTargetGroup> modified = new();
         for (int i = 0; i < this.TargetGroups.Count; i++)
         {
-            SavedTargetGroup updated = this.TargetGroups[i] with { IsEnabled = isEnabled };
-            await _context.AccountStore.UpsertTargetGroupAsync(updated).ConfigureAwait(true);
-            this.TargetGroups[i] = updated;
+            SavedTargetGroup current = this.TargetGroups[i];
+            if (current.IsEnabled != isEnabled)
+            {
+                SavedTargetGroup updated = current with { IsEnabled = isEnabled };
+                modified.Add(updated);
+                nextList.Add(updated);
+            }
+            else
+            {
+                nextList.Add(current);
+            }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            this.TargetGroups.ReplaceAll(nextList);
         }
 
         this.RebuildTargetGroupIndex();
@@ -647,6 +707,7 @@ public sealed partial class ShellViewModel
 
         _allCatalogGroups.Clear();
         System.Collections.Generic.List<GroupSummary> nextCatalog = new(result.Items.Count);
+        System.Collections.Generic.List<SavedTargetGroup> batchTargets = new(result.Items.Count);
         for (int i = 0; i < result.Items.Count; i++)
         {
             GroupSummary group = result.Items[i];
@@ -661,7 +722,12 @@ public sealed partial class ShellViewModel
                 Notes: hasExisting ? prev!.Notes : null,
                 AvatarUrl: group.AvatarUrl ?? prev?.AvatarUrl,
                 TagsCsv: hasExisting ? prev!.TagsCsv : null);
-            await _context.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(true);
+            batchTargets.Add(target);
+        }
+
+        if (batchTargets.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(batchTargets, ct).ConfigureAwait(true);
         }
 
         this.JoinedGroups.ReplaceAll(nextCatalog);
