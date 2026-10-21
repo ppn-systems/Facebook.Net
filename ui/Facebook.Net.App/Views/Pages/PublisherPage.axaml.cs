@@ -69,11 +69,16 @@ public sealed partial class PublisherPage : UserControl
 
     private Control BuildLayout()
     {
+        SubTabBar? subTabBar = null;
         Control tab1View = this.BuildComposeTab(out TextBox contentBox, out TextBox photoBox, out Action refreshTab1);
         Control tab2View = this.BuildPublishedPostsAndRepostTab(out Action refreshTab2);
-        Control tab3View = this.BuildTemplatesAndBumpCombinedTab(contentBox, photoBox, out Action refreshTab3);
+        Control tab3View = this.BuildTemplatesAndBumpCombinedTab(
+            contentBox,
+            photoBox,
+            () => subTabBar?.SelectTab(0),
+            out Action refreshTab3);
 
-        SubTabBar subTabBar = new(
+        subTabBar = new SubTabBar(
             this._theme,
             [
                 new SubTabItem(this._i18n["Publisher.TabCompose"], VectorIcons.Publish, tab1View),
@@ -265,67 +270,7 @@ public sealed partial class PublisherPage : UserControl
         contentBox = localContentBox;
 
         // Row 2: 1-Button Dynamic Variable Picker Flyout + Simulated Facebook Post Preview
-        StackPanel variableMenuStack = new()
-        {
-            Spacing = 4,
-            MinWidth = 240
-        };
-
-        Flyout variableFlyout = new()
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = SurfaceCard.Create(this._theme, variableMenuStack, new Thickness(8))
-        };
-
-        void RebuildVariableFlyoutItems()
-        {
-            variableMenuStack.Children.Clear();
-            (string Label, string Token)[] items =
-            [
-                ($"{this._i18n["Common.VarGreetingLabel"]}  •  {{Xin chào|Hello}}", "{Xin chào|Chào cả nhà|Chào anh chị em}"),
-                ($"{this._i18n["Common.VarGroupNameLabel"]}  •  {{group_name}}", "{group_name}"),
-                ($"{this._i18n["Common.VarDateLabel"]}  •  {{date}}", "{date}"),
-                ($"{this._i18n["Common.VarTimeLabel"]}  •  {{time}}", "{time}"),
-                ($"{this._i18n["Common.VarRandomIdLabel"]}  •  #{{random_id}}", "#{random_id}")
-            ];
-
-            for (int i = 0; i < items.Length; i++)
-            {
-                (string itemLabel, string tokenToInsert) = items[i];
-                Button itemBtn = new()
-                {
-                    Content = SectionHeader.CreateLabel(this._theme, itemLabel, 12, FontWeight.SemiBold),
-                    Background = this._theme.Palette.SecondarySurface,
-                    BorderBrush = this._theme.Palette.SubtleBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(10, 6),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                itemBtn.Click += (_, _) =>
-                {
-                    variableFlyout.Hide();
-                    string current = localContentBox.Text ?? string.Empty;
-                    localContentBox.Text = string.IsNullOrEmpty(current)
-                        ? tokenToInsert
-                        : $"{current} {tokenToInsert}";
-                    localContentBox.CaretIndex = localContentBox.Text.Length;
-                    _ = localContentBox.Focus();
-                };
-                variableMenuStack.Children.Add(itemBtn);
-            }
-        }
-
-        RebuildVariableFlyoutItems();
-
-        Button insertVarBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Common.BtnInsertVariable"],
-            null,
-            VectorIcons.Plus);
-        insertVarBtn.Flyout = variableFlyout;
+        Button insertVarBtn = this.CreateVariableInsertFlyoutButton(localContentBox, out Action rebuildComposeVars);
 
         Button previewSpintaxBtn = AppButton.CreateSecondary(
             this._theme,
@@ -852,8 +797,6 @@ public sealed partial class PublisherPage : UserControl
             }
         };
 
-        this._theme.ThemeChanged += (_, _) => RebuildVariableFlyoutItems();
-
         refreshI18n = () =>
         {
             StatusPill.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
@@ -866,8 +809,7 @@ public sealed partial class PublisherPage : UserControl
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             localContentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
-            AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
-            RebuildVariableFlyoutItems();
+            rebuildComposeVars();
             AppButton.SetText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
             localPhotoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
             AppButton.SetText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
@@ -1198,6 +1140,75 @@ public sealed partial class PublisherPage : UserControl
         };
 
         return SurfaceCard.Create(this._theme, pickerGrid, new Thickness(14));
+    }
+
+    internal Button CreateVariableInsertFlyoutButton(TextBox targetBox, out Action rebuildFlyoutItems)
+    {
+        StackPanel variableMenuStack = new()
+        {
+            Spacing = 4,
+            MinWidth = 240
+        };
+
+        Flyout variableFlyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = SurfaceCard.Create(this._theme, variableMenuStack, new Thickness(8))
+        };
+
+        Button insertVarBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Common.BtnInsertVariable"],
+            null,
+            VectorIcons.Plus);
+        insertVarBtn.Flyout = variableFlyout;
+
+        void RebuildItems()
+        {
+            AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
+            variableMenuStack.Children.Clear();
+            (string Label, string Token)[] items =
+            [
+                ($"{this._i18n["Common.VarGreetingLabel"]}  •  {{Xin chào|Hello}}", "{Xin chào|Chào cả nhà|Chào anh chị em}"),
+                ($"{this._i18n["Common.VarGroupNameLabel"]}  •  {{group_name}}", "{group_name}"),
+                ($"{this._i18n["Common.VarDateLabel"]}  •  {{date}}", "{date}"),
+                ($"{this._i18n["Common.VarTimeLabel"]}  •  {{time}}", "{time}"),
+                ($"{this._i18n["Common.VarRandomIdLabel"]}  •  #{{random_id}}", "#{random_id}")
+            ];
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                (string itemLabel, string tokenToInsert) = items[i];
+                Button itemBtn = new()
+                {
+                    Content = SectionHeader.CreateLabel(this._theme, itemLabel, 12, FontWeight.SemiBold),
+                    Background = this._theme.Palette.SecondarySurface,
+                    BorderBrush = this._theme.Palette.SubtleBorder,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(10, 6),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                itemBtn.Click += (_, _) =>
+                {
+                    variableFlyout.Hide();
+                    string current = targetBox.Text ?? string.Empty;
+                    targetBox.Text = string.IsNullOrEmpty(current)
+                        ? tokenToInsert
+                        : $"{current} {tokenToInsert}";
+                    targetBox.CaretIndex = targetBox.Text.Length;
+                    _ = targetBox.Focus();
+                };
+                variableMenuStack.Children.Add(itemBtn);
+            }
+        }
+
+        RebuildItems();
+        this._theme.ThemeChanged += (_, _) => RebuildItems();
+        rebuildFlyoutItems = RebuildItems;
+        return insertVarBtn;
     }
 
     private async Task<IReadOnlyList<string>> PickMultipleFilesAsync(string title)

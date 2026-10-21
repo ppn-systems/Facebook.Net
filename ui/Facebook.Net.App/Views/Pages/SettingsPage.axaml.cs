@@ -69,7 +69,7 @@ public sealed partial class SettingsPage : UserControl
         Control tabAiView = this.BuildAiContextTab(out Action refreshTabAi);
         Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
         AuditLogsPage tab3View = new(_vm);
-        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4);
+        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4, out Action refreshStorageStats);
 
         SubTabBar subTabBar = new(
             _theme,
@@ -80,6 +80,14 @@ public sealed partial class SettingsPage : UserControl
                 new SubTabItem(_i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
                 new SubTabItem(_i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
             ]);
+
+        subTabBar.SelectedIndexChanged += (_, idx) =>
+        {
+            if (idx == 4)
+            {
+                refreshStorageStats();
+            }
+        };
 
         _i18n.LanguageChanged += (_, _) =>
         {

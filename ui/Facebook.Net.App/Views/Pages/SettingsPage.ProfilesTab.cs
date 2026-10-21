@@ -3,11 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
@@ -81,6 +83,7 @@ public sealed partial class SettingsPage
 
         // Row 1: Unified 2-Level Search & Filter Bar
         BulkObservableCollection<BrowserProfileOption> filteredProfiles = new();
+        Dictionary<string, long> profileSizeCache = new(StringComparer.OrdinalIgnoreCase);
         string? sourceFilter = null; // "managed", "system", or null
         SearchFilterBar profileSearchBar = null!;
 
@@ -208,14 +211,30 @@ public sealed partial class SettingsPage
 
                 if (opt.IsManagedByApp)
                 {
-                    long bytes = ShellViewModel.GetProfileDirectorySizeBytes(opt.DirectoryPath);
+                    string initialSizeText = profileSizeCache.TryGetValue(opt.DirectoryPath, out long cachedBytes)
+                        ? $"•  {ShellViewModel.FormatByteSize(cachedBytes)}"
+                        : string.Empty;
                     TextBlock sizeTb = SectionHeader.CreateLabel(
                         this._theme,
-                        $"•  {ShellViewModel.FormatByteSize(bytes)}",
+                        initialSizeText,
                         11.5,
                         FontWeight.Medium,
                         isSecondary: true);
                     nameAndSizeRow.Children.Add(sizeTb);
+
+                    if (string.IsNullOrEmpty(initialSizeText))
+                    {
+                        string dirPath = opt.DirectoryPath;
+                        _ = Task.Run(() =>
+                        {
+                            long bytes = ShellViewModel.GetProfileDirectorySizeBytes(dirPath);
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                profileSizeCache[dirPath] = bytes;
+                                sizeTb.Text = $"•  {ShellViewModel.FormatByteSize(bytes)}";
+                            });
+                        });
+                    }
                 }
 
                 TextBlock pathTb = SectionHeader.CreateLabel(this._theme, opt.DirectoryPath, 11.5, FontWeight.Normal, isSecondary: true);
@@ -430,6 +449,7 @@ public sealed partial class SettingsPage
 
         rescanProfilesBtn.Click += (_, _) =>
         {
+            profileSizeCache.Clear();
             StorageUsageAnalyzer.InvalidateCache();
             RefreshFilteredProfiles();
         };

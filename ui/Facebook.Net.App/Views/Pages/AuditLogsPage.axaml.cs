@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -211,9 +213,35 @@ public sealed partial class AuditLogsPage : UserControl
 
         this._vm.Accounts.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
 
+        CancellationTokenSource? searchDebounceCts = null;
         searchFilterBar.SearchTextBox.TextChanged += async (_, _) =>
         {
             drawerVm.SearchKeyword = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+            if (searchDebounceCts is not null)
+            {
+                CancellationTokenSource prev = searchDebounceCts;
+                searchDebounceCts = null;
+                await prev.CancelAsync().ConfigureAwait(true);
+            }
+
+            using CancellationTokenSource cts = new();
+            searchDebounceCts = cts;
+            try
+            {
+                await Task.Delay(150, cts.Token).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            finally
+            {
+                if (ReferenceEquals(searchDebounceCts, cts))
+                {
+                    searchDebounceCts = null;
+                }
+            }
+
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 

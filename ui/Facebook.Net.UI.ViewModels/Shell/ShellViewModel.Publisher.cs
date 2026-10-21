@@ -383,7 +383,7 @@ public sealed partial class ShellViewModel
 
             if (publishToFeed)
             {
-                string feedSpintax = this.PostSpintaxText.Replace("{group_name}", accountName, StringComparison.OrdinalIgnoreCase);
+                string feedSpintax = ResolveDynamicCommentVariables(this.PostSpintaxText, accountName, accountName);
                 string? postId = await _context.CometClient
                     .PublishPostAsync(session, feedSpintax, ComposerTarget.Feed, null, photoIds, ct: ct)
                     .ConfigureAwait(true);
@@ -482,7 +482,7 @@ public sealed partial class ShellViewModel
                     group.GroupName,
                     _context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
-                string groupSpintax = this.PostSpintaxText.Replace("{group_name}", group.GroupName, StringComparison.OrdinalIgnoreCase);
+                string groupSpintax = ResolveDynamicCommentVariables(this.PostSpintaxText, accountName, group.GroupName);
                 string? postId = await _context.CometClient
                     .PublishPostAsync(session, groupSpintax, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
                     .ConfigureAwait(true);
@@ -763,7 +763,7 @@ public sealed partial class ShellViewModel
                 }
 
                 SavedTargetGroup group = targets[i];
-                string groupText = rawSpintax.Replace("{group_name}", group.GroupName, StringComparison.OrdinalIgnoreCase);
+                string groupText = ResolveDynamicCommentVariables(rawSpintax, accountName, group.GroupName);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
@@ -899,7 +899,53 @@ public sealed partial class ShellViewModel
 
     private async Task BumpRecentPostsAsync()
     {
-        if (_recentPublishedPostIds.Count == 0)
+        List<(string PostId, string? GroupName)> bumpTargets = new();
+        HashSet<string> seenPostIds = new(StringComparer.Ordinal);
+        if (_recentPublishedPostIds.Count > 0)
+        {
+            for (int i = 0; i < _recentPublishedPostIds.Count; i++)
+            {
+                string postId = _recentPublishedPostIds[i];
+                if (string.IsNullOrWhiteSpace(postId) || !seenPostIds.Add(postId))
+                {
+                    continue;
+                }
+
+                string? groupName = null;
+                for (int j = 0; j < this.PublishedPosts.Count; j++)
+                {
+                    if (string.Equals(this.PublishedPosts[j].PostId, postId, StringComparison.Ordinal))
+                    {
+                        groupName = this.PublishedPosts[j].TargetGroupName;
+                        break;
+                    }
+                }
+
+                bumpTargets.Add((postId, groupName));
+            }
+        }
+        else
+        {
+            for (int i = 0; i < this.PublishedPosts.Count && bumpTargets.Count < 25; i++)
+            {
+                PublishedPostRecord rec = this.PublishedPosts[i];
+                if (rec.IsPersonalProfilePost ||
+                    string.IsNullOrWhiteSpace(rec.PostId) ||
+                    rec.PostId.StartsWith("grp_", StringComparison.Ordinal) ||
+                    rec.PostId.StartsWith("feed_", StringComparison.Ordinal) ||
+                    (this.SelectedAccount is not null && !string.Equals(rec.AccountUid, this.SelectedAccount.Uid, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (seenPostIds.Add(rec.PostId))
+                {
+                    bumpTargets.Add((rec.PostId, rec.TargetGroupName));
+                }
+            }
+        }
+
+        if (bumpTargets.Count == 0)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.SalesComment,
@@ -922,7 +968,7 @@ public sealed partial class ShellViewModel
                 ? _context.Localization["Publisher.DefaultBumpSpintax"]
                 : this.BumpCommentSpintaxText;
 
-            for (int i = 0; i < _recentPublishedPostIds.Count; i++)
+            for (int i = 0; i < bumpTargets.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 if (i > 0)
@@ -930,16 +976,17 @@ public sealed partial class ShellViewModel
                     await this.WaitAntiCheckpointDelayAsync(_context.Localization["Publisher.TabBump"], ct).ConfigureAwait(true);
                 }
 
-                string postId = _recentPublishedPostIds[i];
+                (string postId, string? groupName) = bumpTargets[i];
+                string resolvedBumpText = ResolveDynamicCommentVariables(bumpText, this.SelectedAccount?.DisplayName, groupName);
                 _ = await _context.CometClient
-                    .CreateCommentAsync(session, postId, bumpText, null, ct: ct)
+                    .CreateCommentAsync(session, postId, resolvedBumpText, null, ct: ct)
                     .ConfigureAwait(true);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.SalesComment,
                     AuditSeverity.Success,
                     _context.Localization["Publisher.TabBump"],
-                    _context.Localization.Format("Log.PostBumpedSuccess", i + 1, _recentPublishedPostIds.Count)).ConfigureAwait(true);
+                    _context.Localization.Format("Log.PostBumpedSuccess", i + 1, bumpTargets.Count)).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)

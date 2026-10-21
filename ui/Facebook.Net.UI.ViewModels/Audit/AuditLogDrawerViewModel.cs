@@ -106,24 +106,32 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     public async Task RefreshLogsAsync()
     {
         DateTimeOffset? fromTime = ResolveFromTime(this.SelectedTimeRange);
+        bool hasKeyword = !string.IsNullOrWhiteSpace(this.SearchKeyword);
 
         AuditLogFilter filter = new(
             Category: this.SelectedCategory,
             Severity: this.SelectedSeverity,
             AccountUid: this.SelectedAccountUid,
             FromTime: fromTime,
-            SearchKeyword: this.SearchKeyword,
-            Limit: 250);
+            SearchKeyword: null,
+            Limit: hasKeyword ? 600 : 250);
 
         List<AuditLogRecord> records = await _context.AuditStore.QueryAsync(filter).ConfigureAwait(true);
+        List<AuditLogRecord> matched = new(Math.Min(records.Count, 250));
 
         int ok = 0;
         int warn = 0;
         int err = 0;
 
-        for (int i = 0; i < records.Count; i++)
+        for (int i = 0; i < records.Count && matched.Count < 250; i++)
         {
             AuditLogRecord item = records[i];
+            if (hasKeyword && !this.MatchesKeyword(item, this.SearchKeyword))
+            {
+                continue;
+            }
+
+            matched.Add(item);
             switch (item.Severity)
             {
                 case AuditSeverity.Success:
@@ -141,14 +149,14 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             }
         }
 
-        this.FilteredLogs.ReplaceAll(records);
+        this.FilteredLogs.ReplaceAll(matched);
         this.SuccessCount = ok;
         this.WarningCount = warn;
         this.ErrorCount = err;
 
-        if (records.Count > 0)
+        if (matched.Count > 0)
         {
-            AuditLogRecord latest = records[0];
+            AuditLogRecord latest = matched[0];
             this.LatestTickerText = $"[{latest.Timestamp.ToLocalTime():HH:mm:ss}] [{latest.AccountDisplayName}] {latest.Message}";
         }
         else
@@ -247,17 +255,32 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(this.SearchKeyword))
+        return this.MatchesKeyword(record, this.SearchKeyword);
+    }
+
+    private bool MatchesKeyword(AuditLogRecord record, string? rawKeyword)
+    {
+        if (string.IsNullOrWhiteSpace(rawKeyword))
         {
-            string kw = this.SearchKeyword.Trim();
-            if (!record.Message.Contains(kw, StringComparison.OrdinalIgnoreCase) &&
-                !record.TargetName.Contains(kw, StringComparison.OrdinalIgnoreCase) &&
-                !record.AccountDisplayName.Contains(kw, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+            return true;
         }
 
-        return true;
+        string kw = rawKeyword.Trim();
+        if (record.Message.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+            record.TargetName.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+            record.AccountDisplayName.Contains(kw, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string normKw = _context.LeadScoring.RemoveVietnameseDiacritics(kw);
+        if (string.IsNullOrWhiteSpace(normKw))
+        {
+            return false;
+        }
+
+        return _context.LeadScoring.RemoveVietnameseDiacritics(record.Message).Contains(normKw, StringComparison.OrdinalIgnoreCase) ||
+               _context.LeadScoring.RemoveVietnameseDiacritics(record.TargetName).Contains(normKw, StringComparison.OrdinalIgnoreCase) ||
+               _context.LeadScoring.RemoveVietnameseDiacritics(record.AccountDisplayName).Contains(normKw, StringComparison.OrdinalIgnoreCase);
     }
 }
