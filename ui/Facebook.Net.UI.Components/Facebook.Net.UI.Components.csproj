@@ -9,7 +9,9 @@
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
     <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="Assets.Icons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\Icons\*.png" LogicalName="Assets.Icons.%(Filename)%(Extension)" />
     <None Include="Assets\Icons\*.svg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\Icons\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

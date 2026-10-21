@@ -21,6 +21,7 @@ Thư viện C# SDK và ứng dụng Desktop **Facebook One Client** hỗ trợ q
 | **`Facebook.Net`** | Client chính (`CometClient`) thực thi các tính năng lấy bảng tin, quản lý hội nhóm, đăng bài, thả cảm xúc và bình luận. |
 | **`Facebook.Net.Browser`** | Quản lý phiên trình duyệt độc lập (`BrowserSessionManager`) và điều khiển trình duyệt đa nền tảng (Windows / macOS). |
 | **`Facebook.Net.Storage`** | Lưu trữ dữ liệu cục bộ bằng SQLite (`SqliteAccountStore`, `SqliteAuditLogStore`) cho tài khoản, hội nhóm, bài viết và nhật ký. |
+| **`Facebook.Net.Mcp`** | Máy chủ **Model Context Protocol (MCP)** tích hợp trực tiếp với Claude Desktop, ChatGPT, Antigravity IDE và Cursor. |
 | **`Facebook.Net.UI.*`** | Hệ thống giao diện người dùng (`Core`, `Components`, `ViewModels`) phục vụ ứng dụng Desktop. |
 | **`Facebook.Net.App`** | Ứng dụng Desktop **Facebook One Client** (`FacebookOneClient.exe`). |
 

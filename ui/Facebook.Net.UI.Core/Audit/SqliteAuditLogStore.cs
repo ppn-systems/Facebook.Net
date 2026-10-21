@@ -72,7 +72,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             Pooling = true,
             DefaultTimeout = 5
         };
-        this._connectionString = builder.ToString();
+        _connectionString = builder.ToString();
     }
 
     /// <inheritdoc />
@@ -109,7 +109,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             CREATE INDEX IF NOT EXISTS idx_audit_acc_id ON audit_logs(account_uid, id DESC);
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -145,7 +145,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             SELECT last_insert_rowid();
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -196,7 +196,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             LIMIT $limit;
             """;
 
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -237,7 +237,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             PRAGMA wal_checkpoint(TRUNCATE);
             VACUUM;
             """;
-        using SqliteConnection conn = new(this._connectionString);
+        using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = sql;

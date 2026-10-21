@@ -8,9 +8,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.ViewModels.AiAssistant;
 using Facebook.Net.UI.ViewModels.Audit;
 using Facebook.Net.UI.ViewModels.Navigation;
 using Facebook.Net.UI.ViewModels.Services;
@@ -65,7 +67,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     public ShellViewModel(UiServiceContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        this._context = context;
+        _context = context;
         this.Navigation = new NavigationService(NavigationSection.Accounts);
         this.Navigation.Navigated += (_, section) =>
         {
@@ -75,6 +77,16 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
         };
         this.AuditDrawer = new AuditLogDrawerViewModel(context);
+        this.AiAssistant = new AiAssistantViewModel(
+            context,
+            onMcpDatabaseUpdated: async () =>
+            {
+                await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+                await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
+                await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
+            },
+            onExecuteProposedActionInShell: this.HandleAiProposedAction);
+        this.ToggleAiAssistantCommand = this.AiAssistant.TogglePanelCommand;
 
         this.Accounts = new BulkObservableCollection<AccountProfile>();
         this.JoinedGroups = new BulkObservableCollection<GroupSummary>();
@@ -143,20 +155,44 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.SaveSettingsCommand = new AsyncRelayCommand(this.SaveSettingsAsync);
 
         this.SyncLocalizedDefaultPrompts();
-        this._context.Localization.LanguageChanged += this.OnLanguageChanged;
+        _context.Localization.LanguageChanged += this.OnLanguageChanged;
     }
 
     private void OnLanguageChanged(object? sender, AppLanguage e) =>
         this.SyncLocalizedDefaultPrompts();
 
     /// <summary>Gets the shared UI service context.</summary>
-    public UiServiceContext Context => this._context;
+    public UiServiceContext Context => _context;
 
     /// <summary>Gets the page navigation service managing view transitions and back stack.</summary>
     public NavigationService Navigation { get; }
 
     /// <summary>Gets the collapsible bottom Audit Log drawer ViewModel.</summary>
     public AuditLogDrawerViewModel AuditDrawer { get; }
+
+    /// <summary>Gets the right-hand slide-over AI Assistant ViewModel.</summary>
+    public AiAssistantViewModel AiAssistant { get; }
+
+    /// <summary>Gets the command to toggle the right-hand AI Assistant panel.</summary>
+    public IRelayCommand ToggleAiAssistantCommand { get; }
+
+    /// <summary>Gets or sets the Spintax post content alias used by AI Assistant actions.</summary>
+    public string PostSpintaxContent
+    {
+        get => this.PostSpintaxText;
+        set => this.PostSpintaxText = value;
+    }
+
+    /// <summary>Gets or sets the lead filter keywords alias used by AI Assistant actions.</summary>
+    public string LeadFilterKeywords
+    {
+        get => this.BuyerIntentKeywords;
+        set
+        {
+            this.BuyerIntentKeywords = value;
+            this.ScrapeFilterKeywords = value;
+        }
+    }
 
     /// <summary>Gets or sets the currently active navigation screen.</summary>
     [ObservableProperty]
@@ -331,12 +367,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand SaveSettingsCommand { get; }
 
     /// <summary>
-    /// Initializes both SQLite databases (<c>facebook_net.db</c> and <c>facebook_audit.db</c>) and loads stored state.
+    /// Initializes SQLite databases (<c>facebook_net.db</c>, <c>facebook_audit.db</c>, and <c>facebook_ai_memory.db</c>) and loads stored state.
     /// </summary>
     public async Task InitializeAsync()
     {
-        await this._context.AccountStore.InitializeAsync().ConfigureAwait(true);
-        await this._context.AuditStore.InitializeAsync().ConfigureAwait(true);
+        await _context.AccountStore.InitializeAsync().ConfigureAwait(true);
+        await _context.AuditStore.InitializeAsync().ConfigureAwait(true);
+        await this.AiAssistant.EnsureMemoryLoadedAsync().ConfigureAwait(true);
 
         this.LoadSettingsIntoProperties();
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
@@ -347,8 +384,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _ = await this.LogAuditAsync(
             AuditCategory.System,
             AuditSeverity.Info,
-            targetName: this._context.Localization["Audit.Cat.System"],
-            message: this._context.Localization.Format("Log.SystemInitialized", this.Accounts.Count, this.TargetGroups.Count)).ConfigureAwait(true);
+            targetName: _context.Localization["Audit.Cat.System"],
+            message: _context.Localization.Format("Log.SystemInitialized", this.Accounts.Count, this.TargetGroups.Count)).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -356,9 +393,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// </summary>
     public void StopActiveTask()
     {
-        if (this._activeTaskCts is not null && !this._activeTaskCts.IsCancellationRequested)
+        if (_activeTaskCts is not null && !_activeTaskCts.IsCancellationRequested)
         {
-            this._activeTaskCts.Cancel();
+            _activeTaskCts.Cancel();
         }
     }
 
@@ -367,20 +404,20 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         this.StopBackgroundScraperLoop();
         this.FlushSettingsToDisk();
-        this._context.Localization.LanguageChanged -= this.OnLanguageChanged;
-        this._activeTaskCts?.Cancel();
-        this._activeTaskCts?.Dispose();
-        this._activeTaskCts = null;
+        _context.Localization.LanguageChanged -= this.OnLanguageChanged;
+        _activeTaskCts?.Cancel();
+        _activeTaskCts?.Dispose();
+        _activeTaskCts = null;
         this.AuditDrawer.Dispose();
     }
 
     private CancellationToken BeginTaskScope()
     {
-        this._activeTaskCts?.Cancel();
-        this._activeTaskCts?.Dispose();
-        this._activeTaskCts = new CancellationTokenSource();
+        _activeTaskCts?.Cancel();
+        _activeTaskCts?.Dispose();
+        _activeTaskCts = new CancellationTokenSource();
         this.IsBusy = true;
-        return this._activeTaskCts.Token;
+        return _activeTaskCts.Token;
     }
 
     private void EndTaskScope() => this.IsBusy = false;
@@ -393,8 +430,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         string? permalinkUrl = null)
     {
         string uid = this.SelectedAccount?.Uid ?? "system";
-        string name = this.SelectedAccount?.DisplayName ?? this._context.Localization["Audit.Cat.System"];
-        return this._context.AuditStore.AppendAsync(category, severity, uid, name, targetName, message, permalinkUrl);
+        string name = this.SelectedAccount?.DisplayName ?? _context.Localization["Audit.Cat.System"];
+        return _context.AuditStore.AppendAsync(category, severity, uid, name, targetName, message, permalinkUrl);
     }
 
     private string SanitizeErrorMessage(Exception ex)
@@ -402,10 +439,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         string raw = ex.Message;
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return this._context.Localization["Log.ConnectionInterrupted"];
+            return _context.Localization["Log.ConnectionInterrupted"];
         }
 
-        if (this._context.Localization.CurrentLanguage == AppLanguage.EnUs)
+        if (_context.Localization.CurrentLanguage == AppLanguage.EnUs)
         {
             return raw
                 .Replace("UID", "account profile", StringComparison.OrdinalIgnoreCase)
@@ -426,14 +463,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,
                 AuditSeverity.Warning,
-                this._context.Localization["Audit.Cat.Account"],
-                this._context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
             return null;
         }
 
-        IBrowserSession? existing = this._context.SessionManager.TryGetSession(this.SelectedAccount.Uid);
+        IBrowserSession? existing = _context.SessionManager.TryGetSession(this.SelectedAccount.Uid);
         if (existing is not null &&
-            existing.State == Facebook.Net.Contracts.Primitives.BrowserState.Running &&
+            existing.State == Contracts.Primitives.BrowserState.Running &&
             (!forceVisible || existing.IsBrowserProcessAttached))
         {
             return existing;
@@ -443,7 +480,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.ProxyId))
         {
             System.Collections.Generic.IReadOnlyList<ProxyConfig> proxies =
-                await this._context.AccountStore.GetAllProxiesAsync(ct).ConfigureAwait(true);
+                await _context.AccountStore.GetAllProxiesAsync(ct).ConfigureAwait(true);
             for (int i = 0; i < proxies.Count; i++)
             {
                 if (string.Equals(proxies[i].Id, this.SelectedAccount.ProxyId, StringComparison.Ordinal))
@@ -454,8 +491,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
-        bool isAutomatedHeadless = !forceVisible && this._context.Settings.Current.RunBrowserHeadless;
-        string? preferredExe = this._context.Settings.ResolvePreferredBrowserExecutable();
+        bool isAutomatedHeadless = !forceVisible && _context.Settings.Current.RunBrowserHeadless;
+        string? preferredExe = _context.Settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions options = new(
             AccountUid: this.SelectedAccount.Uid,
             UserDataDir: this.SelectedAccount.ProfileDirectory,
@@ -468,12 +505,44 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             TerminateProcessAfterExtract: isAutomatedHeadless,
             CleanDiskCache: true);
 
-        IBrowserSession session = await this._context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);
+        IBrowserSession session = await _context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.CookieHeader))
         {
             _ = await session.ImportCookiesAsync(this.SelectedAccount.CookieHeader, ct: ct).ConfigureAwait(true);
         }
 
         return session;
+    }
+
+    private void HandleAiProposedAction(AgyProposedAction action)
+    {
+        if (action is null)
+        {
+            return;
+        }
+
+        if (string.Equals(action.ActionKind, "PUBLISH_GROUPS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.PostSpintaxContent = action.ContentText ?? this.PostSpintaxContent;
+            this.Navigation.NavigateTo(NavigationSection.Publisher);
+            _ = this.PublishCampaignAsync();
+        }
+        else if (string.Equals(action.ActionKind, "EDIT_DRAFT", StringComparison.OrdinalIgnoreCase))
+        {
+            this.PostSpintaxContent = action.ContentText ?? this.PostSpintaxContent;
+            this.Navigation.NavigateTo(NavigationSection.Publisher);
+        }
+        else if (string.Equals(action.ActionKind, "SEARCH_GROUPS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.GroupSearchKeyword = action.GroupKeyword ?? string.Empty;
+            this.Navigation.NavigateTo(NavigationSection.Groups);
+            _ = this.SearchGroupsByKeywordAsync();
+        }
+        else if (string.Equals(action.ActionKind, "SCAN_LEADS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.LeadFilterKeywords = action.GroupKeyword ?? this.LeadFilterKeywords;
+            this.Navigation.NavigateTo(NavigationSection.SalesLeads);
+            _ = this.ScanGroupLeadsAsync();
+        }
     }
 }

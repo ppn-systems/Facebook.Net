@@ -11,6 +11,7 @@ using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Storage;
 using Facebook.Net.UI.Core.Accounts;
+using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Groups;
@@ -84,6 +85,8 @@ public sealed class UiServiceContext : IDisposable
     /// <param name="leadScoring"></param>
     /// <param name="accountVault"></param>
     /// <param name="groupTagService"></param>
+    /// <param name="aiMemoryStore">Optional custom AI Memory SQLite store implementation (for testing).</param>
+    /// <param name="agyCliService">Optional custom Google Antigravity CLI service implementation (for testing).</param>
     public UiServiceContext(
         IBrowserAdapter platformBrowserAdapter,
         string? customDataDir = null,
@@ -95,7 +98,9 @@ public sealed class UiServiceContext : IDisposable
         IStorageUsageService? storageUsage = null,
         ILeadScoringService? leadScoring = null,
         IAccountVaultDomainService? accountVault = null,
-        IGroupTagDomainService? groupTagService = null)
+        IGroupTagDomainService? groupTagService = null,
+        IAiMemoryStore? aiMemoryStore = null,
+        IAgyCliService? agyCliService = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
 
@@ -125,6 +130,10 @@ public sealed class UiServiceContext : IDisposable
 
         string auditDbPath = Path.Combine(rootDir, "facebook_audit.db");
         this.AuditStore = auditStore ?? new SqliteAuditLogStore(auditDbPath);
+
+        string aiMemoryDbPath = Path.Combine(rootDir, "facebook_ai_memory.db");
+        this.AiMemoryStore = aiMemoryStore ?? new SqliteAiMemoryStore(aiMemoryDbPath);
+        this.AgyCli = agyCliService ?? new AgyCliService(rootDir);
 
         this.StorageUsage = storageUsage ?? StorageUsageService.Instance;
         this.LeadScoring = leadScoring ?? LeadScoringService.Instance;
@@ -160,6 +169,12 @@ public sealed class UiServiceContext : IDisposable
     /// <summary>Gets the dedicated audit log store (<c>facebook_audit.db</c>).</summary>
     public IAuditLogStore AuditStore { get; }
 
+    /// <summary>Gets the shared AI Assistant persistent memory &amp; chat store (<c>facebook_ai_memory.db</c>).</summary>
+    public IAiMemoryStore AiMemoryStore { get; }
+
+    /// <summary>Gets the Google Antigravity CLI (<c>agy</c>) and CDP OAuth orchestration service.</summary>
+    public IAgyCliService AgyCli { get; }
+
     /// <summary>Gets the disk and profile storage usage domain service.</summary>
     public IStorageUsageService StorageUsage { get; }
 
@@ -182,5 +197,13 @@ public sealed class UiServiceContext : IDisposable
     public ICometClient CometClient { get; }
 
     /// <inheritdoc />
-    public void Dispose() => this.SessionManager.Dispose();
+    public void Dispose()
+    {
+        if (this.AgyCli is IDisposable disposableAgy)
+        {
+            disposableAgy.Dispose();
+        }
+
+        this.SessionManager.Dispose();
+    }
 }

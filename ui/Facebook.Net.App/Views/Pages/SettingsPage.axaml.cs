@@ -38,9 +38,9 @@ public sealed partial class SettingsPage : UserControl
     /// </summary>
     public SettingsPage()
     {
-        this._vm = null!;
-        this._theme = null!;
-        this._i18n = null!;
+        _vm = null!;
+        _theme = null!;
+        _i18n = null!;
         this.InitializeComponent();
     }
 
@@ -50,9 +50,9 @@ public sealed partial class SettingsPage : UserControl
     public SettingsPage(ShellViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
-        this._vm = viewModel;
-        this._theme = viewModel.Context.Theme;
-        this._i18n = viewModel.Context.Localization;
+        _vm = viewModel;
+        _theme = viewModel.Context.Theme;
+        _i18n = viewModel.Context.Localization;
         this.DataContext = viewModel;
 
         this.InitializeComponent();
@@ -65,29 +65,33 @@ public sealed partial class SettingsPage : UserControl
     private Control BuildLayout()
     {
         Control tab1View = this.BuildGeneralSettingsTab(out Action refreshTab1);
+        Control tabAiView = this.BuildAiContextTab(out Action refreshTabAi);
         Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
-        AuditLogsPage tab3View = new(this._vm);
+        AuditLogsPage tab3View = new(_vm);
         Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4);
 
         SubTabBar subTabBar = new(
-            this._theme,
+            _theme,
             [
-                new SubTabItem(this._i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
-                new SubTabItem(this._i18n["Settings.TabProfiles"], VectorIcons.Browser, tab2View),
-                new SubTabItem(this._i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
-                new SubTabItem(this._i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
+                new SubTabItem(_i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
+                new SubTabItem(_i18n["Settings.TabAiContext"], VectorIcons.AiContext, tabAiView),
+                new SubTabItem(_i18n["Settings.TabProfiles"], VectorIcons.Browser, tab2View),
+                new SubTabItem(_i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
+                new SubTabItem(_i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
             ]);
 
-        this._i18n.LanguageChanged += (_, _) =>
+        _i18n.LanguageChanged += (_, _) =>
         {
             subTabBar.UpdateTabTitles(
             [
-                this._i18n["Settings.TabGeneral"],
-                this._i18n["Settings.TabProfiles"],
-                this._i18n["Settings.TabAuditLogs"],
-                this._i18n["Settings.TabStorage"]
+                _i18n["Settings.TabGeneral"],
+                _i18n["Settings.TabAiContext"],
+                _i18n["Settings.TabProfiles"],
+                _i18n["Settings.TabAuditLogs"],
+                _i18n["Settings.TabStorage"]
             ]);
             refreshTab1();
+            refreshTabAi();
             refreshTab2();
             refreshTab4();
         };
@@ -111,9 +115,9 @@ public sealed partial class SettingsPage : UserControl
         };
 
         Grid header = SectionHeader.Create(
-            this._theme,
-            this._i18n["Settings.Header"],
-            this._i18n["Settings.Desc"],
+            _theme,
+            _i18n["Settings.Header"],
+            _i18n["Settings.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
         leftStack.Children.Add(header);
@@ -126,45 +130,45 @@ public sealed partial class SettingsPage : UserControl
         };
 
         ComboBox themeCombo = FormField.CreateComboBox<AppThemeMode>(
-            this._theme,
+            _theme,
             new AppThemeMode[] { AppThemeMode.System, AppThemeMode.Dark, AppThemeMode.Light },
             m =>
             {
-                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatThemeMode(m), 12);
-                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatThemeMode(m);
+                TextBlock tb = SectionHeader.CreateLabel(_theme, _i18n.FormatThemeMode(m), 12);
+                _i18n.LanguageChanged += (_, _) => tb.Text = _i18n.FormatThemeMode(m);
                 return tb;
             },
-            selectedItem: this._vm.SelectedThemeMode);
+            selectedItem: _vm.SelectedThemeMode);
         themeCombo.SelectionChanged += (_, _) =>
         {
-            if (themeCombo.SelectedItem is AppThemeMode mode && this._vm.SelectedThemeMode != mode)
+            if (themeCombo.SelectedItem is AppThemeMode mode && _vm.SelectedThemeMode != mode)
             {
-                this._vm.SelectedThemeMode = mode;
+                _vm.SelectedThemeMode = mode;
             }
         };
 
         StackPanel themeCol = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Settings.ThemeLabel"],
+            _theme,
+            _i18n["Settings.ThemeLabel"],
             themeCombo,
             out TextBlock themeLabel);
 
         ComboBox langCombo = FormField.CreateComboBox<AppLanguage>(
-            this._theme,
+            _theme,
             new AppLanguage[] { AppLanguage.ViVn, AppLanguage.EnUs },
-            l => SectionHeader.CreateLabel(this._theme, LocalizationService.FormatLanguage(l), 12),
-            selectedItem: this._vm.SelectedLanguage);
+            l => SectionHeader.CreateLabel(_theme, LocalizationService.FormatLanguage(l), 12),
+            selectedItem: _vm.SelectedLanguage);
         langCombo.SelectionChanged += (_, _) =>
         {
-            if (langCombo.SelectedItem is AppLanguage lang && this._vm.SelectedLanguage != lang)
+            if (langCombo.SelectedItem is AppLanguage lang && _vm.SelectedLanguage != lang)
             {
-                this._vm.SelectedLanguage = lang;
+                _vm.SelectedLanguage = lang;
             }
         };
 
         StackPanel langCol = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Settings.LanguageLabel"],
+            _theme,
+            _i18n["Settings.LanguageLabel"],
             langCombo,
             out TextBlock langLabel);
 
@@ -175,21 +179,21 @@ public sealed partial class SettingsPage : UserControl
         leftStack.Children.Add(appearanceRow);
 
         // 2. Installed Browser Auto-Scanner + Selector
-        List<PreferredBrowserKind> installedBrowsers = this._vm.Context.Settings.GetInstalledBrowsers();
+        List<PreferredBrowserKind> installedBrowsers = _vm.Context.Settings.GetInstalledBrowsers();
         ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
-            this._theme,
+            _theme,
             installedBrowsers,
             k =>
             {
-                TextBlock tb = SectionHeader.CreateLabel(this._theme, this._i18n.FormatBrowserKind(k), 12);
-                this._i18n.LanguageChanged += (_, _) => tb.Text = this._i18n.FormatBrowserKind(k);
+                TextBlock tb = SectionHeader.CreateLabel(_theme, _i18n.FormatBrowserKind(k), 12);
+                _i18n.LanguageChanged += (_, _) => tb.Text = _i18n.FormatBrowserKind(k);
                 return tb;
             },
-            selectedItem: this._vm.SelectedBrowserKind);
+            selectedItem: _vm.SelectedBrowserKind);
 
         Button rescanBrowsersBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Settings.BtnRescanBrowsers"],
+            _theme,
+            _i18n["Settings.BtnRescanBrowsers"],
             null,
             VectorIcons.Sync);
 
@@ -204,7 +208,7 @@ public sealed partial class SettingsPage : UserControl
         browserSelectorRow.Children.Add(rescanBrowsersBtn);
 
         TextBlock detectedBrowserInfoTb = SectionHeader.CreateLabel(
-            this._theme,
+            _theme,
             string.Empty,
             11.5,
             FontWeight.Normal,
@@ -214,25 +218,25 @@ public sealed partial class SettingsPage : UserControl
 
         void UpdateDetectedBrowserStatus()
         {
-            string? resolvedExe = this._vm.Context.BrowserAdapter.LocateExecutablePath();
+            string? resolvedExe = _vm.Context.BrowserAdapter.LocateExecutablePath();
             detectedBrowserInfoTb.Text = !string.IsNullOrWhiteSpace(resolvedExe)
-                ? $"{this._i18n["Settings.BrowserDetectedPrefix"]}: {resolvedExe}"
-                : this._i18n["Settings.BrowserNotDetectedWarning"];
+                ? $"{_i18n["Settings.BrowserDetectedPrefix"]}: {resolvedExe}"
+                : _i18n["Settings.BrowserNotDetectedWarning"];
         }
 
         void RefreshInstalledBrowsersList()
         {
-            List<PreferredBrowserKind> currentInstalled = this._vm.Context.Settings.GetInstalledBrowsers();
+            List<PreferredBrowserKind> currentInstalled = _vm.Context.Settings.GetInstalledBrowsers();
             browserCombo.ItemsSource = currentInstalled;
-            browserCombo.SelectedItem = this._vm.SelectedBrowserKind;
+            browserCombo.SelectedItem = _vm.SelectedBrowserKind;
             UpdateDetectedBrowserStatus();
         }
 
         browserCombo.SelectionChanged += (_, _) =>
         {
-            if (browserCombo.SelectedItem is PreferredBrowserKind kind && this._vm.SelectedBrowserKind != kind)
+            if (browserCombo.SelectedItem is PreferredBrowserKind kind && _vm.SelectedBrowserKind != kind)
             {
-                this._vm.SelectedBrowserKind = kind;
+                _vm.SelectedBrowserKind = kind;
                 UpdateDetectedBrowserStatus();
             }
         };
@@ -245,49 +249,49 @@ public sealed partial class SettingsPage : UserControl
         browserStack.Children.Add(detectedBrowserInfoTb);
 
         StackPanel browserField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Settings.BrowserEngineLabel"],
+            _theme,
+            _i18n["Settings.BrowserEngineLabel"],
             browserStack,
             out TextBlock browserLabel);
 
         Grid customExeRow = FilePickerInput.Create(
-            this._theme,
-            this._i18n["Settings.BrowserCustomPathPlaceholder"],
-            this._vm.CustomBrowserExecutablePath,
-            this._i18n["Common.BrowseFile"],
+            _theme,
+            _i18n["Settings.BrowserCustomPathPlaceholder"],
+            _vm.CustomBrowserExecutablePath,
+            _i18n["Common.BrowseFile"],
             out TextBox customExeBox,
             out Button browseExeBtn);
         customExeBox.TextChanged += (_, _) =>
         {
             string next = customExeBox.Text ?? string.Empty;
-            if (!string.Equals(this._vm.CustomBrowserExecutablePath, next, StringComparison.Ordinal))
+            if (!string.Equals(_vm.CustomBrowserExecutablePath, next, StringComparison.Ordinal))
             {
-                this._vm.CustomBrowserExecutablePath = next;
+                _vm.CustomBrowserExecutablePath = next;
                 UpdateDetectedBrowserStatus();
             }
         };
         browseExeBtn.Click += async (_, _) =>
         {
-            string? path = await this.PickSingleFileAsync(this._i18n["Common.BrowseFile"]).ConfigureAwait(true);
+            string? path = await this.PickSingleFileAsync(_i18n["Common.BrowseFile"]).ConfigureAwait(true);
             if (!string.IsNullOrWhiteSpace(path))
             {
                 customExeBox.Text = path;
-                this._vm.CustomBrowserExecutablePath = path;
+                _vm.CustomBrowserExecutablePath = path;
                 UpdateDetectedBrowserStatus();
             }
         };
 
         CheckBox headlessCheck = FormField.CreateCheckBox(
-            this._theme,
-            this._i18n["Settings.HeadlessLabel"],
-            this._vm.RunBrowserHeadless,
+            _theme,
+            _i18n["Settings.HeadlessLabel"],
+            _vm.RunBrowserHeadless,
             out TextBlock headlessLabelTb);
         headlessCheck.IsCheckedChanged += (_, _) =>
         {
             bool next = headlessCheck.IsChecked ?? false;
-            if (this._vm.RunBrowserHeadless != next)
+            if (_vm.RunBrowserHeadless != next)
             {
-                this._vm.RunBrowserHeadless = next;
+                _vm.RunBrowserHeadless = next;
             }
         };
 
@@ -295,7 +299,7 @@ public sealed partial class SettingsPage : UserControl
         leftStack.Children.Add(customExeRow);
         leftStack.Children.Add(headlessCheck);
 
-        Border leftCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = leftStack }, new Thickness(18));
+        Border leftCard = SurfaceCard.Create(_theme, new ScrollViewer { Content = leftStack }, new Thickness(18));
 
         // Right Card: Action Rate & Account Safety Configuration
         StackPanel rightStack = new()
@@ -305,20 +309,20 @@ public sealed partial class SettingsPage : UserControl
         };
 
         Grid safetyHeader = SectionHeader.Create(
-            this._theme,
-            this._i18n["Settings.SafetyTitle"],
-            this._i18n["Settings.SafetyDesc"],
+            _theme,
+            _i18n["Settings.SafetyTitle"],
+            _i18n["Settings.SafetyDesc"],
             out TextBlock safetyTitleTb,
             out TextBlock safetyDescTb);
         rightStack.Children.Add(safetyHeader);
 
         // 1. Publishing & Commenting Delay Range Controls
         Grid delayRow = DelayRangeSelector.Create(
-            this._theme,
-            this._i18n["Settings.MinDelayPrefix"],
-            this._vm.MinDelaySeconds,
-            this._i18n["Settings.MaxDelayPrefix"],
-            this._vm.MaxDelaySeconds,
+            _theme,
+            _i18n["Settings.MinDelayPrefix"],
+            _vm.MinDelaySeconds,
+            _i18n["Settings.MaxDelayPrefix"],
+            _vm.MaxDelaySeconds,
             out TextBlock minDelayPrefix,
             out NumericUpDown minDelayBox,
             out TextBlock maxDelayPrefix,
@@ -327,35 +331,35 @@ public sealed partial class SettingsPage : UserControl
         minDelayBox.ValueChanged += (_, _) =>
         {
             int next = (int)(minDelayBox.Value ?? 15);
-            if (this._vm.MinDelaySeconds != next)
+            if (_vm.MinDelaySeconds != next)
             {
-                this._vm.MinDelaySeconds = next;
+                _vm.MinDelaySeconds = next;
             }
         };
 
         maxDelayBox.ValueChanged += (_, _) =>
         {
             int next = (int)(maxDelayBox.Value ?? 45);
-            if (this._vm.MaxDelaySeconds != next)
+            if (_vm.MaxDelaySeconds != next)
             {
-                this._vm.MaxDelaySeconds = next;
+                _vm.MaxDelaySeconds = next;
             }
         };
 
         StackPanel delayField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Settings.DelayRangeLabel"],
+            _theme,
+            _i18n["Settings.DelayRangeLabel"],
             delayRow,
             out TextBlock delayRangeLabel);
         rightStack.Children.Add(delayField);
 
         // 2. Group Scraping Delay Range Controls
         Grid scrapeDelayRow = DelayRangeSelector.Create(
-            this._theme,
-            this._i18n["Settings.MinDelayPrefix"],
-            this._vm.ScrapeDelayMinSeconds,
-            this._i18n["Settings.MaxDelayPrefix"],
-            this._vm.ScrapeDelayMaxSeconds,
+            _theme,
+            _i18n["Settings.MinDelayPrefix"],
+            _vm.ScrapeDelayMinSeconds,
+            _i18n["Settings.MaxDelayPrefix"],
+            _vm.ScrapeDelayMaxSeconds,
             out TextBlock scrapeMinDelayPrefix,
             out NumericUpDown scrapeMinDelayBox,
             out TextBlock scrapeMaxDelayPrefix,
@@ -366,104 +370,104 @@ public sealed partial class SettingsPage : UserControl
         scrapeMinDelayBox.ValueChanged += (_, _) =>
         {
             int next = (int)(scrapeMinDelayBox.Value ?? 8);
-            if (this._vm.ScrapeDelayMinSeconds != next)
+            if (_vm.ScrapeDelayMinSeconds != next)
             {
-                this._vm.ScrapeDelayMinSeconds = next;
+                _vm.ScrapeDelayMinSeconds = next;
             }
         };
 
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
         {
             int next = (int)(scrapeMaxDelayBox.Value ?? 18);
-            if (this._vm.ScrapeDelayMaxSeconds != next)
+            if (_vm.ScrapeDelayMaxSeconds != next)
             {
-                this._vm.ScrapeDelayMaxSeconds = next;
+                _vm.ScrapeDelayMaxSeconds = next;
             }
         };
 
         StackPanel scrapeDelayField = FormField.CreateLabeled(
-            this._theme,
-            this._i18n["Leads.ConfigRateLimitLabel"],
+            _theme,
+            _i18n["Leads.ConfigRateLimitLabel"],
             scrapeDelayRow,
             out TextBlock scrapeDelayLabel);
         rightStack.Children.Add(scrapeDelayField);
 
         Button saveBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Settings.BtnSaveSettings"],
-            this._vm.SaveSettingsCommand,
+            _theme,
+            _i18n["Settings.BtnSaveSettings"],
+            _vm.SaveSettingsCommand,
             VectorIcons.Settings);
         rightStack.Children.Add(saveBtn);
 
-        Border rightCard = SurfaceCard.Create(this._theme, new ScrollViewer { Content = rightStack }, new Thickness(18));
+        Border rightCard = SurfaceCard.Create(_theme, new ScrollViewer { Content = rightStack }, new Thickness(18));
 
         Grid.SetColumn(leftCard, 0);
         Grid.SetColumn(rightCard, 1);
         splitGrid.Children.Add(leftCard);
         splitGrid.Children.Add(rightCard);
 
-        this._vm.PropertyChanged += (_, e) =>
+        _vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedThemeMode), StringComparison.Ordinal))
             {
-                themeCombo.SelectedItem = this._vm.SelectedThemeMode;
+                themeCombo.SelectedItem = _vm.SelectedThemeMode;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedLanguage), StringComparison.Ordinal))
             {
-                langCombo.SelectedItem = this._vm.SelectedLanguage;
+                langCombo.SelectedItem = _vm.SelectedLanguage;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedBrowserKind), StringComparison.Ordinal))
             {
                 RefreshInstalledBrowsersList();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.CustomBrowserExecutablePath), StringComparison.Ordinal) &&
-                     !string.Equals(customExeBox.Text, this._vm.CustomBrowserExecutablePath, StringComparison.Ordinal))
+                     !string.Equals(customExeBox.Text, _vm.CustomBrowserExecutablePath, StringComparison.Ordinal))
             {
-                customExeBox.Text = this._vm.CustomBrowserExecutablePath;
+                customExeBox.Text = _vm.CustomBrowserExecutablePath;
                 UpdateDetectedBrowserStatus();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.RunBrowserHeadless), StringComparison.Ordinal))
             {
-                headlessCheck.IsChecked = this._vm.RunBrowserHeadless;
+                headlessCheck.IsChecked = _vm.RunBrowserHeadless;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MinDelaySeconds), StringComparison.Ordinal))
             {
-                minDelayBox.Value = this._vm.MinDelaySeconds;
+                minDelayBox.Value = _vm.MinDelaySeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MaxDelaySeconds), StringComparison.Ordinal))
             {
-                maxDelayBox.Value = this._vm.MaxDelaySeconds;
+                maxDelayBox.Value = _vm.MaxDelaySeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMinSeconds), StringComparison.Ordinal))
             {
-                scrapeMinDelayBox.Value = this._vm.ScrapeDelayMinSeconds;
+                scrapeMinDelayBox.Value = _vm.ScrapeDelayMinSeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMaxSeconds), StringComparison.Ordinal))
             {
-                scrapeMaxDelayBox.Value = this._vm.ScrapeDelayMaxSeconds;
+                scrapeMaxDelayBox.Value = _vm.ScrapeDelayMaxSeconds;
             }
         };
 
         refreshI18n = () =>
         {
-            titleTb.Text = this._i18n["Settings.Header"];
-            descTb.Text = this._i18n["Settings.Desc"];
-            safetyTitleTb.Text = this._i18n["Settings.SafetyTitle"];
-            safetyDescTb.Text = this._i18n["Settings.SafetyDesc"];
-            themeLabel.Text = this._i18n["Settings.ThemeLabel"];
-            langLabel.Text = this._i18n["Settings.LanguageLabel"];
-            browserLabel.Text = this._i18n["Settings.BrowserEngineLabel"];
-            AppButton.SetText(rescanBrowsersBtn, this._i18n["Settings.BtnRescanBrowsers"]);
-            customExeBox.PlaceholderText = this._i18n["Settings.BrowserCustomPathPlaceholder"];
-            AppButton.SetText(browseExeBtn, this._i18n["Common.BrowseFile"]);
-            headlessLabelTb.Text = this._i18n["Settings.HeadlessLabel"];
-            delayRangeLabel.Text = this._i18n["Settings.DelayRangeLabel"];
-            minDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
-            maxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
-            scrapeDelayLabel.Text = this._i18n["Leads.ConfigRateLimitLabel"];
-            scrapeMinDelayPrefix.Text = this._i18n["Settings.MinDelayPrefix"];
-            scrapeMaxDelayPrefix.Text = this._i18n["Settings.MaxDelayPrefix"];
-            AppButton.SetText(saveBtn, this._i18n["Settings.BtnSaveSettings"]);
+            titleTb.Text = _i18n["Settings.Header"];
+            descTb.Text = _i18n["Settings.Desc"];
+            safetyTitleTb.Text = _i18n["Settings.SafetyTitle"];
+            safetyDescTb.Text = _i18n["Settings.SafetyDesc"];
+            themeLabel.Text = _i18n["Settings.ThemeLabel"];
+            langLabel.Text = _i18n["Settings.LanguageLabel"];
+            browserLabel.Text = _i18n["Settings.BrowserEngineLabel"];
+            AppButton.SetText(rescanBrowsersBtn, _i18n["Settings.BtnRescanBrowsers"]);
+            customExeBox.PlaceholderText = _i18n["Settings.BrowserCustomPathPlaceholder"];
+            AppButton.SetText(browseExeBtn, _i18n["Common.BrowseFile"]);
+            headlessLabelTb.Text = _i18n["Settings.HeadlessLabel"];
+            delayRangeLabel.Text = _i18n["Settings.DelayRangeLabel"];
+            minDelayPrefix.Text = _i18n["Settings.MinDelayPrefix"];
+            maxDelayPrefix.Text = _i18n["Settings.MaxDelayPrefix"];
+            scrapeDelayLabel.Text = _i18n["Leads.ConfigRateLimitLabel"];
+            scrapeMinDelayPrefix.Text = _i18n["Settings.MinDelayPrefix"];
+            scrapeMaxDelayPrefix.Text = _i18n["Settings.MaxDelayPrefix"];
+            AppButton.SetText(saveBtn, _i18n["Settings.BtnSaveSettings"]);
             UpdateDetectedBrowserStatus();
         };
 

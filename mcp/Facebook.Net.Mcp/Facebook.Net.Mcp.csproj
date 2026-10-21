@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Facebook.Net.Mcp</RootNamespace>
+    <Title>Facebook.Net.Mcp - Companion MCP Server &amp; Second Brain for Facebook One Client</Title>
+    <Description>Companion MCP stdio server for Facebook One Client invoked by Google Antigravity CLI (agy) to manage accounts, groups, posts, sales leads, and the Second Brain memory database.</Description>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)'!=''">true</PublishSingleFile>
+    <SelfContained Condition="'$(RuntimeIdentifier)'!=''">true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <NoWarn>$(NoWarn);CA1062;CA1303;CA1849;CA1859;CA1873;IDE0009;IDE0011;IDE0022;IDE0058;IL2026;IL3050;IL3000;CS1591;CA2000;CA2007;CA1031</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net\Facebook.Net.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net.Storage\Facebook.Net.Storage.csproj" />
+    <ProjectReference Include="..\..\browser\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />
+    <ProjectReference Include="..\..\browser\Facebook.Net.Browser.Windows\Facebook.Net.Browser.Windows.csproj" />
+    <ProjectReference Include="..\..\browser\Facebook.Net.Browser.MacOS\Facebook.Net.Browser.MacOS.csproj" />
+    <ProjectReference Include="..\..\ui\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+</Project>

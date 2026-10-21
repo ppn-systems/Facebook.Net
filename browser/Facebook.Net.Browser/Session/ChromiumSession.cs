@@ -207,6 +207,42 @@ public sealed partial class ChromiumSession : IBrowserSession
     }
 
     /// <inheritdoc />
+    public async Task<string?> EvaluateScriptAsync(string script, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+
+        if (_isDetached || !this.IsBrowserProcessAttached)
+        {
+            return null;
+        }
+
+        using JsonDocument evalDoc = await _cdp.SendCommandAsync(
+            "Runtime.evaluate",
+            new CdpEvaluateParams(script, AwaitPromise: true, ReturnByValue: true),
+            ct).ConfigureAwait(false);
+
+        if (evalDoc.RootElement.TryGetProperty("result"u8, out JsonElement resProp) &&
+            resProp.TryGetProperty("result"u8, out JsonElement innerRes) &&
+            innerRes.TryGetProperty("value"u8, out JsonElement valProp))
+        {
+            if (valProp.ValueKind == JsonValueKind.String)
+            {
+                return valProp.GetString();
+            }
+
+            if (valProp.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            return valProp.GetRawText();
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc />
     public async Task<SessionMaterial> ExtractMaterialAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);

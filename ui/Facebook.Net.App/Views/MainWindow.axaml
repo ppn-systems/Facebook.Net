@@ -10,7 +10,7 @@
         CanResize="True"
         WindowStartupLocation="CenterScreen"
         Icon="avares://FacebookOneClient/Assets/app.ico">
-    <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*">
+    <Grid x:Name="ShellRootGrid" ColumnDefinitions="Auto,*,Auto">
         <Border x:Name="SidebarContainer" Grid.Column="0" />
         <Border x:Name="WorkspaceContainer" Grid.Column="1" Padding="22,12,22,10">
             <Grid RowDefinitions="*,Auto">
@@ -32,5 +32,6 @@
                 <Border x:Name="FooterContainer" Grid.Row="1" />
             </Grid>
         </Border>
+        <Border x:Name="AiAssistantContainer" Grid.Column="2" />
     </Grid>
 </Window>

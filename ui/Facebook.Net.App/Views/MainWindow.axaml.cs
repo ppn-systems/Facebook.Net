@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Facebook.Net.App.Views.Components;
 using Facebook.Net.App.Views.Pages;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
@@ -20,6 +21,7 @@ using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
+using Facebook.Net.UI.ViewModels.AiAssistant;
 using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App.Views;
@@ -44,9 +46,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     public MainWindow()
     {
-        this._vm = null!;
-        this._theme = null!;
-        this._i18n = null!;
+        _vm = null!;
+        _theme = null!;
+        _i18n = null!;
         this.InitializeComponent();
     }
 
@@ -56,44 +58,55 @@ public sealed partial class MainWindow : Window
     public MainWindow(ShellViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
-        this._vm = viewModel;
-        this._theme = viewModel.Context.Theme;
-        this._i18n = viewModel.Context.Localization;
+        _vm = viewModel;
+        _theme = viewModel.Context.Theme;
+        _i18n = viewModel.Context.Localization;
         this.DataContext = viewModel;
 
         this.InitializeComponent();
 
-        this.Title = this._i18n["App.Title"];
-        this._i18n.LanguageChanged += (_, _) => this.Title = this._i18n["App.Title"];
+        this.Title = _i18n["App.Title"];
+        _i18n.LanguageChanged += (_, _) => this.Title = _i18n["App.Title"];
 
         Grid rootGrid = this.FindControl<Grid>("ShellRootGrid")!;
         Border sidebarContainer = this.FindControl<Border>("SidebarContainer")!;
         Border topBusyContainer = this.FindControl<Border>("TopBusyContainer")!;
         Border topContextContainer = this.FindControl<Border>("TopContextContainer")!;
-        this._pageNavigationHost = this.FindControl<TransitioningContentControl>("PageNavigationHost")!;
+        _pageNavigationHost = this.FindControl<TransitioningContentControl>("PageNavigationHost")!;
         Border footerContainer = this.FindControl<Border>("FooterContainer")!;
+        Border aiAssistantContainer = this.FindControl<Border>("AiAssistantContainer")!;
 
-        void ApplyRootTheme() => rootGrid.Background = this._theme.Palette.AppCanvasBackground;
+        void ApplyRootTheme() => rootGrid.Background = _theme.Palette.AppCanvasBackground;
         ApplyRootTheme();
-        this._theme.ThemeChanged += (_, _) => ApplyRootTheme();
+        _theme.ThemeChanged += (_, _) => ApplyRootTheme();
 
         sidebarContainer.Child = this.BuildSidebar();
         topBusyContainer.Child = this.BuildTopBusyStrip();
         topContextContainer.Child = this.BuildTopContextStrip();
         footerContainer.Child = this.BuildFooterRow();
 
+        aiAssistantContainer.Child = new AiAssistantPanel(_vm);
+        aiAssistantContainer.IsVisible = _vm.AiAssistant.IsPanelOpen;
+        _vm.AiAssistant.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.IsPanelOpen), StringComparison.Ordinal))
+            {
+                aiAssistantContainer.IsVisible = _vm.AiAssistant.IsPanelOpen;
+            }
+        };
+
         // Subscribe to NavigationService to swap independent UserControl pages
-        this._vm.Navigation.Navigated += (_, section) => this.NavigateToPage(section);
-        this.NavigateToPage(this._vm.Navigation.CurrentSection);
+        _vm.Navigation.Navigated += (_, section) => this.NavigateToPage(section);
+        this.NavigateToPage(_vm.Navigation.CurrentSection);
     }
 
     /// <inheritdoc />
     protected override void OnClosed(EventArgs e)
     {
-        if (this._vm is not null)
+        if (_vm is not null)
         {
-            this._vm.FlushSettingsToDisk();
-            this._vm.Dispose();
+            _vm.FlushSettingsToDisk();
+            _vm.Dispose();
         }
 
         base.OnClosed(e);
@@ -103,23 +116,23 @@ public sealed partial class MainWindow : Window
 
     private void NavigateToPage(NavigationSection section)
     {
-        if (!this._pageCache.TryGetValue(section, out UserControl? page))
+        if (!_pageCache.TryGetValue(section, out UserControl? page))
         {
             page = section switch
             {
-                NavigationSection.Overview => new OverviewPage(this._vm),
-                NavigationSection.Accounts => new AccountsPage(this._vm),
-                NavigationSection.Groups => new GroupsPage(this._vm),
-                NavigationSection.Publisher => new PublisherPage(this._vm),
-                NavigationSection.SalesLeads => new SalesLeadsPage(this._vm),
-                NavigationSection.Settings => new SettingsPage(this._vm),
-                NavigationSection.AuditLogs => new AuditLogsPage(this._vm),
-                _ => new AccountsPage(this._vm)
+                NavigationSection.Overview => new OverviewPage(_vm),
+                NavigationSection.Accounts => new AccountsPage(_vm),
+                NavigationSection.Groups => new GroupsPage(_vm),
+                NavigationSection.Publisher => new PublisherPage(_vm),
+                NavigationSection.SalesLeads => new SalesLeadsPage(_vm),
+                NavigationSection.Settings => new SettingsPage(_vm),
+                NavigationSection.AuditLogs => new AuditLogsPage(_vm),
+                _ => new AccountsPage(_vm)
             };
-            this._pageCache[section] = page;
+            _pageCache[section] = page;
         }
 
-        this._pageNavigationHost.Content = page;
+        _pageNavigationHost.Content = page;
     }
 
     private Border BuildSidebar()
@@ -173,10 +186,10 @@ public sealed partial class MainWindow : Window
         };
 
         Button collapseBtn = AppButton.CreateIcon(
-            this._theme,
+            _theme,
             VectorIcons.SidebarToggle,
-            this._i18n["Sidebar.Collapse"],
-            this._vm.ToggleSidebarCommand);
+            _i18n["Sidebar.Collapse"],
+            _vm.ToggleSidebarCommand);
 
         Grid.SetColumn(brandBadge, 0);
         Grid.SetColumn(brandTitle, 1);
@@ -217,7 +230,7 @@ public sealed partial class MainWindow : Window
             System.Windows.Input.ICommand cmd)
         {
             Button btn = AppButton.CreateSidebarNav(
-                this._i18n[i18nKey],
+                _i18n[i18nKey],
                 svgFileName,
                 cmd,
                 out TextBlock lbl,
@@ -226,12 +239,12 @@ public sealed partial class MainWindow : Window
             targetPanel.Children.Add(btn);
         }
 
-        AddNavItem(navStack, "Nav.Overview", VectorIcons.Home, NavigationSection.Overview, this._vm.NavigateOverviewCommand);
-        AddNavItem(navStack, "Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, this._vm.NavigateAccountsCommand);
-        AddNavItem(navStack, "Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, this._vm.NavigateGroupsCommand);
-        AddNavItem(navStack, "Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, this._vm.NavigatePublisherCommand);
-        AddNavItem(navStack, "Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, this._vm.NavigateSalesLeadsCommand);
-        AddNavItem(bottomNavStack, "Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, this._vm.NavigateSettingsCommand);
+        AddNavItem(navStack, "Nav.Overview", VectorIcons.Home, NavigationSection.Overview, _vm.NavigateOverviewCommand);
+        AddNavItem(navStack, "Nav.Accounts", VectorIcons.Accounts, NavigationSection.Accounts, _vm.NavigateAccountsCommand);
+        AddNavItem(navStack, "Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, _vm.NavigateGroupsCommand);
+        AddNavItem(navStack, "Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, _vm.NavigatePublisherCommand);
+        AddNavItem(navStack, "Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, _vm.NavigateSalesLeadsCommand);
+        AddNavItem(bottomNavStack, "Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, _vm.NavigateSettingsCommand);
 
         Grid.SetRow(navStack, 1);
         Grid.SetRow(bottomNavStack, 2);
@@ -246,8 +259,8 @@ public sealed partial class MainWindow : Window
 
         void UpdateSidebarLayoutAndColors()
         {
-            ThemePalette p = this._theme.Palette;
-            bool collapsed = this._vm.IsSidebarCollapsed;
+            ThemePalette p = _theme.Palette;
+            bool collapsed = _vm.IsSidebarCollapsed;
 
             sidebar.Width = collapsed ? 60 : 232;
             sidebar.Background = p.ElevatedSurface;
@@ -257,23 +270,23 @@ public sealed partial class MainWindow : Window
             brandBadge.IsVisible = !collapsed;
             brandTitle.IsVisible = !collapsed;
             brandTitle.Foreground = p.TextPrimary;
-            ToolTip.SetTip(brandBadge, this._i18n["App.Title"]);
-            ToolTip.SetTip(brandTitle, this._i18n["App.Title"]);
+            ToolTip.SetTip(brandBadge, _i18n["App.Title"]);
+            ToolTip.SetTip(brandTitle, _i18n["App.Title"]);
 
             Grid.SetColumn(collapseBtn, collapsed ? 0 : 2);
             collapseBtn.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right;
 
-            string collapseTip = collapsed ? this._i18n["Sidebar.Expand"] : this._i18n["Sidebar.Collapse"];
+            string collapseTip = collapsed ? _i18n["Sidebar.Expand"] : _i18n["Sidebar.Collapse"];
             ToolTip.SetTip(collapseBtn, collapseTip);
             AutomationProperties.SetName(collapseBtn, collapseTip);
 
             for (int i = 0; i < navEntries.Count; i++)
             {
                 (Button btn, TextBlock lbl, Control icn, string key, NavigationSection sec) = navEntries[i];
-                bool isActive = this._vm.CurrentSection == sec ||
-                                (sec == NavigationSection.Settings && this._vm.CurrentSection == NavigationSection.AuditLogs);
+                bool isActive = _vm.CurrentSection == sec ||
+                                (sec == NavigationSection.Settings && _vm.CurrentSection == NavigationSection.AuditLogs);
 
-                lbl.Text = this._i18n[key];
+                lbl.Text = _i18n[key];
                 lbl.IsVisible = !collapsed;
                 lbl.Foreground = isActive ? p.TextPrimary : p.TextSecondary;
                 lbl.FontWeight = isActive ? FontWeight.SemiBold : FontWeight.Medium;
@@ -288,15 +301,15 @@ public sealed partial class MainWindow : Window
                 btn.HorizontalContentAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
                 btn.Background = isActive ? p.SecondarySurface : Brushes.Transparent;
                 btn.BorderBrush = isActive ? p.InteractiveBorder : Brushes.Transparent;
-                AutomationProperties.SetName(btn, this._i18n[key]);
-                ToolTip.SetTip(btn, this._i18n[key]);
+                AutomationProperties.SetName(btn, _i18n[key]);
+                ToolTip.SetTip(btn, _i18n[key]);
             }
         }
 
         UpdateSidebarLayoutAndColors();
-        this._theme.ThemeChanged += (_, _) => UpdateSidebarLayoutAndColors();
-        this._i18n.LanguageChanged += (_, _) => UpdateSidebarLayoutAndColors();
-        this._vm.PropertyChanged += (_, e) =>
+        _theme.ThemeChanged += (_, _) => UpdateSidebarLayoutAndColors();
+        _i18n.LanguageChanged += (_, _) => UpdateSidebarLayoutAndColors();
+        _vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentSection), StringComparison.Ordinal) ||
                 string.Equals(e.PropertyName, nameof(ShellViewModel.IsSidebarCollapsed), StringComparison.Ordinal))
@@ -318,18 +331,18 @@ public sealed partial class MainWindow : Window
             MinHeight = 3,
             CornerRadius = new CornerRadius(1.5),
             BorderThickness = new Thickness(0),
-            IsVisible = this._vm.IsBusy
+            IsVisible = _vm.IsBusy
         };
 
-        void ApplyColors() => busyStrip.Foreground = this._theme.Palette.BrandPrimary;
+        void ApplyColors() => busyStrip.Foreground = _theme.Palette.BrandPrimary;
         ApplyColors();
-        this._theme.ThemeChanged += (_, _) => ApplyColors();
+        _theme.ThemeChanged += (_, _) => ApplyColors();
 
-        this._vm.PropertyChanged += (_, e) =>
+        _vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
             {
-                busyStrip.IsVisible = this._vm.IsBusy;
+                busyStrip.IsVisible = _vm.IsBusy;
             }
         };
 
@@ -348,11 +361,11 @@ public sealed partial class MainWindow : Window
         };
 
         Button stopTaskBtn = AppButton.CreateDanger(
-            this._theme,
-            this._i18n["Common.BtnStopTask"],
-            this._vm.StopActiveTaskCommand,
+            _theme,
+            _i18n["Common.BtnStopTask"],
+            _vm.StopActiveTaskCommand,
             VectorIcons.StopCircle);
-        stopTaskBtn.IsVisible = this._vm.IsBusy;
+        stopTaskBtn.IsVisible = _vm.IsBusy;
         stopTaskBtn.Padding = new Thickness(10, 5);
 
         List<Border> disconnectedStatusDots = new();
@@ -373,8 +386,8 @@ public sealed partial class MainWindow : Window
         pulseTimer.Start();
 
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
-            this._theme,
-            this._vm.Accounts,
+            _theme,
+            _vm.Accounts,
             acc =>
             {
                 bool isConnected = acc.Status == AccountStatus.Active;
@@ -384,9 +397,9 @@ public sealed partial class MainWindow : Window
                     ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                Border av = AvatarBadge.Create(this._theme, acc.DisplayName, 20, acc.AvatarUrl);
+                Border av = AvatarBadge.Create(_theme, acc.DisplayName, 20, acc.AvatarUrl);
                 TextBlock tb = SectionHeader.CreateLabel(
-                    this._theme,
+                    _theme,
                     acc.DisplayName,
                     12.5,
                     FontWeight.SemiBold);
@@ -420,7 +433,7 @@ public sealed partial class MainWindow : Window
                     Margin = new Thickness(4, 0, 2, 0),
                     Child = innerDot
                 };
-                ToolTip.SetTip(statusDotHalo, this._i18n.FormatAccountStatus(acc.Status));
+                ToolTip.SetTip(statusDotHalo, _i18n.FormatAccountStatus(acc.Status));
 
                 if (!isConnected)
                 {
@@ -435,44 +448,83 @@ public sealed partial class MainWindow : Window
                 itemRow.Children.Add(statusDotHalo);
                 return itemRow;
             },
-            selectedItem: this._vm.SelectedAccount,
-            placeholderText: this._i18n["TopBar.NoAccount"]);
+            selectedItem: _vm.SelectedAccount,
+            placeholderText: _i18n["TopBar.NoAccount"]);
         activeAccCombo.MinWidth = 195;
         activeAccCombo.MaxWidth = 245;
         activeAccCombo.Height = 32;
-        AutomationProperties.SetName(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
-        ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
+        AutomationProperties.SetName(activeAccCombo, _i18n["TopBar.ActiveAccount"]);
+        ToolTip.SetTip(activeAccCombo, _i18n["TopBar.ActiveAccount"]);
         activeAccCombo.SelectionChanged += (_, _) =>
         {
             if (activeAccCombo.SelectedItem is AccountProfile selected &&
-                !ReferenceEquals(this._vm.SelectedAccount, selected))
+                !ReferenceEquals(_vm.SelectedAccount, selected))
             {
-                this._vm.SelectedAccount = selected;
+                _vm.SelectedAccount = selected;
             }
         };
 
         topContextStrip.Children.Add(stopTaskBtn);
         topContextStrip.Children.Add(activeAccCombo);
 
-        this._i18n.LanguageChanged += (_, _) =>
+        Button aiToggleBtn = new()
         {
-            activeAccCombo.PlaceholderText = this._i18n["TopBar.NoAccount"];
-            ToolTip.SetTip(activeAccCombo, this._i18n["TopBar.ActiveAccount"]);
-            AppButton.SetText(stopTaskBtn, this._i18n["Common.BtnStopTask"]);
+            Width = 34,
+            Height = 32,
+            Padding = new Thickness(4),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Content = VectorIcons.CreateAiAssistantIcon(22),
+            Command = _vm.ToggleAiAssistantCommand,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+        };
+        ToolTip.SetTip(aiToggleBtn, _i18n["Ai.BtnToggleTip"]);
+        AutomationProperties.SetName(aiToggleBtn, _i18n["Ai.PanelTitle"]);
+
+        void UpdateAiToggleButtonVisuals()
+        {
+            ThemePalette p = _theme.Palette;
+            bool isOpen = _vm.AiAssistant.IsPanelOpen;
+            aiToggleBtn.Background = isOpen ? p.BrandSubtleFill : Brushes.Transparent;
+        }
+
+        UpdateAiToggleButtonVisuals();
+        _theme.ThemeChanged += (_, _) => UpdateAiToggleButtonVisuals();
+        _vm.AiAssistant.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.IsPanelOpen), StringComparison.Ordinal))
+            {
+                UpdateAiToggleButtonVisuals();
+            }
         };
 
-        this._vm.PropertyChanged += (_, e) =>
+        topContextStrip.Children.Add(aiToggleBtn);
+
+        _i18n.LanguageChanged += (_, _) =>
+        {
+            activeAccCombo.PlaceholderText = _i18n["TopBar.NoAccount"];
+            ToolTip.SetTip(activeAccCombo, _i18n["TopBar.ActiveAccount"]);
+            AppButton.SetText(stopTaskBtn, _i18n["Common.BtnStopTask"]);
+            ToolTip.SetTip(aiToggleBtn, _i18n["Ai.BtnToggleTip"]);
+            AutomationProperties.SetName(aiToggleBtn, _i18n["Ai.PanelTitle"]);
+            UpdateAiToggleButtonVisuals();
+        };
+
+        _vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
             {
-                if (!ReferenceEquals(activeAccCombo.SelectedItem, this._vm.SelectedAccount))
+                if (!ReferenceEquals(activeAccCombo.SelectedItem, _vm.SelectedAccount))
                 {
-                    activeAccCombo.SelectedItem = this._vm.SelectedAccount;
+                    activeAccCombo.SelectedItem = _vm.SelectedAccount;
                 }
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
             {
-                stopTaskBtn.IsVisible = this._vm.IsBusy;
+                stopTaskBtn.IsVisible = _vm.IsBusy;
             }
         };
 
@@ -488,8 +540,8 @@ public sealed partial class MainWindow : Window
         };
 
         TextBlock footerTicker = SectionHeader.CreateLabel(
-            this._theme,
-            this._vm.AuditDrawer.LatestTickerText,
+            _theme,
+            _vm.AuditDrawer.LatestTickerText,
             11,
             FontWeight.Normal,
             isSecondary: true);
@@ -497,7 +549,7 @@ public sealed partial class MainWindow : Window
         footerTicker.TextTrimming = TextTrimming.CharacterEllipsis;
 
         TextBlock versionLabel = SectionHeader.CreateLabel(
-            this._theme,
+            _theme,
             "Facebook One Client  |  v2026.10.0",
             11,
             FontWeight.Normal,
@@ -508,11 +560,11 @@ public sealed partial class MainWindow : Window
         footerRow.Children.Add(footerTicker);
         footerRow.Children.Add(versionLabel);
 
-        this._vm.AuditDrawer.PropertyChanged += (_, e) =>
+        _vm.AuditDrawer.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(Facebook.Net.UI.ViewModels.Audit.AuditLogDrawerViewModel.LatestTickerText), StringComparison.Ordinal))
+            if (string.Equals(e.PropertyName, nameof(UI.ViewModels.Audit.AuditLogDrawerViewModel.LatestTickerText), StringComparison.Ordinal))
             {
-                footerTicker.Text = this._vm.AuditDrawer.LatestTickerText;
+                footerTicker.Text = _vm.AuditDrawer.LatestTickerText;
             }
         };
 
