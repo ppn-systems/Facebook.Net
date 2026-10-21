@@ -31,7 +31,7 @@ namespace Facebook.Net.App.Views;
 /// top active account context bar, and <see cref="TransitioningContentControl"/> navigating between
 /// independent <see cref="UserControl"/> Pages (<see cref="OverviewPage"/>, <see cref="AccountsPage"/>,
 /// <see cref="GroupsPage"/>, <see cref="PublisherPage"/>, <see cref="SalesLeadsPage"/>,
-/// <see cref="SettingsPage"/>, and <see cref="AuditLogsPage"/>).
+/// <see cref="SettingsPage"/>, <see cref="AuditLogsPage"/>, and <see cref="PersonalPage"/>).
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -127,6 +127,7 @@ public sealed partial class MainWindow : Window
                 NavigationSection.SalesLeads => new SalesLeadsPage(_vm),
                 NavigationSection.Settings => new SettingsPage(_vm),
                 NavigationSection.AuditLogs => new AuditLogsPage(_vm),
+                NavigationSection.Personal => new PersonalPage(_vm),
                 _ => new AccountsPage(_vm)
             };
             _pageCache[section] = page;
@@ -244,6 +245,7 @@ public sealed partial class MainWindow : Window
         AddNavItem(navStack, "Nav.Groups", VectorIcons.Groups, NavigationSection.Groups, _vm.NavigateGroupsCommand);
         AddNavItem(navStack, "Nav.Publisher", VectorIcons.Publish, NavigationSection.Publisher, _vm.NavigatePublisherCommand);
         AddNavItem(navStack, "Nav.SalesLeads", VectorIcons.SalesComment, NavigationSection.SalesLeads, _vm.NavigateSalesLeadsCommand);
+        AddNavItem(navStack, "Nav.Personal", VectorIcons.Personal, NavigationSection.Personal, _vm.NavigatePersonalCommand);
         AddNavItem(bottomNavStack, "Nav.Settings", VectorIcons.Settings, NavigationSection.Settings, _vm.NavigateSettingsCommand);
 
         Grid.SetRow(navStack, 1);

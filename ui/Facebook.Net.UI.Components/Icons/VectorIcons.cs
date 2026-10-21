@@ -45,6 +45,9 @@ public static class VectorIcons
     /// <summary>Users / Accounts icon asset file name.</summary>
     public const string Accounts = "accounts.svg";
 
+    /// <summary>Personal Profile / Friend Requests icon asset file name.</summary>
+    public const string Personal = "personal.svg";
+
     /// <summary>Community Groups icon asset file name.</summary>
     public const string Groups = "groups.svg";
 
