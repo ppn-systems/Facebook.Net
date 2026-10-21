@@ -12,6 +12,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Leads;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
@@ -86,11 +87,20 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
+    /// <summary>Gets the collection of user-defined or AI-created color-coded customer/lead tags.</summary>
+    public BulkObservableCollection<GroupTag> LeadTags { get; } = new();
+
+    internal IReadOnlyList<PostSummary> AllScrapedPosts => _allScrapedPosts;
+
+    internal IReadOnlySet<string> CommentedPostIds => _commentedPostIds;
+
     private readonly List<PostSummary> _allScrapedPosts = new();
     private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _leadIntentFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _leadCustomerTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupFilterIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GroupTag> _leadTagIndex = new(StringComparer.OrdinalIgnoreCase);
     private string? _leadCompetitionFilter;
     private string? _leadTimeRangeFilter;
     private string? _leadMediaFilter;
@@ -210,6 +220,12 @@ public sealed partial class ShellViewModel
             }
         }
 
+        IReadOnlyList<GroupTag> storedLeadTags = await _context.AccountStore
+            .GetAllLeadTagsAsync(ct)
+            .ConfigureAwait(true);
+        this.LeadTags.ReplaceAll(storedLeadTags);
+        this.RebuildLeadTagIndex();
+
         IReadOnlyList<PostSummary> dbPosts = await _context.AccountStore
             .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
             .ConfigureAwait(true);
@@ -293,6 +309,259 @@ public sealed partial class ShellViewModel
         }
 
         this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the multi-select customer/lead color tag filters (including <c>__untagged__</c>) for scraped leads and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadCustomerTagFilters(IReadOnlyList<string> tagIds)
+    {
+        _leadCustomerTagFilterIds.Clear();
+        if (tagIds is not null)
+        {
+            for (int i = 0; i < tagIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(tagIds[i]))
+                {
+                    _ = _leadCustomerTagFilterIds.Add(tagIds[i]);
+                }
+            }
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Reloads the user-defined and AI-created customer/lead tags from SQLite into <see cref="LeadTags"/>.
+    /// </summary>
+    public async Task ReloadLeadTagsOnlyAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<GroupTag> tags = await _context.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(true);
+        this.LeadTags.ReplaceAll(tags);
+        this.RebuildLeadTagIndex();
+    }
+
+    private void RebuildLeadTagIndex()
+    {
+        _leadTagIndex.Clear();
+        for (int i = 0; i < this.LeadTags.Count; i++)
+        {
+            GroupTag tag = this.LeadTags[i];
+            if (!string.IsNullOrWhiteSpace(tag.Id))
+            {
+                _leadTagIndex[tag.Id] = tag;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds a customer/lead tag by <paramref name="tagId"/> in O(1) time.
+    /// </summary>
+    public GroupTag? FindLeadTagById(string? tagId)
+    {
+        if (string.IsNullOrWhiteSpace(tagId))
+        {
+            return null;
+        }
+
+        if (_leadTagIndex.Count == this.LeadTags.Count &&
+            _leadTagIndex.TryGetValue(tagId, out GroupTag? fastHit))
+        {
+            return fastHit;
+        }
+
+        this.RebuildLeadTagIndex();
+        return _leadTagIndex.TryGetValue(tagId, out GroupTag? val) ? val : null;
+    }
+
+    /// <summary>
+    /// Resolves the assigned <see cref="GroupTag"/> badges on a scraped <paramref name="post"/> against <see cref="LeadTags"/>.
+    /// </summary>
+    public IReadOnlyList<GroupTag> ResolveLeadTags(PostSummary? post)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.TagsCsv))
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        IReadOnlyList<string> tagIds = post.GetTagIds();
+        if (tagIds.Count == 0)
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        List<GroupTag> resolved = new(tagIds.Count);
+        for (int i = 0; i < tagIds.Count; i++)
+        {
+            GroupTag? matched = this.FindLeadTagById(tagIds[i]);
+            if (matched is not null)
+            {
+                resolved.Add(matched);
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Toggles a customer/lead <paramref name="tagId"/> on <paramref name="post"/> in SQLite and updates <see cref="ScrapedPosts"/> in-place without resetting scroll position.
+    /// </summary>
+    public async Task ToggleLeadPostTagAsync(PostSummary post, string tagId, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId) || string.IsNullOrWhiteSpace(tagId))
+        {
+            return;
+        }
+
+        PostSummary current = this.GetLatestCachedPost(post);
+        string trimmedTagId = tagId.Trim();
+        IReadOnlyList<string> existingIds = current.GetTagIds();
+        List<string> nextIds = new(existingIds.Count + 1);
+        bool removed = false;
+        for (int i = 0; i < existingIds.Count; i++)
+        {
+            if (string.Equals(existingIds[i], trimmedTagId, StringComparison.OrdinalIgnoreCase))
+            {
+                removed = true;
+            }
+            else
+            {
+                nextIds.Add(existingIds[i]);
+            }
+        }
+
+        if (!removed)
+        {
+            nextIds.Add(trimmedTagId);
+        }
+
+        string updatedTagsCsv = nextIds.Count > 0 ? string.Join(",", nextIds) : string.Empty;
+        await _context.AccountStore
+            .UpdateScrapedPostTagsAndNotesAsync(current.PostId, updatedTagsCsv, current.Notes, ct)
+            .ConfigureAwait(true);
+
+        PostSummary updatedPost = current with { TagsCsv = updatedTagsCsv };
+        this.ReplaceScrapedPostInPlace(updatedPost);
+
+        if (!removed)
+        {
+            string tagName = this.FindLeadTagById(trimmedTagId)?.Name ?? trimmedTagId;
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "lead_tag_preference",
+                $"lead_tag_{trimmedTagId}",
+                _context.Localization.Format(
+                    "Ai.LearnLeadTagAssigned",
+                    tagName,
+                    current.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
+                    current.GroupName ?? _context.Localization["Audit.Cat.Group"]),
+                ct);
+        }
+    }
+
+    /// <summary>
+    /// Creates a new color-coded customer/lead tag in SQLite, reloads <see cref="LeadTags"/>, and returns the created tag.
+    /// </summary>
+    public async Task<GroupTag?> CreateQuickLeadTagAsync(string tagName, string colorHex, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tagName))
+        {
+            return null;
+        }
+
+        string trimmedName = tagName.Trim();
+        string resolvedColor = string.IsNullOrWhiteSpace(colorHex) ? "#F6821F" : colorHex.Trim();
+        GroupTag tag = _context.GroupTagService.CreateTag(trimmedName, resolvedColor);
+        await _context.AccountStore.UpsertLeadTagAsync(tag, ct).ConfigureAwait(true);
+        await this.ReloadLeadTagsOnlyAsync(ct).ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "lead_preferences",
+            $"lead_tag_def_{tag.Id}",
+            _context.Localization.Format("Ai.LearnLeadTagCreated", tag.Name, tag.ColorHex),
+            ct);
+
+        return tag;
+    }
+
+    /// <summary>
+    /// Updates CRM <paramref name="notes"/> on a scraped <paramref name="post"/> in SQLite and updates <see cref="ScrapedPosts"/> in-place.
+    /// </summary>
+    public async Task UpdateLeadPostNotesAsync(PostSummary post, string notes, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId))
+        {
+            return;
+        }
+
+        PostSummary current = this.GetLatestCachedPost(post);
+        string normalizedNotes = notes?.Trim() ?? string.Empty;
+        if (string.Equals(current.Notes ?? string.Empty, normalizedNotes, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _context.AccountStore
+            .UpdateScrapedPostTagsAndNotesAsync(current.PostId, current.TagsCsv, normalizedNotes, ct)
+            .ConfigureAwait(true);
+
+        PostSummary updatedPost = current with { Notes = normalizedNotes };
+        this.ReplaceScrapedPostInPlace(updatedPost);
+    }
+
+    private PostSummary GetLatestCachedPost(PostSummary fallback)
+    {
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        {
+            if (string.Equals(_allScrapedPosts[i].PostId, fallback.PostId, StringComparison.Ordinal))
+            {
+                return _allScrapedPosts[i];
+            }
+        }
+
+        return fallback;
+    }
+
+    /// <summary>
+    /// Selects <paramref name="post"/>, opens the AI Assistant drawer, attaches the <c>selected_lead</c> context pack,
+    /// and requests AI buyer-intent analysis and consultation comment drafting.
+    /// </summary>
+    public void AskAiToAnalyzeAndConsultLead(PostSummary? post)
+    {
+        if (post is null)
+        {
+            return;
+        }
+
+        this.SelectedScrapedPost = post;
+        this.IsAiAssistantOpen = true;
+        _ = this.AiAssistant.RequestLeadAnalysisAndConsultationAsync(post);
+    }
+
+    private void ReplaceScrapedPostInPlace(PostSummary updatedPost)
+    {
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        {
+            if (string.Equals(_allScrapedPosts[i].PostId, updatedPost.PostId, StringComparison.Ordinal))
+            {
+                _allScrapedPosts[i] = updatedPost;
+                break;
+            }
+        }
+
+        for (int i = 0; i < this.ScrapedPosts.Count; i++)
+        {
+            if (string.Equals(this.ScrapedPosts[i].PostId, updatedPost.PostId, StringComparison.Ordinal))
+            {
+                this.ScrapedPosts[i] = updatedPost;
+                break;
+            }
+        }
+
+        if (this.SelectedScrapedPost is not null &&
+            string.Equals(this.SelectedScrapedPost.PostId, updatedPost.PostId, StringComparison.Ordinal))
+        {
+            this.SelectedScrapedPost = updatedPost;
+        }
     }
 
     /// <summary>
@@ -387,6 +656,26 @@ public sealed partial class ShellViewModel
                 }
 
                 if (!matchesUntagged && !matchesTag)
+                {
+                    continue;
+                }
+            }
+
+            if (_leadCustomerTagFilterIds.Count > 0)
+            {
+                IReadOnlyList<string> postTags = post.GetTagIds();
+                bool matchesUntaggedLead = _leadCustomerTagFilterIds.Contains("__untagged__") && postTags.Count == 0;
+                bool matchesLeadTag = false;
+                for (int t = 0; t < postTags.Count; t++)
+                {
+                    if (_leadCustomerTagFilterIds.Contains(postTags[t]))
+                    {
+                        matchesLeadTag = true;
+                        break;
+                    }
+                }
+
+                if (!matchesUntaggedLead && !matchesLeadTag)
                 {
                     continue;
                 }
@@ -802,6 +1091,16 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Success,
                 summaryTarget,
                 logMessage).ConfigureAwait(true);
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "lead_preferences",
+                "buyer_intent_keywords",
+                _context.Localization.Format(
+                    "Ai.LearnLeadScanHabit",
+                    string.IsNullOrWhiteSpace(this.BuyerIntentKeywords) ? this.ScrapeFilterKeywords : this.BuyerIntentKeywords,
+                    collectedForDb.Count,
+                    targets.Count),
+                ct);
         }
         catch (OperationCanceledException)
         {
@@ -1106,6 +1405,12 @@ public sealed partial class ShellViewModel
             {
                 this.FilterCachedPostsFromDb();
             }
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "brand_voice",
+                "sales_comment_style",
+                _context.Localization.Format("Ai.LearnSalesCommentStyle", TruncateForAiLearning(this.SalesCommentSpintaxText, 200)),
+                ct);
         }
 
         _ = await this.LogAuditAsync(

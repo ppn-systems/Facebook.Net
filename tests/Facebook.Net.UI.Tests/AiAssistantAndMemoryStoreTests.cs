@@ -651,6 +651,169 @@ public sealed class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.Equal(new Version(1, 3, 0), v2);
     }
 
+    [Fact]
+    public void AgyCliService_ParseResponseActionAndMemories_StripsLearnTagsAndParsesAllNewActions()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
+
+        string rawText =
+            "Chào anh Minh, bên em có sẵn mẫu bàn ghế gỗ sồi giá xưởng.\n" +
+            "[LEARN:ProductKnowledge|sản_phẩm_nội_thất|Bàn ghế gỗ sồi tự nhiên giá xưởng bảo hành 5 năm]\n" +
+            "[LEARN:WritingStyle|phong_cách_tư_vấn|Lịch sự, xưng em gọi anh chị]\n" +
+            "[ACTION:COMMENT_LEAD|targetId=post_998877|content=Chào {author_name}, em gửi báo giá gỗ sồi qua inbox nhé!]";
+
+        (string cleanText, AgyProposedAction? action, IReadOnlyList<AgyLearnedMemoryItem> memories) =
+            AgyCliService.ParseResponseActionAndMemories(rawText);
+
+        Assert.Equal("Chào anh Minh, bên em có sẵn mẫu bàn ghế gỗ sồi giá xưởng.", cleanText);
+        Assert.DoesNotContain("[LEARN:", cleanText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[ACTION:", cleanText, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(2, memories.Count);
+        Assert.Equal(AiMemoryCategory.ProductKnowledge, memories[0].Category);
+        Assert.Equal("sản_phẩm_nội_thất", memories[0].Key);
+        Assert.Equal("Bàn ghế gỗ sồi tự nhiên giá xưởng bảo hành 5 năm", memories[0].Content);
+
+        Assert.NotNull(action);
+        Assert.Equal("COMMENT_LEAD", action.ActionKind);
+        Assert.Equal("post_998877", action.TargetId);
+        Assert.Equal("Chào {author_name}, em gửi báo giá gỗ sồi qua inbox nhé!", action.ContentText);
+
+        // Verify FILTER_LEADS and BUMP_POSTS action parsing
+        (_, AgyProposedAction? filterAction, _) = AgyCliService.ParseResponseActionAndMemories(
+            "Đã lọc danh sách khách hàng tiềm năng.\n[ACTION:FILTER_LEADS|keyword=cần mua gấp]");
+        Assert.NotNull(filterAction);
+        Assert.Equal("FILTER_LEADS", filterAction.ActionKind);
+        Assert.Equal("cần mua gấp", filterAction.GroupKeyword);
+
+        (_, AgyProposedAction? bumpAction, _) = AgyCliService.ParseResponseActionAndMemories(
+            "Sẵn sàng đẩy tương tác bài viết.\n[ACTION:BUMP_POSTS|content={Up|Chấm} bài lên top]");
+        Assert.NotNull(bumpAction);
+        Assert.Equal("BUMP_POSTS", bumpAction.ActionKind);
+        Assert.Equal("{Up|Chấm} bài lên top", bumpAction.ContentText);
+    }
+
+    [Fact]
+    public void LeadScoringService_AnalyzeWorkspaceData_ComputesGroupRoiRepeatAuthorsAndPeakHours()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
+        LeadScoringService scorer = LeadScoringService.Instance;
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        List<SavedTargetGroup> groups =
+        [
+            new SavedTargetGroup("grp_1", "Chợ Nội Thất Sài Gòn", IsEnabled: true, TagsCsv: "tag_furniture"),
+            new SavedTargetGroup("grp_2", "Hội Mua Bán Chung Cư", IsEnabled: true, TagsCsv: string.Empty)
+        ];
+
+        List<PostSummary> posts =
+        [
+            new PostSummary(
+                PostId: "p1",
+                AuthorUid: "u_buyer_1",
+                AuthorName: "Nguyễn Văn An",
+                MessageText: "Cần mua gấp sofa phòng khách, liên hệ 0987.654.321 báo giá giúp mình?",
+                PermalinkUrl: "https://facebook.com/groups/grp_1/posts/p1",
+                ReactionCount: 5,
+                CommentCount: 0,
+                CreatedAt: now.AddMinutes(-30),
+                GroupId: "grp_1",
+                GroupName: "Chợ Nội Thất Sài Gòn"),
+            new PostSummary(
+                PostId: "p2",
+                AuthorUid: "u_seeder",
+                AuthorName: "Trần Môi Giới",
+                MessageText: "Xả kho sofa giá rẻ",
+                PermalinkUrl: "https://facebook.com/groups/grp_1/posts/p2",
+                ReactionCount: 1,
+                CommentCount: 12,
+                CreatedAt: now.AddHours(-2),
+                GroupId: "grp_1",
+                GroupName: "Chợ Nội Thất Sài Gòn"),
+            new PostSummary(
+                PostId: "p3",
+                AuthorUid: "u_seeder",
+                AuthorName: "Trần Môi Giới",
+                MessageText: "Xả kho bàn ăn giá rẻ",
+                PermalinkUrl: "https://facebook.com/groups/grp_2/posts/p3",
+                ReactionCount: 2,
+                CommentCount: 8,
+                CreatedAt: now.AddHours(-3),
+                GroupId: "grp_2",
+                GroupName: "Hội Mua Bán Chung Cư")
+        ];
+
+        HashSet<string> commentedIds = new(StringComparer.Ordinal) { "p1" };
+
+        WorkspaceDataAnalyticsReport report = scorer.AnalyzeWorkspaceData(
+            posts,
+            groups,
+            commentedIds,
+            "cần mua, báo giá, sofa");
+
+        Assert.Equal(3, report.TotalScrapedPosts);
+        Assert.Equal(1, report.TotalPostsWithPhone);
+        Assert.Equal(1, report.TotalHighIntentPosts);
+        Assert.Equal(1, report.TotalZeroCommentOpportunities);
+        Assert.Equal(1, report.TotalCommentedPosts);
+        Assert.Equal(2, report.TotalPendingPosts);
+        Assert.NotEmpty(report.TopPerformingGroups);
+        Assert.Equal("grp_1", report.TopPerformingGroups[0].GroupId);
+        _ = Assert.Single(report.RepeatAuthors);
+        Assert.Equal("Trần Môi Giới", report.RepeatAuthors[0].AuthorName);
+        Assert.Equal(2, report.RepeatAuthors[0].PostCount);
+
+        string formatted = scorer.FormatAnalyticsReportForAi(report);
+        Assert.Contains("Chợ Nội Thất Sài Gòn", formatted, StringComparison.Ordinal);
+        Assert.Contains("Trần Môi Giới", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CustomerLeadTags_And_CrmNotes_PersistAndTriggerSilentAiLearning()
+    {
+        string workspaceDir = Path.Combine(_tempDir, "customer_tags_and_notes_test");
+        FakeAgyCliService fakeAgy = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            agyCliService: fakeAgy);
+
+        PostSummary sampleLead = new(
+            PostId: "lead_post_101",
+            AuthorUid: "uid_khach_1",
+            AuthorName: "Lê Hoàng Nam",
+            MessageText: "Mình cần tìm căn hộ 2PN Quận 7 giá tầm 3 tỷ, sđt 0912345678",
+            PermalinkUrl: "https://facebook.com/groups/grp_101/posts/lead_post_101",
+            ReactionCount: 3,
+            CommentCount: 1,
+            CreatedAt: DateTimeOffset.UtcNow,
+            GroupId: "grp_101",
+            GroupName: "Nhóm Mua Bán Nhà Đất");
+
+        await context.AccountStore.InitializeAsync();
+        await context.AccountStore.UpsertScrapedPostsAsync([sampleLead]);
+
+        using ShellViewModel vm = new(context);
+        await vm.InitializeAsync();
+
+        // Default 5 seeded customer tags should be loaded
+        Assert.True(vm.LeadTags.Count >= 5);
+
+        GroupTag? createdLeadTag = await vm.CreateQuickLeadTagAsync("Khách VIP Quận 7", "#EC4899");
+        Assert.NotNull(createdLeadTag);
+        Assert.Equal("Khách VIP Quận 7", createdLeadTag.Name);
+
+        await vm.ToggleLeadPostTagAsync(sampleLead, createdLeadTag.Id);
+        await vm.UpdateLeadPostNotesAsync(sampleLead, "Đã gọi điện tư vấn căn hộ Sunrise City, hẹn thứ 7 xem nhà");
+
+        IReadOnlyList<PostSummary> reloaded = await context.AccountStore.QueryScrapedPostsAsync(groupId: "grp_101");
+        PostSummary updatedPost = Assert.Single(reloaded);
+        Assert.True(updatedPost.HasTag(createdLeadTag.Id));
+        Assert.Equal("Đã gọi điện tư vấn căn hộ Sunrise City, hẹn thứ 7 xem nhà", updatedPost.Notes);
+    }
+
     public void Dispose()
     {
         try

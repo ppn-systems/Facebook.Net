@@ -317,4 +317,92 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             is_comment_template = tpl.IsCommentTemplate
         });
     }
+
+    [McpServerTool(Name = "fb_bump_recent_posts")]
+    [Description("Up-top / bump recent published community group posts by posting a Spintax comment (supporting {group_name}, {date}, {time}, {random_id} placeholders) on up to maxPosts posts.")]
+    public async Task<string> BumpRecentPostsAsync(
+        [Description("Spintax comment template to bump posts (default '{Up|Chấm|Quan tâm|Báo giá chi tiết inbox nhé}')")] string bumpCommentSpintax = "{Up|Chấm|Quan tâm|Báo giá chi tiết inbox nhé}",
+        [Description("Maximum number of recent group posts to bump (1..30, default 10)")] int maxPosts = 10,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        string effectiveSpintax = string.IsNullOrWhiteSpace(bumpCommentSpintax)
+            ? "{Up|Chấm|Quan tâm|Báo giá chi tiết inbox nhé}"
+            : bumpCommentSpintax.Trim();
+
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<PublishedPostRecord> recentPosts = await _manager.AccountStore
+            .GetPublishedPostsAsync(account.Uid, 50, ct)
+            .ConfigureAwait(false);
+
+        int cap = Math.Clamp(maxPosts, 1, 30);
+        List<PublishedPostRecord> eligible = recentPosts
+            .Where(p => !p.IsPersonalProfilePost &&
+                        !string.IsNullOrWhiteSpace(p.PostId) &&
+                        !p.PostId.StartsWith("grp_", StringComparison.OrdinalIgnoreCase) &&
+                        !p.PostId.StartsWith("feed_", StringComparison.OrdinalIgnoreCase))
+            .Take(cap)
+            .ToList();
+
+        List<object> bumpedPosts = [];
+        for (int i = 0; i < eligible.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            PublishedPostRecord post = eligible[i];
+            DateTimeOffset nowLocal = DateTimeOffset.Now;
+            string groupLabel = !string.IsNullOrWhiteSpace(post.TargetGroupName) ? post.TargetGroupName : "Cộng đồng";
+            string randomToken = Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            string resolvedText = effectiveSpintax
+                .Replace("{group_name}", groupLabel, StringComparison.OrdinalIgnoreCase)
+                .Replace("{date}", nowLocal.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                .Replace("{time}", nowLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                .Replace("{random_id}", randomToken, StringComparison.OrdinalIgnoreCase);
+
+            string? commentId = await _manager.CometClient
+                .CreateCommentAsync(session, post.PostId, resolvedText, null, ct)
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(commentId))
+            {
+                await _manager.AccountStore.RecordActionAsync(
+                    new ActionHistoryEntry(
+                        session.AccountUid,
+                        "BUMP_COMMENT",
+                        post.PostId,
+                        commentId,
+                        DateTimeOffset.UtcNow),
+                    ct).ConfigureAwait(false);
+
+                bumpedPosts.Add(new
+                {
+                    post_id = post.PostId,
+                    comment_id = commentId,
+                    target_group_id = post.TargetGroupId,
+                    target_group_name = post.TargetGroupName,
+                    permalink_url = post.PermalinkUrl
+                });
+            }
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.SalesComment,
+            AuditSeverity.Success,
+            account,
+            "Up-Top Bump",
+            $"MCP bumped {bumpedPosts.Count}/{eligible.Count} recent group posts.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            eligible_count = eligible.Count,
+            bumped_count = bumpedPosts.Count,
+            bumped_posts = bumpedPosts
+        });
+    }
 }

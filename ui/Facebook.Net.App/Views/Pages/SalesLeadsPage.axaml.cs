@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -253,6 +254,25 @@ public sealed partial class SalesLeadsPage : UserControl
             this._vm.SetLeadGroupFilters,
             allowMultiple: true);
 
+        FilterCategoryDefinition leadTagCategory = new(
+            "lead_tag",
+            this._i18n["Leads.FilterCategoryLeadTag"],
+            VectorIcons.Bookmark,
+            () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.LeadTags.Count + 1);
+                for (int i = 0; i < this._vm.LeadTags.Count; i++)
+                {
+                    GroupTag tag = this._vm.LeadTags[i];
+                    options.Add(new FilterOptionItem(tag.Id, tag.Name, ColorHex: tag.ColorHex));
+                }
+
+                options.Add(new FilterOptionItem("__untagged__", this._i18n["Leads.FilterLeadUntagged"]));
+                return options;
+            },
+            this._vm.SetLeadCustomerTagFilters,
+            allowMultiple: true);
+
         searchFilterBar.SetFilterCategories(
             [
                 statusCategory,
@@ -261,13 +281,15 @@ public sealed partial class SalesLeadsPage : UserControl
                 timeCategory,
                 mediaCategory,
                 groupTagCategory,
-                groupCategory
+                groupCategory,
+                leadTagCategory
             ],
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
 
         this._vm.TargetGroups.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
         this._vm.GroupTags.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
+        this._vm.LeadTags.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
 
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
@@ -318,7 +340,18 @@ public sealed partial class SalesLeadsPage : UserControl
                         }
                     },
                     openBrowserLabel: this._i18n["Leads.BtnRowOpenBrowser"],
-                    detectedPhone: this._vm.ExtractPostPhoneNumber(enriched));
+                    detectedPhone: this._vm.ExtractPostPhoneNumber(enriched),
+                    assignedLeadTags: this._vm.ResolveLeadTags(enriched),
+                    allLeadTags: this._vm.LeadTags,
+                    onToggleLeadTag: tagId => this._vm.ToggleLeadPostTagAsync(post, tagId),
+                    onCreateQuickLeadTag: async (name, color) =>
+                    {
+                        GroupTag? created = await this._vm.CreateQuickLeadTagAsync(name, color).ConfigureAwait(true);
+                        if (created is not null)
+                        {
+                            await this._vm.ToggleLeadPostTagAsync(post, created.Id).ConfigureAwait(true);
+                        }
+                    });
             },
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
@@ -354,7 +387,14 @@ public sealed partial class SalesLeadsPage : UserControl
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
-        Button quickReplyBtn = AppButton.CreatePrimary(
+        Button askAiConsultBtn = AppButton.CreatePrimary(
+            this._theme,
+            this._i18n["Leads.BtnAskAiConsult"],
+            new CommunityToolkit.Mvvm.Input.RelayCommand(() => this._vm.AskAiToAnalyzeAndConsultLead(this._vm.SelectedScrapedPost)),
+            VectorIcons.AiSparkle);
+        askAiConsultBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        Button quickReplyBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnQuickReplyTab"],
             new CommunityToolkit.Mvvm.Input.RelayCommand(onNavigateToAutoCommentTab),
@@ -383,6 +423,7 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Browser);
         inspectOpenBrowserBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+        detailBtnStack.Children.Add(askAiConsultBtn);
         detailBtnStack.Children.Add(quickReplyBtn);
         detailBtnStack.Children.Add(copyPhoneBtn);
         detailBtnStack.Children.Add(inspectOpenBrowserBtn);
@@ -521,6 +562,59 @@ public sealed partial class SalesLeadsPage : UserControl
 
             contentStack.Children.Add(metaPillsWrap);
 
+            // Customer Color Tags + (+ Gán nhãn) Flyout
+            WrapPanel leadTagsWrap = LeadPostTableRow.BuildLeadTagsWrapRow(
+                this._theme,
+                this._i18n,
+                post,
+                this._vm.ResolveLeadTags(post),
+                this._vm.LeadTags,
+                tagId => this._vm.ToggleLeadPostTagAsync(post, tagId),
+                async (name, color) =>
+                {
+                    GroupTag? created = await this._vm.CreateQuickLeadTagAsync(name, color).ConfigureAwait(true);
+                    if (created is not null)
+                    {
+                        await this._vm.ToggleLeadPostTagAsync(post, created.Id).ConfigureAwait(true);
+                    }
+                });
+            contentStack.Children.Add(leadTagsWrap);
+
+            // Editable Customer CRM Notes Box
+            TextBox notesBox = FormField.CreateTextBox(
+                this._theme,
+                this._i18n["Leads.NotesWatermark"],
+                post.Notes ?? string.Empty,
+                multiline: true,
+                height: 54);
+            notesBox.FontSize = 11.5;
+
+            async Task CommitNotesAsync()
+            {
+                string updatedNotes = (notesBox.Text ?? string.Empty).Trim();
+                if (!string.Equals(post.Notes, updatedNotes, StringComparison.Ordinal))
+                {
+                    await this._vm.UpdateLeadPostNotesAsync(post, updatedNotes).ConfigureAwait(true);
+                }
+            }
+
+            notesBox.LostFocus += async (_, _) => await CommitNotesAsync().ConfigureAwait(true);
+            notesBox.KeyDown += async (_, e) =>
+            {
+                if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                {
+                    e.Handled = true;
+                    await CommitNotesAsync().ConfigureAwait(true);
+                }
+            };
+
+            StackPanel notesField = FormField.CreateLabeled(
+                this._theme,
+                this._i18n["Leads.NotesLabel"],
+                notesBox,
+                out _);
+            contentStack.Children.Add(notesField);
+
             // Large Media Preview (if post has photo or video)
             if (!string.IsNullOrWhiteSpace(post.MediaPreviewUrl))
             {
@@ -616,6 +710,7 @@ public sealed partial class SalesLeadsPage : UserControl
         };
 
         this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshSelectedPostDetail();
+        this._vm.LeadTags.CollectionChanged += (_, _) => RefreshSelectedPostDetail();
         this._theme.ThemeChanged += (_, _) => RefreshSelectedPostDetail();
         RefreshSelectedPostDetail();
 
@@ -633,6 +728,7 @@ public sealed partial class SalesLeadsPage : UserControl
             descTb.Text = this._i18n["Leads.Desc"];
             AppButton.SetText(scrapeNowBtn, this._i18n["Leads.BtnScanPosts"]);
             detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
+            AppButton.SetText(askAiConsultBtn, this._i18n["Leads.BtnAskAiConsult"]);
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
             statusCategory.Title = this._i18n["Leads.ColStatus"];
@@ -642,6 +738,7 @@ public sealed partial class SalesLeadsPage : UserControl
             mediaCategory.Title = this._i18n["Leads.FilterCatMediaType"];
             groupTagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
             groupCategory.Title = this._i18n["Leads.FilterGroupLabel"];
+            leadTagCategory.Title = this._i18n["Leads.FilterCategoryLeadTag"];
             searchFilterBar.UpdateLocalization(
                 this._i18n["Common.FilterButton"],
                 this._i18n["Leads.BuyerKeywordPlaceholder"],

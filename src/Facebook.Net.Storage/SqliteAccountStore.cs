@@ -87,6 +87,12 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 color_hex TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS lead_tags (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                color_hex TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS published_posts (
                 post_id TEXT PRIMARY KEY NOT NULL,
                 account_uid TEXT NOT NULL,
@@ -140,7 +146,9 @@ public sealed partial class SqliteAccountStore : IAccountStore
                 media_preview_url TEXT NULL,
                 is_video INTEGER NOT NULL DEFAULT 0,
                 author_avatar_url TEXT NULL,
-                group_avatar_url TEXT NULL
+                group_avatar_url TEXT NULL,
+                tags_csv TEXT NULL,
+                notes TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_group_id ON scraped_posts(group_id);
@@ -160,6 +168,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
         await EnsureColumnExistsAsync(conn, "scraped_posts", "is_video", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "author_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
         await EnsureColumnExistsAsync(conn, "scraped_posts", "group_avatar_url", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "tags_csv", "TEXT NULL", ct).ConfigureAwait(false);
+        await EnsureColumnExistsAsync(conn, "scraped_posts", "notes", "TEXT NULL", ct).ConfigureAwait(false);
 
         using SqliteCommand seedTagsCmd = conn.CreateCommand();
         seedTagsCmd.CommandText = """
@@ -182,6 +192,26 @@ public sealed partial class SqliteAccountStore : IAccountStore
             INSERT OR IGNORE INTO group_tags (id, name, color_hex)
             SELECT 'tag_vip', 'Nhóm Ưu tiên VIP', '#F43F5E'
             WHERE (SELECT COUNT(1) FROM group_tags) < 5;
+
+            INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
+            SELECT 'lead_vip', 'Khách VIP / Nóng', '#F43F5E'
+            WHERE NOT EXISTS (SELECT 1 FROM lead_tags);
+
+            INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
+            SELECT 'lead_phone', 'Có SĐT — Gọi ngay', '#10B981'
+            WHERE (SELECT COUNT(1) FROM lead_tags) < 2;
+
+            INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
+            SELECT 'lead_followup', 'Hẹn tư vấn lại', '#F6821F'
+            WHERE (SELECT COUNT(1) FROM lead_tags) < 3;
+
+            INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
+            SELECT 'lead_quoted', 'Đã báo giá', '#3B82F6'
+            WHERE (SELECT COUNT(1) FROM lead_tags) < 4;
+
+            INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
+            SELECT 'lead_seeding', 'Môi giới / Seeding', '#8B5CF6'
+            WHERE (SELECT COUNT(1) FROM lead_tags) < 5;
             """;
         _ = await seedTagsCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 

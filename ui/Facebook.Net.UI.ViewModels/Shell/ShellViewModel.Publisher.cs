@@ -219,6 +219,11 @@ public sealed partial class ShellViewModel
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
 
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "brand_voice",
+            $"tpl_{tpl.Id}",
+            _context.Localization.Format("Ai.LearnSavedTemplate", tpl.Title, TruncateForAiLearning(tpl.SpintaxContent, 220)));
+
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
@@ -247,6 +252,11 @@ public sealed partial class ShellViewModel
 
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "brand_voice",
+            $"tpl_{tpl.Id}",
+            _context.Localization.Format("Ai.LearnSavedTemplate", tpl.Title, TruncateForAiLearning(tpl.SpintaxContent, 220)));
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
@@ -467,6 +477,7 @@ public sealed partial class ShellViewModel
                 return;
             }
 
+            int successCount = 0;
             for (int i = 0; i < targets.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -490,6 +501,8 @@ public sealed partial class ShellViewModel
                 string recordedPostId = !string.IsNullOrWhiteSpace(postId)
                     ? postId
                     : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+                successCount++;
 
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
@@ -543,6 +556,12 @@ public sealed partial class ShellViewModel
             }
 
             await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "campaign_rules",
+                "recent_publish_campaign",
+                _context.Localization.Format("Ai.LearnPublishCampaign", successCount, targets.Count, this.MinDelaySeconds, this.MaxDelaySeconds),
+                ct);
         }
         catch (OperationCanceledException)
         {
@@ -1009,5 +1028,16 @@ public sealed partial class ShellViewModel
         {
             this.EndTaskScope();
         }
+    }
+
+    private static string TruncateForAiLearning(string? raw, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        string oneLine = raw.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return oneLine.Length > maxChars ? string.Concat(oneLine[..maxChars], "...") : oneLine;
     }
 }

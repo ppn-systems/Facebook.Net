@@ -135,6 +135,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
 
         IReadOnlyList<SavedTargetGroup> targetGroups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
         IReadOnlyList<GroupTag> groupTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<GroupTag> leadTags = await _manager.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(false);
         IReadOnlyList<CampaignTemplate> templates = await _manager.AccountStore.GetAllCampaignTemplatesAsync(ct).ConfigureAwait(false);
         AppConfig cfg = _manager.Settings.Current;
 
@@ -178,6 +179,12 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
                 })
             },
             group_tags = groupTags.Select(t => new
+            {
+                id = t.Id,
+                name = t.Name,
+                color_hex = t.ColorHex
+            }),
+            lead_tags = leadTags.Select(t => new
             {
                 id = t.Id,
                 name = t.Name,

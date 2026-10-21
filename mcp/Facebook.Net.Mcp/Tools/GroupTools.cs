@@ -257,6 +257,18 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
         });
     }
 
+    private static readonly string[] s_defaultTagColors =
+    [
+        "#F6821F",
+        "#3B82F6",
+        "#10B981",
+        "#8B5CF6",
+        "#F43F5E",
+        "#06B6D4",
+        "#EAB308",
+        "#EC4899"
+    ];
+
     [McpServerTool(Name = "fb_assign_group_tag")]
     [Description("Assign or remove a color tag ID across one or more saved target groups.")]
     public async Task<string> AssignGroupTagAsync(
@@ -274,7 +286,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             StringComparer.Ordinal);
 
         IReadOnlyList<SavedTargetGroup> groups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
-        int modifiedCount = 0;
+        List<SavedTargetGroup> updatedBatch = [];
 
         for (int i = 0; i < groups.Count; i++)
         {
@@ -286,9 +298,13 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             (SavedTargetGroup updated, bool changed) = _manager.GroupTagService.ApplyTagChange(groups[i], tagId.Trim(), assign);
             if (changed)
             {
-                await _manager.AccountStore.UpsertTargetGroupAsync(updated, ct).ConfigureAwait(false);
-                modifiedCount++;
+                updatedBatch.Add(updated);
             }
+        }
+
+        if (updatedBatch.Count > 0)
+        {
+            await _manager.AccountStore.UpsertTargetGroupsBatchAsync(updatedBatch, ct).ConfigureAwait(false);
         }
 
         return JsonSerializer.Serialize(new
@@ -296,7 +312,212 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             status = "success",
             tag_id = tagId.Trim(),
             action = assign ? "assigned" : "removed",
-            modified_groups = modifiedCount
+            modified_groups = updatedBatch.Count
+        });
+    }
+
+    [McpServerTool(Name = "fb_create_group_tags_batch")]
+    [Description("Create multiple color-coded group tags in a single call (e.g. 'Bất động sản:#3B82F6; Mua bán:#F6821F; Việc làm:#10B981' or comma-separated names).")]
+    public async Task<string> CreateGroupTagsBatchAsync(
+        [Description("Semicolon- or comma-separated tag specifications, optionally with ':ColorHex' (e.g. 'Bất động sản:#3B82F6; Mua bán:#F6821F; VIP')")] string tagsSpec,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagsSpec);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        IReadOnlyList<GroupTag> existingTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+        HashSet<string> usedIds = new(existingTags.Select(t => t.Id), StringComparer.OrdinalIgnoreCase);
+
+        char[] separators = tagsSpec.Contains(';', StringComparison.Ordinal) ? [';'] : [',', ';'];
+        string[] rawEntries = tagsSpec.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        List<GroupTag> createdTags = new(rawEntries.Length);
+        long baseTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        for (int i = 0; i < rawEntries.Length; i++)
+        {
+            string entry = rawEntries[i];
+            string tagName = entry;
+            string? colorHex = null;
+
+            int colonIdx = entry.LastIndexOf(':');
+            if (colonIdx > 0 && colonIdx < entry.Length - 1)
+            {
+                string candidateColor = entry[(colonIdx + 1)..].Trim();
+                if (candidateColor.StartsWith('#') || candidateColor.Length is 6 or 7)
+                {
+                    tagName = entry[..colonIdx].Trim();
+                    colorHex = candidateColor.StartsWith('#') ? candidateColor : $"#{candidateColor}";
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                continue;
+            }
+
+            string resolvedColor = !string.IsNullOrWhiteSpace(colorHex)
+                ? colorHex
+                : s_defaultTagColors[createdTags.Count % s_defaultTagColors.Length];
+
+            string normInputName = _manager.LeadScoring.RemoveVietnameseDiacritics(tagName);
+            GroupTag? existing = existingTags.FirstOrDefault(t =>
+                string.Equals(t.Name, tagName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normInputName, StringComparison.OrdinalIgnoreCase));
+
+            GroupTag tag;
+            if (existing is not null)
+            {
+                tag = !string.IsNullOrWhiteSpace(colorHex)
+                    ? existing with { Name = tagName, ColorHex = resolvedColor }
+                    : existing;
+            }
+            else
+            {
+                tag = _manager.GroupTagService.CreateTag(tagName, resolvedColor);
+                if (!usedIds.Add(tag.Id))
+                {
+                    tag = tag with { Id = $"tag_{baseTimestamp}_{i + 1}" };
+                    _ = usedIds.Add(tag.Id);
+                }
+            }
+
+            await _manager.AccountStore.UpsertGroupTagAsync(tag, ct).ConfigureAwait(false);
+            createdTags.Add(tag);
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            "Batch Group Tags",
+            $"MCP created/updated {createdTags.Count} group tags in batch.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            created_count = createdTags.Count,
+            tags = createdTags.Select(t => new
+            {
+                id = t.Id,
+                name = t.Name,
+                color_hex = t.ColorHex
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_auto_tag_groups_by_keywords")]
+    [Description("Automatically classify and assign a color tag to all saved target groups whose name matches any of the specified keywords (accent-insensitive Vietnamese matching). Auto-creates the tag if it does not exist.")]
+    public async Task<string> AutoTagGroupsByKeywordsAsync(
+        [Description("Existing tag ID or tag name (auto-created if not found)")] string tagNameOrId,
+        [Description("Comma- or semicolon-separated keywords to match against group names (e.g. 'bất động sản, nhà đất, chung cư, bds')")] string keywordsCsv,
+        [Description("Hex color code if creating a new tag (default '#3B82F6')")] string colorHex = "#3B82F6",
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagNameOrId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keywordsCsv);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string cleanTarget = tagNameOrId.Trim();
+        string normTarget = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTarget);
+
+        IReadOnlyList<GroupTag> allTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+        GroupTag? targetTag = allTags.FirstOrDefault(t =>
+            string.Equals(t.Id, cleanTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(t.Name, cleanTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTarget, StringComparison.OrdinalIgnoreCase));
+
+        bool createdNewTag = false;
+        if (targetTag is null)
+        {
+            targetTag = _manager.GroupTagService.CreateTag(cleanTarget, colorHex);
+            await _manager.AccountStore.UpsertGroupTagAsync(targetTag, ct).ConfigureAwait(false);
+            createdNewTag = true;
+        }
+
+        string[] rawKeywords = keywordsCsv.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] normKeywords = rawKeywords
+            .Select(k => _manager.LeadScoring.RemoveVietnameseDiacritics(k))
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .ToArray();
+
+        IReadOnlyList<SavedTargetGroup> groups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
+        List<SavedTargetGroup> updatedGroups = [];
+        List<object> matchedGroupsSummary = [];
+
+        for (int i = 0; i < groups.Count; i++)
+        {
+            SavedTargetGroup g = groups[i];
+            string normGroupName = _manager.LeadScoring.RemoveVietnameseDiacritics(g.GroupName);
+            bool matches = false;
+
+            for (int k = 0; k < rawKeywords.Length; k++)
+            {
+                if (g.GroupName.Contains(rawKeywords[k], StringComparison.OrdinalIgnoreCase))
+                {
+                    matches = true;
+                    break;
+                }
+            }
+
+            if (!matches)
+            {
+                for (int k = 0; k < normKeywords.Length; k++)
+                {
+                    if (normGroupName.Contains(normKeywords[k], StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!matches)
+            {
+                continue;
+            }
+
+            (SavedTargetGroup updated, bool changed) = _manager.GroupTagService.ApplyTagChange(g, targetTag.Id, assignTag: true);
+            if (changed)
+            {
+                updatedGroups.Add(updated);
+            }
+
+            matchedGroupsSummary.Add(new
+            {
+                group_id = g.GroupId,
+                group_name = g.GroupName,
+                newly_tagged = changed
+            });
+        }
+
+        if (updatedGroups.Count > 0)
+        {
+            await _manager.AccountStore.UpsertTargetGroupsBatchAsync(updatedGroups, ct).ConfigureAwait(false);
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            targetTag.Name,
+            $"MCP auto-tagged {updatedGroups.Count} groups (matched {matchedGroupsSummary.Count}) with tag '{targetTag.Name}'.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            tag = new
+            {
+                id = targetTag.Id,
+                name = targetTag.Name,
+                color_hex = targetTag.ColorHex,
+                was_created = createdNewTag
+            },
+            matched_count = matchedGroupsSummary.Count,
+            newly_modified_count = updatedGroups.Count,
+            matched_groups = matchedGroupsSummary
         });
     }
 }

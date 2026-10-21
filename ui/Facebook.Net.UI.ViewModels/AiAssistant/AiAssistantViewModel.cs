@@ -15,6 +15,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.ViewModels.Services;
 
 namespace Facebook.Net.UI.ViewModels.AiAssistant;
@@ -124,6 +125,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         this.Messages = new BulkObservableCollection<AiChatBubbleItem>();
         this.Conversations = new BulkObservableCollection<AiConversationThread>();
         this.Memories = new BulkObservableCollection<AiMemoryRecord>();
+        this.ActiveContextPacks = new BulkObservableCollection<string>();
         this.InstalledAuthBrowsers = new BulkObservableCollection<PreferredBrowserKind>();
         this.AvailableAuthProfiles = new BulkObservableCollection<BrowserProfileOption>();
         this.MemoryCategories = Enum.GetValues<AiMemoryCategory>();
@@ -159,9 +161,15 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         this.DeleteConversationCommand = new AsyncRelayCommand<AiConversationThread>(this.DeleteConversationAsync);
         this.SaveMemoryCommand = new AsyncRelayCommand(this.SaveMemoryAsync);
         this.DeleteMemoryCommand = new AsyncRelayCommand<AiMemoryRecord>(this.DeleteMemoryAsync);
+        this.ClearAllMemoriesCommand = new AsyncRelayCommand(this.ClearAllMemoriesAsync);
         this.SaveSystemPromptCommand = new AsyncRelayCommand(this.SaveSystemPromptAsync);
         this.ResetSystemPromptCommand = new AsyncRelayCommand(this.ResetSystemPromptAsync);
+        this.ApplyPromptPresetCommand = new RelayCommand<string>(this.ApplySystemPromptPreset);
+        this.ToggleContextPackCommand = new RelayCommand<string>(this.ToggleContextPack);
     }
+
+    /// <summary>Gets or sets the optional owning <see cref="Shell.ShellViewModel"/> reference for deep workspace integration.</summary>
+    internal Shell.ShellViewModel? Shell { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the slide-over AI Assistant panel is open.</summary>
     [ObservableProperty]
@@ -237,7 +245,15 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
     /// <summary>Gets or sets the user's free-form unlimited custom context injected alongside the internal English System Prompt.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CustomAiSystemPrompt))]
     public partial string SystemPromptText { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the user's custom system prompt alias.</summary>
+    public string CustomAiSystemPrompt
+    {
+        get => this.SystemPromptText;
+        set => this.SystemPromptText = value;
+    }
 
     /// <summary>Gets or sets the selected AI model ID (<c>agy --model</c>), defaulting to the fastest lightweight model (<c>gemini-3.8-flash-low</c>).</summary>
     [ObservableProperty]
@@ -285,6 +301,9 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
     /// <summary>Gets the collection of persistent AI Memory records.</summary>
     public BulkObservableCollection<AiMemoryRecord> Memories { get; }
+
+    /// <summary>Gets the collection of active workspace context pack IDs attached to the chat composer (<c>selected_lead</c>, <c>top_hot_leads</c>, <c>deep_analytics</c>, <c>all_groups_tags</c>, <c>templates_posts</c>).</summary>
+    public BulkObservableCollection<string> ActiveContextPacks { get; }
 
     /// <summary>Gets the collection of installed Chromium browsers available for OAuth login.</summary>
     public BulkObservableCollection<PreferredBrowserKind> InstalledAuthBrowsers { get; }
@@ -352,11 +371,77 @@ public sealed partial class AiAssistantViewModel : ObservableObject
     /// <summary>Gets the command to delete a memory entry from the AI Memory database.</summary>
     public IAsyncRelayCommand<AiMemoryRecord> DeleteMemoryCommand { get; }
 
+    /// <summary>Gets the command to delete all memory entries from the AI Memory database.</summary>
+    public IAsyncRelayCommand ClearAllMemoriesCommand { get; }
+
     /// <summary>Gets the command to save the custom System Prompt into application settings.</summary>
     public IAsyncRelayCommand SaveSystemPromptCommand { get; }
 
     /// <summary>Gets the command to reset the System Prompt to the default instructions.</summary>
     public IAsyncRelayCommand ResetSystemPromptCommand { get; }
+
+    /// <summary>Gets the command to apply a built-in System Prompt preset.</summary>
+    public IRelayCommand<string> ApplyPromptPresetCommand { get; }
+
+    /// <summary>Gets the command to toggle a smart workspace context pack.</summary>
+    public IRelayCommand<string> ToggleContextPackCommand { get; }
+
+    /// <summary>
+    /// Checks whether the specified context pack is currently enabled.
+    /// </summary>
+    public bool IsContextPackEnabled(string? packId)
+    {
+        if (string.IsNullOrWhiteSpace(packId))
+        {
+            return false;
+        }
+
+        for (int i = 0; i < this.ActiveContextPacks.Count; i++)
+        {
+            if (string.Equals(this.ActiveContextPacks[i], packId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Toggles the specified workspace context pack on or off.
+    /// </summary>
+    public void ToggleContextPack(string? packId)
+    {
+        if (string.IsNullOrWhiteSpace(packId))
+        {
+            return;
+        }
+
+        string trimmed = packId.Trim();
+        for (int i = 0; i < this.ActiveContextPacks.Count; i++)
+        {
+            if (string.Equals(this.ActiveContextPacks[i], trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                this.ActiveContextPacks.RemoveAt(i);
+                return;
+            }
+        }
+
+        this.ActiveContextPacks.Add(trimmed);
+    }
+
+    /// <summary>
+    /// Ensures the specified workspace context pack is enabled.
+    /// </summary>
+    public void EnableContextPack(string? packId)
+    {
+        if (string.IsNullOrWhiteSpace(packId) || this.IsContextPackEnabled(packId))
+        {
+            return;
+        }
+
+        this.ActiveContextPacks.Add(packId.Trim());
+    }
 
     partial void OnIsPanelOpenChanged(bool value)
     {
@@ -843,7 +928,28 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                 this.ActiveAgyConversationId = result.ConversationId;
             }
 
-            AgyProposedAction? fallbackAction = DetectFallbackProposedAction(
+            if (result.LearnedMemories is { Count: > 0 })
+            {
+                for (int i = 0; i < result.LearnedMemories.Count; i++)
+                {
+                    AgyLearnedMemoryItem learned = result.LearnedMemories[i];
+                    if (!string.IsNullOrWhiteSpace(learned.Key) && !string.IsNullOrWhiteSpace(learned.Content))
+                    {
+                        _ = await _context.AiMemoryStore.SaveMemoryAsync(
+                            learned.Category,
+                            learned.Key.Trim(),
+                            learned.Content.Trim(),
+                            Math.Clamp(learned.Importance, 1, 5),
+                            activeUid).ConfigureAwait(true);
+                    }
+                }
+            }
+            else
+            {
+                await this.TryExtractContactAndPricingHintAsync(prompt, activeUid).ConfigureAwait(true);
+            }
+
+            AgyProposedAction? fallbackAction = this.DetectFallbackProposedAction(
                 prompt,
                 finalResponseText,
                 enabledTargetGroups,
@@ -1163,18 +1269,18 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         {
             if (this.Messages[i].IsUser && !string.IsNullOrWhiteSpace(this.Messages[i].Content))
             {
-                return FormatConversationTitle(this.Messages[i].Content);
+                return this.FormatConversationTitle(this.Messages[i].Content);
             }
         }
 
-        return FormatConversationTitle(currentPrompt);
+        return this.FormatConversationTitle(currentPrompt);
     }
 
-    private static string FormatConversationTitle(string rawText)
+    private string FormatConversationTitle(string rawText)
     {
         if (string.IsNullOrWhiteSpace(rawText))
         {
-            return "Hội thoại mới";
+            return _context.Localization["Ai.NewConversationDefaultTitle"];
         }
 
         string oneLine = rawText.Replace('\r', ' ').Replace('\n', ' ').Trim();
@@ -1183,6 +1289,144 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
     private static string CreateNewConversationId() =>
         $"conv_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid().ToString("N")[..6]}";
+
+    /// <summary>
+    /// Opens the AI Assistant panel, enables the <c>selected_lead</c> context pack, and sends a consultation request for <paramref name="post"/>.
+    /// </summary>
+    public async Task RequestLeadAnalysisAndConsultationAsync(PostSummary? post)
+    {
+        if (post is null)
+        {
+            return;
+        }
+
+        if (this.Shell is not null)
+        {
+            this.Shell.SelectedScrapedPost = post;
+            this.Shell.IsAiAssistantOpen = true;
+        }
+
+        this.IsPanelOpen = true;
+        this.ActiveSubTabIndex = 0;
+        this.EnableContextPack("selected_lead");
+        this.InputPromptText = _context.Localization["Ai.PromptAnalyzeSelectedLead"];
+
+        if (!this.IsBusy)
+        {
+            await this.SendMessageAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Applies a built-in specialized System Prompt preset and persists AI settings.
+    /// </summary>
+    public void ApplySystemPromptPreset(string? presetKey)
+    {
+        if (string.IsNullOrWhiteSpace(presetKey))
+        {
+            return;
+        }
+
+        string presetPrompt = presetKey.Trim().ToLowerInvariant() switch
+        {
+            "closing_expert" => _context.Localization["Ai.PresetPromptClosingExpert"],
+            "viral_copywriter" => _context.Localization["Ai.PresetPromptViralCopywriter"],
+            "data_analyst" => _context.Localization["Ai.PresetPromptDataAnalyst"],
+            _ => string.Empty
+        };
+
+        if (string.IsNullOrWhiteSpace(presetPrompt))
+        {
+            return;
+        }
+
+        this.SystemPromptText = presetPrompt;
+        _ = this.SaveSystemPromptAsync();
+    }
+
+    /// <summary>
+    /// Silently records a learned insight from user behavior in the background without any UI banner or popup noise.
+    /// </summary>
+    public Task LearnFromUserActionSilentlyAsync(
+        string category,
+        string key,
+        string content,
+        CancellationToken ct = default)
+    {
+        AiMemoryCategory mapped = MapStringCategory(category);
+        return this.LearnFromUserActionSilentlyAsync(mapped, key, content, ct);
+    }
+
+    /// <summary>
+    /// Silently records a learned insight from user behavior in the background without any UI banner or popup noise.
+    /// </summary>
+    public async Task LearnFromUserActionSilentlyAsync(
+        AiMemoryCategory category,
+        string key,
+        string content,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(content))
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_isMemoryStoreInitialized)
+            {
+                await _context.AiMemoryStore.InitializeAsync(ct).ConfigureAwait(true);
+                _isMemoryStoreInitialized = true;
+            }
+
+            string? activeUid = _context.Settings.Current.LastSelectedAccountUid;
+            _ = await _context.AiMemoryStore
+                .SaveMemoryAsync(category, key.Trim(), content.Trim(), importance: 4, accountUid: activeUid, ct: ct)
+                .ConfigureAwait(true);
+
+            await this.ReloadMemoriesAsync(ct).ConfigureAwait(true);
+        }
+        catch (Exception)
+        {
+            // Silent background learning must never interrupt the user workflow.
+        }
+    }
+
+    private static AiMemoryCategory MapStringCategory(string? rawCategory)
+    {
+        if (string.IsNullOrWhiteSpace(rawCategory))
+        {
+            return AiMemoryCategory.General;
+        }
+
+        if (Enum.TryParse(rawCategory.Trim(), ignoreCase: true, out AiMemoryCategory parsed))
+        {
+            return parsed;
+        }
+
+        return rawCategory.Trim().ToLowerInvariant() switch
+        {
+            "lead_tag_preference" or "lead_preferences" or "lead_playbook" or "lead" => AiMemoryCategory.LeadPlaybook,
+            "brand_voice" or "writing_style" or "style" => AiMemoryCategory.WritingStyle,
+            "campaign_rules" or "campaign_rule" or "rule" => AiMemoryCategory.CampaignRule,
+            "group_strategy" or "group" => AiMemoryCategory.GroupStrategy,
+            "product_knowledge" or "product" => AiMemoryCategory.ProductKnowledge,
+            "user_preference" or "preference" => AiMemoryCategory.UserPreference,
+            _ => AiMemoryCategory.General
+        };
+    }
+
+    private async Task ClearAllMemoriesAsync()
+    {
+        if (!_isMemoryStoreInitialized)
+        {
+            await _context.AiMemoryStore.InitializeAsync().ConfigureAwait(true);
+            _isMemoryStoreInitialized = true;
+        }
+
+        _ = await _context.AiMemoryStore.ClearMemoriesAsync().ConfigureAwait(true);
+        this.Memories.Clear();
+    }
 
     private async Task SaveSystemPromptAsync()
     {
@@ -1277,7 +1521,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         {
             _ = await _context.AiMemoryStore.SaveMemoryAsync(
                 AiMemoryCategory.CampaignRule,
-                "Khoảng nghỉ an toàn",
+                _context.Localization["Ai.MemoryKeySafeDelay"],
                 prompt,
                 importance: 4,
                 accountUid: activeUid).ConfigureAwait(true);
@@ -1290,7 +1534,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             {
                 _ = await _context.AiMemoryStore.SaveMemoryAsync(
                     AiMemoryCategory.ProductKnowledge,
-                    "Chiến dịch gần nhất",
+                    _context.Localization["Ai.MemoryKeyRecentCampaign"],
                     quotedPost,
                     importance: 4,
                     accountUid: activeUid).ConfigureAwait(true);
@@ -1298,14 +1542,59 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         }
     }
 
-    private async Task<(string? ActiveUid, string? ActiveName, int EnabledTargetGroups, int MinDelay, int MaxDelay, string WorkspaceSnapshot)> BuildRichWorkspaceSnapshotAsync()
+    private async Task TryExtractContactAndPricingHintAsync(string prompt, string? activeUid)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return;
+        }
+
+        try
+        {
+            string? phone = _context.LeadScoring.ExtractPrimaryPhoneNumber(prompt);
+            bool mentionsContact = prompt.Contains("zalo", StringComparison.OrdinalIgnoreCase) ||
+                                   prompt.Contains("hotline", StringComparison.OrdinalIgnoreCase) ||
+                                   prompt.Contains("sđt", StringComparison.OrdinalIgnoreCase) ||
+                                   prompt.Contains("liên hệ", StringComparison.OrdinalIgnoreCase) ||
+                                   prompt.Contains("phone", StringComparison.OrdinalIgnoreCase) ||
+                                   prompt.Contains("contact", StringComparison.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(phone) && mentionsContact)
+            {
+                _ = await _context.AiMemoryStore.SaveMemoryAsync(
+                    AiMemoryCategory.ProductKnowledge,
+                    _context.Localization["Ai.MemoryKeyContactHotline"],
+                    prompt.Length > 200 ? prompt[..200].Trim() : prompt,
+                    importance: 4,
+                    accountUid: activeUid).ConfigureAwait(true);
+            }
+            else if (prompt.Contains("bảng giá", StringComparison.OrdinalIgnoreCase) ||
+                     prompt.Contains("giá bán", StringComparison.OrdinalIgnoreCase) ||
+                     prompt.Contains("pricing", StringComparison.OrdinalIgnoreCase) ||
+                     prompt.Contains("price list", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = await _context.AiMemoryStore.SaveMemoryAsync(
+                    AiMemoryCategory.ProductKnowledge,
+                    _context.Localization["Ai.MemoryKeyPricingPolicy"],
+                    prompt.Length > 220 ? prompt[..220].Trim() : prompt,
+                    importance: 4,
+                    accountUid: activeUid).ConfigureAwait(true);
+            }
+        }
+        catch (Exception)
+        {
+            // Silent extraction fallback
+        }
+    }
+
+    private async Task<(string? ActiveUid, string? ActiveName, int EnabledTargetGroups, int MinDelay, int MaxDelay, string WorkspaceSnapshot)> BuildRichWorkspaceSnapshotAsync(CancellationToken ct = default)
     {
         AppConfig cfg = _context.Settings.Current;
         string? activeUid = cfg.LastSelectedAccountUid;
         string? activeName = null;
         string activeStatus = "None";
 
-        IReadOnlyList<AccountProfile> accounts = await _context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
+        IReadOnlyList<AccountProfile> accounts = await _context.AccountStore.GetAllAccountsAsync(ct).ConfigureAwait(true);
         for (int i = 0; i < accounts.Count; i++)
         {
             if (!string.IsNullOrWhiteSpace(activeUid) &&
@@ -1324,7 +1613,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             activeStatus = accounts[0].Status.ToString();
         }
 
-        IReadOnlyList<SavedTargetGroup> targets = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+        IReadOnlyList<SavedTargetGroup> targets = await _context.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(true);
         int enabledCount = 0;
         List<string> sampleGroupNames = new(8);
         for (int i = 0; i < targets.Count; i++)
@@ -1339,22 +1628,44 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             }
         }
 
-        IReadOnlyList<GroupTag> tags = await _context.AccountStore.GetAllGroupTagsAsync().ConfigureAwait(true);
+        IReadOnlyList<GroupTag> tags = await _context.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(true);
         List<string> tagNames = new(tags.Count);
         for (int i = 0; i < tags.Count; i++)
         {
             if (!string.IsNullOrWhiteSpace(tags[i].Name))
             {
-                tagNames.Add(tags[i].Name);
+                tagNames.Add($"{tags[i].Name} ({tags[i].Id})");
             }
         }
 
-        IReadOnlyList<CampaignTemplate> templates = await _context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
+        IReadOnlyList<GroupTag> leadTags = await _context.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(true);
+        List<string> leadTagNames = new(leadTags.Count);
+        for (int i = 0; i < leadTags.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(leadTags[i].Name))
+            {
+                leadTagNames.Add($"{leadTags[i].Name} ({leadTags[i].Id})");
+            }
+        }
+
+        IReadOnlyList<CampaignTemplate> templates = await _context.AccountStore.GetAllCampaignTemplatesAsync(ct).ConfigureAwait(true);
+
+        IReadOnlyList<PostSummary> allScraped = this.Shell is { AllScrapedPosts.Count: > 0 }
+            ? this.Shell.AllScrapedPosts
+            : await _context.AccountStore.QueryScrapedPostsAsync(null, null, 300, ct).ConfigureAwait(true);
+
+        IReadOnlySet<string>? commentedSet = this.Shell?.CommentedPostIds;
+        string? buyerKeywords = this.Shell?.BuyerIntentKeywords;
+        WorkspaceDataAnalyticsReport analyticsReport = _context.LeadScoring.AnalyzeWorkspaceData(
+            allScraped,
+            targets,
+            commentedSet,
+            buyerKeywords);
 
         StringBuilder sb = new();
         _ = sb.AppendLine("[CURRENT WORKSPACE STATE]");
         _ = sb.Append(CultureInfo.InvariantCulture, $"- Active Facebook account: {activeName ?? "None"} (Status: {activeStatus})").AppendLine();
-        _ = sb.Append(CultureInfo.InvariantCulture, $"- Enabled target groups count: {enabledCount}").AppendLine();
+        _ = sb.Append(CultureInfo.InvariantCulture, $"- Enabled target groups count: {enabledCount} / {targets.Count} total").AppendLine();
         if (sampleGroupNames.Count > 0)
         {
             _ = sb.Append(CultureInfo.InvariantCulture, $"- Sample enabled target groups: {string.Join(", ", sampleGroupNames)}").AppendLine();
@@ -1365,6 +1676,12 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             _ = sb.Append(CultureInfo.InvariantCulture, $"- Group color tags: {string.Join(", ", tagNames)}").AppendLine();
         }
 
+        if (leadTagNames.Count > 0)
+        {
+            _ = sb.Append(CultureInfo.InvariantCulture, $"- Customer/Lead color tags: {string.Join(", ", leadTagNames)}").AppendLine();
+        }
+
+        _ = sb.Append(CultureInfo.InvariantCulture, $"- Scraped customer leads summary: {analyticsReport.TotalScrapedPosts} total ({analyticsReport.TotalPostsWithPhone} with phone, {analyticsReport.TotalHighIntentPosts} high-intent, {analyticsReport.TotalPendingPosts} pending reply)").AppendLine();
         _ = sb.Append(CultureInfo.InvariantCulture, $"- Safe anti-checkpoint delay: {cfg.MinDelaySeconds}s - {cfg.MaxDelaySeconds}s");
 
         if (templates.Count > 0)
@@ -1388,12 +1705,125 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             }
         }
 
+        // Attached Active Context Packs (+ Nạp Context)
+        if (this.IsContextPackEnabled("selected_lead"))
+        {
+            PostSummary? selectedPost = this.Shell?.SelectedScrapedPost;
+            if (selectedPost is null && allScraped.Count > 0)
+            {
+                selectedPost = allScraped[0];
+            }
+
+            if (selectedPost is not null)
+            {
+                IReadOnlyList<string> phones = _context.LeadScoring.ExtractVietnamesePhoneNumbers(selectedPost.MessageText);
+                int score = _context.LeadScoring.CalculateBuyerIntentScore(selectedPost.MessageText, buyerKeywords);
+                _ = sb.AppendLine().AppendLine().AppendLine("[ATTACHED CONTEXT: SELECTED CUSTOMER POST]");
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- PostId: {selectedPost.PostId}").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Author: {selectedPost.AuthorName} (UID: {selectedPost.AuthorUid ?? "N/A"})").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Group: {selectedPost.GroupName} (GroupId: {selectedPost.GroupId})").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Buyer Intent Score: {score}/100 | Phones: {(phones.Count > 0 ? string.Join(", ", phones) : "None")}").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Assigned Lead Tags: {(string.IsNullOrWhiteSpace(selectedPost.TagsCsv) ? "None" : selectedPost.TagsCsv)}").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Customer CRM Notes: {(string.IsNullOrWhiteSpace(selectedPost.Notes) ? "None" : selectedPost.Notes)}").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Engagement: {selectedPost.ReactionCount} reactions, {selectedPost.CommentCount} comments").AppendLine();
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Full Message: {selectedPost.MessageText}");
+            }
+        }
+
+        if (this.IsContextPackEnabled("top_hot_leads") && allScraped.Count > 0)
+        {
+            _ = sb.AppendLine().AppendLine().AppendLine("[ATTACHED CONTEXT: TOP 25 HOT CUSTOMER LEADS]");
+            List<(PostSummary Post, int Score, string? Phone)> ranked = new(allScraped.Count);
+            for (int i = 0; i < allScraped.Count; i++)
+            {
+                PostSummary p = allScraped[i];
+                int score = _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, buyerKeywords);
+                string? phone = _context.LeadScoring.ExtractPrimaryPhoneNumber(p.MessageText);
+                ranked.Add((p, score, phone));
+            }
+
+            ranked.Sort((a, b) =>
+            {
+                int hasPhoneA = string.IsNullOrWhiteSpace(a.Phone) ? 0 : 1;
+                int hasPhoneB = string.IsNullOrWhiteSpace(b.Phone) ? 0 : 1;
+                int cmp = hasPhoneB.CompareTo(hasPhoneA);
+                return cmp != 0 ? cmp : b.Score.CompareTo(a.Score);
+            });
+
+            int maxLeads = Math.Min(25, ranked.Count);
+            for (int i = 0; i < maxLeads; i++)
+            {
+                (PostSummary p, int score, string? phone) = ranked[i];
+                string snippet = (p.MessageText ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+                if (snippet.Length > 120)
+                {
+                    snippet = string.Concat(snippet[..120], "...");
+                }
+
+                _ = sb.Append(
+                    CultureInfo.InvariantCulture,
+                    $"- [{p.PostId}] {p.AuthorName} @ {p.GroupName} | Score={score} | Phone={phone ?? "None"} | Tags={p.TagsCsv}: {snippet}").AppendLine();
+            }
+        }
+
+        if (this.IsContextPackEnabled("deep_analytics"))
+        {
+            _ = sb.AppendLine().AppendLine().Append(_context.LeadScoring.FormatAnalyticsReportForAi(analyticsReport));
+        }
+
+        if (this.IsContextPackEnabled("all_groups_tags"))
+        {
+            _ = sb.AppendLine().AppendLine().AppendLine("[ATTACHED CONTEXT: ALL TARGET GROUPS & TAGS]");
+            int maxGroups = Math.Min(80, targets.Count);
+            for (int i = 0; i < maxGroups; i++)
+            {
+                SavedTargetGroup g = targets[i];
+                _ = sb.Append(
+                    CultureInfo.InvariantCulture,
+                    $"- GroupId={g.GroupId} | Name={g.GroupName} | Enabled={g.IsEnabled} | Tags={g.TagsCsv}").AppendLine();
+            }
+        }
+
+        if (this.IsContextPackEnabled("templates_posts"))
+        {
+            _ = sb.AppendLine().AppendLine().AppendLine("[ATTACHED CONTEXT: SPINTAX TEMPLATES & RECENT PUBLISHED POSTS]");
+            int maxTpl = Math.Min(15, templates.Count);
+            for (int i = 0; i < maxTpl; i++)
+            {
+                CampaignTemplate tpl = templates[i];
+                string body = (tpl.SpintaxContent ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+                if (body.Length > 200)
+                {
+                    body = string.Concat(body[..200], "...");
+                }
+
+                _ = sb.Append(CultureInfo.InvariantCulture, $"- Template [{tpl.Id}] {tpl.Title}: {body}").AppendLine();
+            }
+
+            IReadOnlyList<PublishedPostRecord> pubPosts = await _context.AccountStore
+                .GetPublishedPostsAsync(activeUid, 15, ct)
+                .ConfigureAwait(true);
+            for (int i = 0; i < pubPosts.Count; i++)
+            {
+                PublishedPostRecord pub = pubPosts[i];
+                string preview = (pub.MessageText ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+                if (preview.Length > 140)
+                {
+                    preview = string.Concat(preview[..140], "...");
+                }
+
+                _ = sb.Append(
+                    CultureInfo.InvariantCulture,
+                    $"- Published [{pub.PostId}] @ {pub.TargetGroupName ?? "Profile"} ({pub.CreatedAt:dd/MM HH:mm}): {preview}").AppendLine();
+            }
+        }
+
         int minDelayInt = Math.Max(0, (int)Math.Round(cfg.MinDelaySeconds));
         int maxDelayInt = Math.Max(minDelayInt, (int)Math.Round(cfg.MaxDelaySeconds));
         return (activeUid, activeName, enabledCount, minDelayInt, maxDelayInt, sb.ToString());
     }
 
-    private static AgyProposedAction? DetectFallbackProposedAction(
+    private AgyProposedAction? DetectFallbackProposedAction(
         string userPrompt,
         string assistantResponse,
         int enabledTargetGroups,
@@ -1428,7 +1858,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
             return new AgyProposedAction(
                 ActionKind: "PUBLISH_GROUPS",
-                SummaryText: $"Đăng bài vào {targetCount} nhóm (delay {minDelay}s - {maxDelay}s)",
+                SummaryText: _context.Localization.Format("Ai.FallbackPublishSummary", targetCount, minDelay, maxDelay),
                 ContentText: contentText,
                 TargetGroupCount: targetCount,
                 MinDelaySeconds: minDelay,
@@ -1587,6 +2017,11 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                 writer.WriteString("groupKeyword", action.GroupKeyword);
             }
 
+            if (action.TargetId is not null)
+            {
+                writer.WriteString("targetId", action.TargetId);
+            }
+
             writer.WriteEndObject();
         }
 
@@ -1635,8 +2070,11 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             string? keyword = root.TryGetProperty("groupKeyword", out JsonElement kw) && kw.ValueKind == JsonValueKind.String
                 ? kw.GetString()
                 : null;
+            string? targetId = root.TryGetProperty("targetId", out JsonElement tid) && tid.ValueKind == JsonValueKind.String
+                ? tid.GetString()
+                : null;
 
-            return new AgyProposedAction(kind, summary, content, groupCount, minDelay, maxDelay, keyword);
+            return new AgyProposedAction(kind, summary, content, groupCount, minDelay, maxDelay, keyword, targetId);
         }
         catch (JsonException)
         {

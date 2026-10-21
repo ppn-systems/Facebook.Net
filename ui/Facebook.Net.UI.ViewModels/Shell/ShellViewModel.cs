@@ -84,10 +84,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             onMcpDatabaseUpdated: async () =>
             {
                 await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+                await this.ReloadLeadTagsOnlyAsync().ConfigureAwait(true);
                 await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
                 await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
             },
-            onExecuteProposedActionInShell: this.HandleAiProposedAction);
+            onExecuteProposedActionInShell: this.HandleAiProposedAction)
+        {
+            Shell = this
+        };
         this.ToggleAiAssistantCommand = this.AiAssistant.TogglePanelCommand;
 
         this.Accounts = new BulkObservableCollection<AccountProfile>();
@@ -180,6 +184,29 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to toggle the right-hand AI Assistant panel.</summary>
     public IRelayCommand ToggleAiAssistantCommand { get; }
+
+    /// <summary>Gets or sets a value indicating whether the AI Assistant slide-over panel is currently open.</summary>
+    public bool IsAiAssistantOpen
+    {
+        get => this.AiAssistant.IsPanelOpen;
+        set => this.AiAssistant.IsPanelOpen = value;
+    }
+
+    /// <summary>
+    /// Navigates to a main section by its name (<c>Accounts</c>, <c>Groups</c>, <c>Publisher</c>, <c>SalesLeads</c>, <c>Settings</c>, <c>Overview</c>, <c>AuditLogs</c>).
+    /// </summary>
+    public void SelectNavItem(string? sectionKey)
+    {
+        if (string.IsNullOrWhiteSpace(sectionKey))
+        {
+            return;
+        }
+
+        if (Enum.TryParse(sectionKey.Trim(), ignoreCase: true, out NavigationSection section))
+        {
+            this.Navigation.NavigateTo(section);
+        }
+    }
 
     /// <summary>Gets or sets the Spintax post content alias used by AI Assistant actions.</summary>
     public string PostSpintaxContent
@@ -387,6 +414,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         await this.AiAssistant.EnsureMemoryLoadedAsync().ConfigureAwait(true);
 
         this.LoadSettingsIntoProperties();
+        IReadOnlyList<GroupTag> leadTags = await _context.AccountStore.GetAllLeadTagsAsync().ConfigureAwait(true);
+        this.LeadTags.ReplaceAll(leadTags);
+        this.RebuildLeadTagIndex();
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
         await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
         await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
@@ -574,6 +604,60 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             this.LeadFilterKeywords = action.GroupKeyword ?? this.LeadFilterKeywords;
             this.Navigation.NavigateTo(NavigationSection.SalesLeads);
             _ = this.ScanGroupLeadsAsync();
+        }
+        else if (string.Equals(action.ActionKind, "FILTER_LEADS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.Navigation.NavigateTo(NavigationSection.SalesLeads);
+            string? kw = !string.IsNullOrWhiteSpace(action.GroupKeyword)
+                ? action.GroupKeyword
+                : action.ContentText;
+            if (!string.IsNullOrWhiteSpace(kw))
+            {
+                this.ApplyLocalLeadFilter(kw);
+            }
+            else
+            {
+                this.FilterCachedPostsFromDb();
+            }
+        }
+        else if (string.Equals(action.ActionKind, "COMMENT_LEAD", StringComparison.OrdinalIgnoreCase))
+        {
+            this.Navigation.NavigateTo(NavigationSection.SalesLeads);
+            if (!string.IsNullOrWhiteSpace(action.ContentText))
+            {
+                this.SalesCommentSpintaxText = action.ContentText;
+            }
+
+            string? targetPostId = !string.IsNullOrWhiteSpace(action.TargetId)
+                ? action.TargetId
+                : action.GroupKeyword;
+            if (!string.IsNullOrWhiteSpace(targetPostId))
+            {
+                for (int i = 0; i < this.ScrapedPosts.Count; i++)
+                {
+                    if (string.Equals(this.ScrapedPosts[i].PostId, targetPostId, StringComparison.Ordinal))
+                    {
+                        this.SelectedScrapedPost = this.ScrapedPosts[i];
+                        break;
+                    }
+                }
+            }
+        }
+        else if (string.Equals(action.ActionKind, "OPEN_GROUP_TAGS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.Navigation.NavigateTo(NavigationSection.Groups);
+            _ = this.ReloadGroupTagsOnlyAsync();
+            _ = this.ReloadLeadTagsOnlyAsync();
+        }
+        else if (string.Equals(action.ActionKind, "BUMP_POSTS", StringComparison.OrdinalIgnoreCase))
+        {
+            this.Navigation.NavigateTo(NavigationSection.Publisher);
+            if (!string.IsNullOrWhiteSpace(action.ContentText))
+            {
+                this.BumpCommentSpintaxText = action.ContentText;
+            }
+
+            _ = this.BumpRecentPostsAsync();
         }
     }
 }

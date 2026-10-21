@@ -239,6 +239,11 @@ public sealed partial class ShellViewModel
         this.NewGroupTagName = string.Empty;
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
 
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "campaign_rules",
+            $"group_tag_{tag.Id}",
+            _context.Localization.Format("Ai.LearnGroupTagClassification", tag.Name, tag.ColorHex));
+
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
@@ -261,6 +266,11 @@ public sealed partial class ShellViewModel
         GroupTag updated = new(tagId, trimmedName, color);
         await _context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "campaign_rules",
+            $"group_tag_{updated.Id}",
+            _context.Localization.Format("Ai.LearnGroupTagClassification", updated.Name, updated.ColorHex));
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
