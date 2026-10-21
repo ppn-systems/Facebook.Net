@@ -738,7 +738,7 @@ public sealed class AiAssistantPanel : Border
         };
     }
 
-    // ───────────────────────────── 2B. View B — Browser-Selectable CDP Google OAuth Card ─────────────────────────────
+    // ───────────────────────────── 2B. View B — Google OAuth Card ─────────────────────────────
 
     private ScrollViewer BuildOAuthView(out Action refreshState, out Action refreshI18n)
     {
@@ -775,57 +775,6 @@ public sealed class AiAssistantPanel : Border
             12,
             FontWeight.Normal,
             isSecondary: true);
-
-        ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
-            _theme,
-            _aiVm.InstalledAuthBrowsers,
-            kind => SectionHeader.CreateLabel(
-                _theme,
-                _i18n.FormatBrowserKind(kind),
-                12.5,
-                FontWeight.Medium),
-            selectedItem: _aiVm.SelectedAuthBrowser);
-
-        browserCombo.SelectionChanged += (_, _) =>
-        {
-            if (browserCombo.SelectedItem is PreferredBrowserKind selectedKind &&
-                _aiVm.SelectedAuthBrowser != selectedKind)
-            {
-                _aiVm.SelectedAuthBrowser = selectedKind;
-            }
-        };
-
-        StackPanel browserField = FormField.CreateLabeled(
-            _theme,
-            _i18n["Ai.AuthBrowserLabel"],
-            browserCombo,
-            out TextBlock browserLabelTb);
-
-        ComboBox profileCombo = FormField.CreateComboBox<BrowserProfileOption>(
-            _theme,
-            _aiVm.AvailableAuthProfiles,
-            opt => SectionHeader.CreateLabel(
-                _theme,
-                opt.DisplayName,
-                12,
-                FontWeight.Medium),
-            selectedItem: _aiVm.SelectedAuthProfile,
-            placeholderText: _i18n["Ai.AuthProfileIsolated"]);
-
-        profileCombo.SelectionChanged += (_, _) =>
-        {
-            if (profileCombo.SelectedItem is BrowserProfileOption selectedProfile &&
-                !ReferenceEquals(_aiVm.SelectedAuthProfile, selectedProfile))
-            {
-                _aiVm.SelectedAuthProfile = selectedProfile;
-            }
-        };
-
-        StackPanel profileField = FormField.CreateLabeled(
-            _theme,
-            _i18n["Ai.AuthProfileLabel"],
-            profileCombo,
-            out TextBlock profileLabelTb);
 
         Button startOAuthBtn = AppButton.CreatePrimary(
             _theme,
@@ -867,8 +816,6 @@ public sealed class AiAssistantPanel : Border
 
         cardStack.Children.Add(headerRow);
         cardStack.Children.Add(descTb);
-        cardStack.Children.Add(browserField);
-        cardStack.Children.Add(profileField);
         cardStack.Children.Add(startOAuthBtn);
         cardStack.Children.Add(verifyAuthBtn);
         cardStack.Children.Add(divider);
@@ -880,22 +827,7 @@ public sealed class AiAssistantPanel : Border
 
         _aiVm.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SelectedAuthBrowser), StringComparison.Ordinal))
-            {
-                if (browserCombo.SelectedItem is not PreferredBrowserKind current ||
-                    current != _aiVm.SelectedAuthBrowser)
-                {
-                    browserCombo.SelectedItem = _aiVm.SelectedAuthBrowser;
-                }
-            }
-            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SelectedAuthProfile), StringComparison.Ordinal))
-            {
-                if (!ReferenceEquals(profileCombo.SelectedItem, _aiVm.SelectedAuthProfile))
-                {
-                    profileCombo.SelectedItem = _aiVm.SelectedAuthProfile;
-                }
-            }
-            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.ManualOAuthCode), StringComparison.Ordinal))
+            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.ManualOAuthCode), StringComparison.Ordinal))
             {
                 if (!string.Equals(manualCodeBox.Text, _aiVm.ManualOAuthCode, StringComparison.Ordinal))
                 {
@@ -911,25 +843,12 @@ public sealed class AiAssistantPanel : Border
             ThemePalette p = _theme.Palette;
             VectorIcons.SetForeground(authHeaderIcon, p.BrandPrimary);
             divider.Background = p.SubtleBorder;
-            if (browserCombo.SelectedItem is not PreferredBrowserKind current ||
-                current != _aiVm.SelectedAuthBrowser)
-            {
-                browserCombo.SelectedItem = _aiVm.SelectedAuthBrowser;
-            }
-
-            if (!ReferenceEquals(profileCombo.SelectedItem, _aiVm.SelectedAuthProfile))
-            {
-                profileCombo.SelectedItem = _aiVm.SelectedAuthProfile;
-            }
         };
 
         refreshI18n = () =>
         {
             titleTb.Text = _i18n["Ai.AuthTitle"];
             descTb.Text = _i18n["Ai.AuthDescription"];
-            browserLabelTb.Text = _i18n["Ai.AuthBrowserLabel"];
-            profileLabelTb.Text = _i18n["Ai.AuthProfileLabel"];
-            profileCombo.PlaceholderText = _i18n["Ai.AuthProfileIsolated"];
             AppButton.SetText(startOAuthBtn, _i18n["Ai.BtnStartOAuth"]);
             AppButton.SetText(verifyAuthBtn, _i18n["Ai.BtnVerifyAuthAgain"]);
             manualCodeBox.PlaceholderText = _i18n["Ai.AuthManualCodePlaceholder"];

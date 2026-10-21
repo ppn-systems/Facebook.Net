@@ -176,7 +176,6 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         "max"
     ];
 
-    private const string OAuthSessionUid = "agy_oauth_session";
     private static readonly string s_agyOAuthClientId = string.Concat(
         "1071006060591",
         "-",
@@ -192,37 +191,6 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     private const string AgyOAuthTokenEndpoint = "https://oauth2.googleapis.com/token";
     private const string AgyKeyringTargetName = "gemini:antigravity";
     private const string AgyKeyringUserName = "antigravity";
-
-    private const string ExtractOAuthCodeJs = """
-        (() => {
-            try {
-                const params = new URLSearchParams(window.location.search);
-                const urlCode = params.get('code');
-                if (urlCode && urlCode.trim().length > 4) {
-                    return urlCode.trim();
-                }
-                const selectors = 'input[readonly], input[type="text"], code, pre, textarea, [data-code]';
-                const nodes = document.querySelectorAll(selectors);
-                for (let i = 0; i < nodes.length; i++) {
-                    const el = nodes[i];
-                    const raw = (el.value || el.getAttribute('data-code') || el.innerText || '').trim();
-                    if (raw.startsWith('4/') && raw.length >= 20 && !raw.includes(' ')) {
-                        return raw;
-                    }
-                }
-                if (window.location.hostname.includes('antigravity.google')) {
-                    const bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
-                    const m = bodyText.match(/4\/[0-9A-Za-z_-]{24,}/);
-                    if (m && m[0]) {
-                        return m[0].trim();
-                    }
-                }
-                return '';
-            } catch {
-                return '';
-            }
-        })()
-        """;
 
     private static readonly UTF8Encoding s_utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HttpClient s_oauthHttpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
@@ -556,53 +524,12 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         }
 
         string oauthUrl = BuildGoogleOAuthAuthorizeUrl(codeChallenge, state);
-
-        string? browserExe = AppSettingsService.ResolveExecutableForKind(browserKind);
-        string effectiveProfileDir = !string.IsNullOrWhiteSpace(customProfileDir)
-            ? customProfileDir.Trim()
-            : Path.Combine(_dataDirectory, "Profiles", "agy_oauth_profile");
-
-        _ = Directory.CreateDirectory(effectiveProfileDir);
         string? baselineClipboard = TryReadWindowsClipboardText();
 
-        bool isSystemProfile = IsSystemChromiumProfileDirectory(effectiveProfileDir, out string? systemProfileDirectoryName);
-        IBrowserSession? cdpSession = null;
+        statusProgress?.Report("Đang mở liên kết xác thực Google trên trình duyệt của bạn...");
+        OpenUrlInDefaultSystemBrowser(oauthUrl);
 
-        if (isSystemProfile && !string.IsNullOrWhiteSpace(browserExe) && !string.IsNullOrWhiteSpace(systemProfileDirectoryName))
-        {
-            CleanupAccidentalNestedDefaultFolder(effectiveProfileDir);
-            statusProgress?.Report($"Đang mở hồ sơ trình duyệt ({systemProfileDirectoryName}) để xác thực Google OAuth...");
-            LaunchSystemBrowserProfileForOAuth(browserExe, systemProfileDirectoryName, oauthUrl);
-        }
-        else
-        {
-            statusProgress?.Report("Đang mở trình duyệt CDP để xác thực Google OAuth...");
-
-            BrowserLaunchOptions launchOptions = new(
-                AccountUid: OAuthSessionUid,
-                UserDataDir: effectiveProfileDir,
-                ExecutablePath: browserExe,
-                Headless: false,
-                BlockStaticMedia: false,
-                LowResourceMode: false,
-                TerminateProcessAfterExtract: false,
-                CleanDiskCache: false);
-
-            try
-            {
-                cdpSession = await browserManager.AcquireSessionAsync(launchOptions, ct).ConfigureAwait(false);
-                await cdpSession.NavigateAsync(oauthUrl, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                if (!string.IsNullOrWhiteSpace(browserExe))
-                {
-                    LaunchSystemBrowserProfileForOAuth(browserExe, systemProfileDirectoryName ?? "Default", oauthUrl);
-                }
-            }
-        }
-
-        statusProgress?.Report("Đang chờ hoàn tất đăng nhập Google trên trình duyệt...");
+        statusProgress?.Report("Chọn tài khoản Google trên trình duyệt và sao chép hoặc dán mã xác thực vào bên dưới...");
 
         TimeSpan maxWait = TimeSpan.FromSeconds(180);
         Stopwatch sw = Stopwatch.StartNew();
@@ -611,51 +538,24 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         {
             if (_hasAuthenticatedInSession || this.CheckIsAuthenticated())
             {
-                if (cdpSession is not null)
-                {
-                    await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
-                }
-
                 _hasAuthenticatedInSession = true;
                 return (true, "Đăng nhập Google Antigravity thành công!", null);
             }
 
-            string? extractedCode = null;
-            if (cdpSession is not null)
-            {
-                try
-                {
-                    extractedCode = await cdpSession.EvaluateScriptAsync(ExtractOAuthCodeJs, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // Browser tab may be navigating or closed by user
-                }
-            }
-
+            string? extractedCode = TryExtractOAuthCodeFromClipboard(ref baselineClipboard);
             if (string.IsNullOrWhiteSpace(extractedCode))
             {
-                extractedCode = TryExtractOAuthCodeFromSystemProfile(effectiveProfileDir, state);
-            }
-
-            if (string.IsNullOrWhiteSpace(extractedCode))
-            {
-                extractedCode = TryExtractOAuthCodeFromClipboard(ref baselineClipboard);
+                extractedCode = TryExtractOAuthCodeFromAllSystemProfiles(customProfileDir, state);
             }
 
             string? cleanedCode = NormalizeAuthCode(extractedCode);
             if (!string.IsNullOrWhiteSpace(cleanedCode))
             {
-                statusProgress?.Report("Đã trích xuất mã OAuth tự động! Đang trao đổi token với Google...");
+                statusProgress?.Report("Đã nhận mã OAuth! Đang trao đổi token với Google...");
                 (bool exchanged, string? exchangeError) = await this.ExchangeCodeAndSaveToKeyringAsync(
                     cleanedCode,
                     codeVerifier,
                     ct).ConfigureAwait(false);
-
-                if (cdpSession is not null)
-                {
-                    await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
-                }
 
                 if (exchanged)
                 {
@@ -2130,100 +2030,97 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         return trimmed.Length >= 4 ? trimmed : null;
     }
 
-    private static async Task SafeCloseOAuthSessionAsync(IBrowserManager browserManager, CancellationToken ct)
+    private static void OpenUrlInDefaultSystemBrowser(string oauthUrl)
     {
         try
         {
-            await browserManager.CloseSessionAsync(OAuthSessionUid, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Ignore browser close failure
-        }
-    }
-
-    private static bool IsSystemChromiumProfileDirectory(string profilePath, out string? profileDirectoryName)
-    {
-        profileDirectoryName = null;
-        if (string.IsNullOrWhiteSpace(profilePath))
-        {
-            return false;
-        }
-
-        try
-        {
-            string fullPath = Path.GetFullPath(profilePath.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string folderName = Path.GetFileName(fullPath);
-            string? parentDir = Path.GetDirectoryName(fullPath);
-
-            if (string.IsNullOrWhiteSpace(parentDir))
-            {
-                return false;
-            }
-
-            if (string.Equals(folderName, "Default", StringComparison.OrdinalIgnoreCase) ||
-                folderName.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
-            {
-                string parentName = Path.GetFileName(parentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                if (string.Equals(parentName, "User Data", StringComparison.OrdinalIgnoreCase) ||
-                    File.Exists(Path.Combine(parentDir, "Local State")))
-                {
-                    profileDirectoryName = folderName;
-                    return true;
-                }
-            }
-        }
-        catch (ArgumentException)
-        {
-            // Ignore invalid path
-        }
-
-        return false;
-    }
-
-    private static void CleanupAccidentalNestedDefaultFolder(string systemProfileSubfolder)
-    {
-        try
-        {
-            string nestedDefault = Path.Combine(systemProfileSubfolder, "Default");
-            if (Directory.Exists(nestedDefault) &&
-                !File.Exists(Path.Combine(systemProfileSubfolder, "Local State")) &&
-                File.Exists(Path.Combine(systemProfileSubfolder, "Preferences")))
-            {
-                Directory.Delete(nestedDefault, recursive: true);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Ignore locked files if an old process still holds them
-        }
-    }
-
-    private static void LaunchSystemBrowserProfileForOAuth(string browserExe, string profileDirectoryName, string oauthUrl)
-    {
-        try
-        {
-            ProcessStartInfo psi = new()
-            {
-                FileName = browserExe,
-                UseShellExecute = false,
-                CreateNoWindow = false
-            };
-            psi.ArgumentList.Add($"--profile-directory={profileDirectoryName}");
-            psi.ArgumentList.Add(oauthUrl);
-            using Process? p = Process.Start(psi);
+            using Process? p = Process.Start(new ProcessStartInfo(oauthUrl) { UseShellExecute = true });
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            try
+            if (OperatingSystem.IsWindows())
             {
-                using Process? fallback = Process.Start(new ProcessStartInfo(oauthUrl) { UseShellExecute = true });
-            }
-            catch (Exception innerEx) when (innerEx is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                // Ignore browser open failure
+                try
+                {
+                    ProcessStartInfo cmdPsi = new()
+                    {
+                        FileName = "cmd.exe",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    cmdPsi.ArgumentList.Add("/c");
+                    cmdPsi.ArgumentList.Add("start");
+                    cmdPsi.ArgumentList.Add(string.Empty);
+                    cmdPsi.ArgumentList.Add(oauthUrl);
+                    using Process? fallback = Process.Start(cmdPsi);
+                }
+                catch (Exception innerEx) when (innerEx is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Ignore browser open failure
+                }
             }
         }
+    }
+
+    private static string? TryExtractOAuthCodeFromAllSystemProfiles(string? preferredProfileDir, string expectedState)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredProfileDir))
+        {
+            string? fromPreferred = TryExtractOAuthCodeFromSystemProfile(preferredProfileDir.Trim(), expectedState);
+            if (!string.IsNullOrWhiteSpace(fromPreferred))
+            {
+                return fromPreferred;
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string[] roots =
+            [
+                Path.Combine(localAppData, "Microsoft", "Edge", "User Data"),
+                Path.Combine(localAppData, "Google", "Chrome", "User Data"),
+                Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data")
+            ];
+
+            for (int r = 0; r < roots.Length; r++)
+            {
+                string root = roots[r];
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                string defDir = Path.Combine(root, "Default");
+                if (Directory.Exists(defDir))
+                {
+                    string? code = TryExtractOAuthCodeFromSystemProfile(defDir, expectedState);
+                    if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        return code;
+                    }
+                }
+
+                try
+                {
+                    string[] profileDirs = Directory.GetDirectories(root, "Profile *");
+                    for (int p = 0; p < profileDirs.Length; p++)
+                    {
+                        string? code = TryExtractOAuthCodeFromSystemProfile(profileDirs[p], expectedState);
+                        if (!string.IsNullOrWhiteSpace(code))
+                        {
+                            return code;
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Ignore inaccessible profile folders
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string? TryExtractOAuthCodeFromSystemProfile(string profileDir, string expectedState)
