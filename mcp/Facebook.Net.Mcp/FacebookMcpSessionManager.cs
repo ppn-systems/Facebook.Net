@@ -184,18 +184,25 @@ public sealed class FacebookMcpSessionManager : IDisposable
         if (_bootstrapStarted == 0)
         {
             await this.InitializeAsync(ct).ConfigureAwait(false);
-            return;
+        }
+        else
+        {
+            using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _bootstrapCompletion.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Continue even if bootstrap timed out
+            }
         }
 
-        using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-        try
+        AppConfig reloaded = this.Settings.Reload();
+        if (!string.IsNullOrWhiteSpace(reloaded.LastSelectedAccountUid))
         {
-            await _bootstrapCompletion.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Continue even if bootstrap timed out
+            _activeAccountUid = reloaded.LastSelectedAccountUid;
         }
     }
 

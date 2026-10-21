@@ -234,6 +234,19 @@ public sealed partial class ShellViewModel
         }
     }
 
+    /// <summary>
+    /// Reloads <see cref="AppConfig"/> from disk (picking up cross-process mutations made by <c>Facebook.Net.Mcp</c>)
+    /// and synchronizes all bound UI settings, theme, language, and background scraper state.
+    /// </summary>
+    public void ReloadSettingsFromDisk()
+    {
+        _ = _context.Settings.Reload();
+        this.LoadSettingsIntoProperties();
+        _context.Theme.SetTheme(this.SelectedThemeMode);
+        _context.Localization.SetLanguage(this.SelectedLanguage);
+        this.SyncBackgroundScraperLoop();
+    }
+
     private void ToggleThemeQuick()
     {
         _context.Theme.ToggleTheme();
@@ -401,53 +414,10 @@ public sealed partial class ShellViewModel
 
     private void PruneOrphanPlaceholderProfiles()
     {
-        if (string.IsNullOrWhiteSpace(_context.ProfilesRootDirectory) || !Directory.Exists(_context.ProfilesRootDirectory))
+        int pruned = _context.AccountVault.PruneOrphanPlaceholderProfiles(_context.ProfilesRootDirectory, this.Accounts);
+        if (pruned > 0)
         {
-            return;
-        }
-
-        try
-        {
-            string[] managedDirs = Directory.GetDirectories(_context.ProfilesRootDirectory);
-            for (int i = 0; i < managedDirs.Length; i++)
-            {
-                string dir = managedDirs[i];
-                string folderName = Path.GetFileName(dir);
-                if (!folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) &&
-                    !folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                bool isAssignedToAnyAccount = false;
-                for (int a = 0; a < this.Accounts.Count; a++)
-                {
-                    AccountProfile acc = this.Accounts[a];
-                    if (string.Equals(acc.ProfileDirectory, dir, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isAssignedToAnyAccount = true;
-                        break;
-                    }
-                }
-
-                if (!isAssignedToAnyAccount && !this.HasProfileAuthenticatedCookieStore(dir))
-                {
-                    try
-                    {
-                        Directory.Delete(dir, recursive: true);
-                        _context.StorageUsage.InvalidateCache();
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        // Ignore folder locked by an active browser process
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Ignore inaccessible directory
+            _context.StorageUsage.InvalidateCache();
         }
     }
 
@@ -519,25 +489,10 @@ public sealed partial class ShellViewModel
         }
 
         string trimmed = rawProfileName.Trim();
-        char[] invalidChars = Path.GetInvalidFileNameChars();
-        System.Text.StringBuilder safeBuilder = new(trimmed.Length);
-        for (int i = 0; i < trimmed.Length; i++)
-        {
-            char ch = trimmed[i];
-            if (Array.IndexOf(invalidChars, ch) < 0 && ch is not '(' and not ')')
-            {
-                _ = safeBuilder.Append(ch);
-            }
-        }
-
-        string safeFolderName = safeBuilder.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(safeFolderName))
-        {
-            safeFolderName = $"Profile_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}";
-        }
-
-        string newProfileDir = Path.Combine(_context.ProfilesRootDirectory, safeFolderName);
-        _ = Directory.CreateDirectory(newProfileDir);
+        (string newProfileDir, _, _) = _context.AccountVault.PrepareIsolatedProfileDirectory(
+            trimmed,
+            _context.ProfilesRootDirectory,
+            trimmed);
         _context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
@@ -562,24 +517,15 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string fullPath = profileDirectoryPath.Trim();
-        string rawLeafName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        string folderName = !string.IsNullOrWhiteSpace(friendlyProfileName)
-            ? friendlyProfileName.Trim()
-            : rawLeafName;
-
-        if (!this.IsProfileInsideManagedRoot(fullPath) && Directory.Exists(fullPath))
+        (string fullPath, string folderName, bool syncedFromSystem) = _context.AccountVault.PrepareIsolatedProfileDirectory(
+            profileDirectoryPath,
+            _context.ProfilesRootDirectory,
+            friendlyProfileName);
+        if (syncedFromSystem)
         {
-            string safeSlug = SanitizeFolderSlug($"{folderName}_{rawLeafName}");
-            string isolatedDir = Path.Combine(_context.ProfilesRootDirectory, safeSlug);
-            if (_context.AccountVault.TrySyncSystemProfileToIsolatedRoot(fullPath, isolatedDir))
-            {
-                fullPath = isolatedDir;
-                _context.StorageUsage.InvalidateCache();
-            }
+            _context.StorageUsage.InvalidateCache();
         }
 
-        _ = Directory.CreateDirectory(fullPath);
         bool hasCookies = this.HasProfileAuthenticatedCookieStore(fullPath);
 
         if (this.SelectedAccount is not null)
@@ -633,50 +579,8 @@ public sealed partial class ShellViewModel
         }
     }
 
-    private static string SanitizeFolderSlug(string raw)
-    {
-        char[] invalid = Path.GetInvalidFileNameChars();
-        System.Text.StringBuilder sb = new(raw.Length);
-        for (int i = 0; i < raw.Length; i++)
-        {
-            char c = raw[i];
-            if (Array.IndexOf(invalid, c) < 0 && c is not '(' and not ')' and not '—' and not '·')
-            {
-                _ = sb.Append(c == ' ' ? '_' : c);
-            }
-        }
-
-        string slug = sb.ToString().Trim('_');
-        while (slug.Contains("__", StringComparison.Ordinal))
-        {
-            slug = slug.Replace("__", "_", StringComparison.Ordinal);
-        }
-
-        return string.IsNullOrWhiteSpace(slug) ? $"Imported_{DateTimeOffset.UtcNow:yyyyMMdd}" : slug;
-    }
-
-    private string ResolveFriendlyProfileLabel(string folderName, string fullDirPath)
-    {
-        for (int i = 0; i < this.Accounts.Count; i++)
-        {
-            AccountProfile acc = this.Accounts[i];
-            if (string.Equals(acc.ProfileDirectory, fullDirPath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
-            {
-                bool isAutoGeneratedId =
-                    folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) ||
-                    folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(acc.DisplayName, folderName, StringComparison.OrdinalIgnoreCase);
-
-                return isAutoGeneratedId
-                    ? acc.DisplayName
-                    : $"{acc.DisplayName} · {folderName}";
-            }
-        }
-
-        return folderName;
-    }
+    private string ResolveFriendlyProfileLabel(string folderName, string fullDirPath) =>
+        _context.AccountVault.ResolveFriendlyProfileLabel(folderName, fullDirPath, this.Accounts);
 
     private static string GetCurrentAppVersionString() =>
         GitHubAppReleaseService.Instance.GetCurrentAppVersionString();

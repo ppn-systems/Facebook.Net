@@ -13,6 +13,9 @@ namespace Facebook.Net.UI.Core.Groups;
 /// </summary>
 public interface IGroupTagDomainService
 {
+    /// <summary>Normalizes a raw hex color string into a canonical <c>#RRGGBB</c> string, falling back to <paramref name="fallback"/> when invalid.</summary>
+    string NormalizeColorHex(string? colorHex, string fallback = "#F6821F");
+
     /// <summary>Builds a new <see cref="GroupTag"/> with a normalized name and hex color.</summary>
     GroupTag CreateTag(string name, string? colorHex);
 
@@ -91,10 +94,45 @@ public sealed class GroupTagDomainService : IGroupTagDomainService
     public static GroupTagDomainService Instance { get; } = new();
 
     /// <inheritdoc />
+    public string NormalizeColorHex(string? colorHex, string fallback = "#F6821F")
+    {
+        if (string.IsNullOrWhiteSpace(colorHex))
+        {
+            return fallback;
+        }
+
+        string trimmed = colorHex.Trim();
+        if (!trimmed.StartsWith('#'))
+        {
+            trimmed = $"#{trimmed}";
+        }
+
+        if (trimmed.Length == 7)
+        {
+            bool allHex = true;
+            for (int i = 1; i < 7; i++)
+            {
+                if (!Uri.IsHexDigit(trimmed[i]))
+                {
+                    allHex = false;
+                    break;
+                }
+            }
+
+            if (allHex)
+            {
+                return trimmed.ToUpperInvariant();
+            }
+        }
+
+        return fallback;
+    }
+
+    /// <inheritdoc />
     public GroupTag CreateTag(string name, string? colorHex)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        string color = string.IsNullOrWhiteSpace(colorHex) ? "#F6821F" : colorHex.Trim();
+        string color = this.NormalizeColorHex(colorHex, "#F6821F");
         return new GroupTag(
             Id: $"tag_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
             Name: name.Trim(),

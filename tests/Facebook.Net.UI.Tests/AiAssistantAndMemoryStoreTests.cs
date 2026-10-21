@@ -988,6 +988,54 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.NotEmpty(randomModified);
     }
 
+    [Fact]
+    public async Task CrossProcessSettingsReload_And_DomainServiceConsolidation_WorkCorrectly()
+    {
+        string workspaceDir = Path.Combine(_tempDir, "cross_process_reload_and_domain_test");
+        FakeAgyCliService fakeAgy = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            agyCliService: fakeAgy);
+
+        await context.AccountStore.InitializeAsync();
+        using ShellViewModel vm = new(context);
+        await vm.InitializeAsync();
+
+        // 1. Verify GroupTagDomainService.NormalizeColorHex and CreateTag
+        Assert.Equal("#3B82F6", context.GroupTagService.NormalizeColorHex("3b82f6"));
+        Assert.Equal("#F6821F", context.GroupTagService.NormalizeColorHex("not_a_color"));
+        GroupTag normalizedTag = context.GroupTagService.CreateTag("Nhóm Công Nghệ", "10b981");
+        Assert.Equal("#10B981", normalizedTag.ColorHex);
+
+        // 2. Verify AccountVaultDomainService.SanitizeProfileFolderSlug & PrepareIsolatedProfileDirectory
+        string slug = context.AccountVault.SanitizeProfileFolderSlug("Hồ sơ (Chính) — Test");
+        Assert.DoesNotContain("(", slug, StringComparison.Ordinal);
+        Assert.DoesNotContain(")", slug, StringComparison.Ordinal);
+        (string isolatedDir, string friendlyLabel, _) = context.AccountVault.PrepareIsolatedProfileDirectory(
+            "Hồ sơ Marketing 01",
+            context.ProfilesRootDirectory);
+        Assert.True(Directory.Exists(isolatedDir));
+        Assert.Equal("Hồ sơ Marketing 01", friendlyLabel);
+
+        // 3. Simulate cross-process appsettings.json update (e.g. from Facebook.Net.Mcp.exe)
+        string settingsPath = Path.Combine(workspaceDir, "appsettings.json");
+        AppSettingsService externalProcessSettings = new(settingsPath);
+        await externalProcessSettings.SaveAsync(externalProcessSettings.Current with
+        {
+            MinDelaySeconds = 4.5,
+            MaxDelaySeconds = 9.5,
+            ScrapePostsPerGroup = 45
+        });
+
+        vm.ReloadSettingsFromDisk();
+        Assert.Equal(4.5, vm.MinDelaySeconds);
+        Assert.Equal(9.5, vm.MaxDelaySeconds);
+        Assert.Equal(45, vm.ScrapePostsPerGroup);
+    }
+
     public void Dispose()
     {
         try

@@ -83,7 +83,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             context,
             onMcpDatabaseUpdated: async () =>
             {
-                await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+                this.ReloadSettingsFromDisk();
+                await this.ReloadAllStoredDataAsync(_context.Settings.Current.LastSelectedAccountUid).ConfigureAwait(true);
                 await this.ReloadLeadTagsOnlyAsync().ConfigureAwait(true);
                 await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
                 await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
@@ -608,6 +609,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         else if (string.Equals(action.ActionKind, "FILTER_LEADS", StringComparison.OrdinalIgnoreCase))
         {
             this.Navigation.NavigateTo(NavigationSection.SalesLeads);
+            if (!string.IsNullOrWhiteSpace(action.TargetId))
+            {
+                this.SetLeadCustomerTagFilters([action.TargetId.Trim()]);
+            }
+
             string? kw = !string.IsNullOrWhiteSpace(action.GroupKeyword)
                 ? action.GroupKeyword
                 : action.ContentText;

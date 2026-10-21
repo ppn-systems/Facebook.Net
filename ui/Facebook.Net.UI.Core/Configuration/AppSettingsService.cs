@@ -201,6 +201,9 @@ public interface IAppSettingsService
     /// <summary>Gets the current active configuration.</summary>
     AppConfig Current { get; }
 
+    /// <summary>Reloads <see cref="AppConfig"/> from disk (synchronizing cross-process changes made by the MCP server or desktop UI) and updates <see cref="Current"/>.</summary>
+    AppConfig Reload();
+
     /// <summary>Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.</summary>
     void Save(AppConfig updated);
 
@@ -239,6 +242,13 @@ public sealed class AppSettingsService : IAppSettingsService
     /// Gets the current active configuration.
     /// </summary>
     public AppConfig Current { get; private set; }
+
+    /// <inheritdoc />
+    public AppConfig Reload()
+    {
+        this.Current = this.LoadOrDefault();
+        return this.Current;
+    }
 
     /// <summary>
     /// Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.

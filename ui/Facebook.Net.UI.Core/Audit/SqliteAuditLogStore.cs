@@ -70,7 +70,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
             DataSource = databaseFilePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
-            DefaultTimeout = 5
+            DefaultTimeout = 10
         };
         _connectionString = builder.ToString();
     }
@@ -85,6 +85,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
     {
         const string sql = """
             PRAGMA journal_mode = WAL;
+            PRAGMA busy_timeout = 5000;
             PRAGMA synchronous = NORMAL;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 67108864;
@@ -131,7 +132,7 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         string safeUid = string.IsNullOrWhiteSpace(accountUid) ? "system" : accountUid;
-        string safeName = string.IsNullOrWhiteSpace(accountDisplayName) ? "Hệ thống" : accountDisplayName;
+        string safeName = string.IsNullOrWhiteSpace(accountDisplayName) ? "System" : accountDisplayName;
         string safeTarget = string.IsNullOrWhiteSpace(targetName) ? "-" : targetName;
         string safeMsg = message ?? string.Empty;
 
@@ -231,17 +232,29 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
     /// </summary>
     public async Task ClearAllAsync(CancellationToken ct = default)
     {
-        const string sql = """
+        const string deleteSql = """
+            PRAGMA busy_timeout = 5000;
             DELETE FROM audit_logs;
             DELETE FROM sqlite_sequence WHERE name = 'audit_logs';
-            PRAGMA wal_checkpoint(TRUNCATE);
-            VACUUM;
             """;
         using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        using (SqliteCommand deleteCmd = conn.CreateCommand())
+        {
+            deleteCmd.CommandText = deleteSql;
+            _ = await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        try
+        {
+            using SqliteCommand reclaimCmd = conn.CreateCommand();
+            reclaimCmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;";
+            _ = await reclaimCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+            // Ignore SQLITE_BUSY during optional VACUUM when another process holds a read snapshot
+        }
     }
 
     private static AuditLogRecord MapRecord(SqliteDataReader reader)

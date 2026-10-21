@@ -542,6 +542,14 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             await _manager.AccountStore.UpsertTargetGroupsBatchAsync(updatedBatch, ct).ConfigureAwait(false);
         }
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            tagId.Trim(),
+            $"MCP {(assign ? "assigned" : "removed")} group tag '{tagId.Trim()}' across {updatedBatch.Count} target groups.",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             status = "success",
@@ -811,6 +819,14 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
         {
             deletedDef = await _manager.AccountStore.DeleteGroupTagAsync(targetTag.Id, ct).ConfigureAwait(false);
         }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            account: null,
+            targetTag?.Name ?? cleanTarget,
+            $"MCP deleted/cleared group tag '{targetTag?.Name ?? cleanTarget}' (cleared {updatedGroups.Count} groups, deletedDefinition={deletedDef}).",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {

@@ -405,6 +405,14 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         string? cleanGroupId = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
         int deletedCount = await _manager.AccountStore.ClearScrapedPostsAsync(cleanGroupId, ct).ConfigureAwait(false);
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.SalesComment,
+            AuditSeverity.Info,
+            account: null,
+            cleanGroupId ?? "All Scraped Leads",
+            $"MCP cleared {deletedCount} scraped lead posts from SQLite.",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             status = "success",
@@ -677,6 +685,14 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 modifiedPostIds.Add(post.PostId);
             }
         }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            resolvedTag.Name,
+            $"MCP {(assign ? "assigned" : "removed")} lead tag '{resolvedTag.Name}' on {modifiedPostIds.Count} customer post(s).",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
@@ -1037,6 +1053,14 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             notes?.Trim() ?? string.Empty,
             ct).ConfigureAwait(false);
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            cleanId,
+            $"MCP updated CRM notes on lead post '{cleanId}'.",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             status = "success",
@@ -1087,6 +1111,14 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         {
             deletedDef = await _manager.AccountStore.DeleteLeadTagAsync(targetTag.Id, ct).ConfigureAwait(false);
         }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            account: null,
+            targetTag?.Name ?? cleanTarget,
+            $"MCP deleted/cleared lead tag '{targetTag?.Name ?? cleanTarget}' (cleared {clearedCount} posts, deletedDefinition={deletedDef}).",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {

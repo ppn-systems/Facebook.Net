@@ -35,7 +35,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
             DataSource = databaseFilePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
-            DefaultTimeout = 5
+            DefaultTimeout = 10
         };
         _connectionString = builder.ToString();
     }
@@ -45,6 +45,7 @@ public sealed partial class SqliteAccountStore : IAccountStore
     {
         const string sql = """
             PRAGMA journal_mode = WAL;
+            PRAGMA busy_timeout = 5000;
             PRAGMA synchronous = NORMAL;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 67108864;

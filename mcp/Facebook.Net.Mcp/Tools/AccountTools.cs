@@ -56,6 +56,17 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         CancellationToken ct = default)
     {
         AccountProfile? switched = await _manager.SwitchActiveAccountAsync(accountUid, ct).ConfigureAwait(false);
+        if (switched is not null)
+        {
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                switched,
+                switched.DisplayName,
+                $"MCP switched active account to '{switched.DisplayName}' ({switched.Uid}).",
+                ct: ct).ConfigureAwait(false);
+        }
+
         return JsonSerializer.Serialize(new
         {
             success = switched is not null,
@@ -181,6 +192,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         await _manager.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(false);
         _ = await _manager.SwitchActiveAccountAsync(updated.Uid, ct).ConfigureAwait(false);
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            isHealthy ? AuditSeverity.Success : AuditSeverity.Warning,
+            updated,
+            updated.DisplayName,
+            $"MCP verified session health for '{updated.DisplayName}' (healthy={isHealthy}, status={updated.Status}).",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             is_healthy = isHealthy,
@@ -212,6 +231,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             await _manager.AccountStore.UpsertAccountAsync(cleared, ct).ConfigureAwait(false);
             await _manager.SessionManager.CloseSessionAsync(current.Uid, ct).ConfigureAwait(false);
 
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                cleared,
+                cleared.DisplayName,
+                $"MCP cleared proxy for account '{cleared.DisplayName}'.",
+                ct: ct).ConfigureAwait(false);
+
             return JsonSerializer.Serialize(new
             {
                 status = "success",
@@ -234,6 +261,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         AccountProfile updated = current with { ProxyId = parsed.Id };
         await _manager.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(false);
         await _manager.SessionManager.CloseSessionAsync(current.Uid, ct).ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            updated,
+            $"{parsed.Host}:{parsed.Port}",
+            $"MCP assigned {parsed.Protocol} proxy '{parsed.Host}:{parsed.Port}' to '{updated.DisplayName}'.",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
@@ -548,6 +583,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             }
         }
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            isAuthenticated ? AuditSeverity.Success : AuditSeverity.Info,
+            updated,
+            updated.DisplayName,
+            $"MCP opened interactive browser login for '{updated.DisplayName}' (authenticated={isAuthenticated}, syncedNewGroups={syncedGroupsCount}).",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             status = isAuthenticated ? "authenticated" : "browser_opened_pending_login",
@@ -604,48 +647,9 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         ArgumentException.ThrowIfNullOrWhiteSpace(profileNameOrPath);
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
-        string trimmed = profileNameOrPath.Trim();
-        string targetIsolatedDir;
-        bool syncedFromSystem = false;
-
-        if (Path.IsPathRooted(trimmed) && Directory.Exists(trimmed))
-        {
-            if (_manager.StorageUsage.IsProfileInsideManagedRoot(trimmed, _manager.ProfilesRootDirectory))
-            {
-                targetIsolatedDir = trimmed;
-            }
-            else
-            {
-                string safeFolderName = $"sys_{Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-                foreach (char c in Path.GetInvalidFileNameChars())
-                {
-                    safeFolderName = safeFolderName.Replace(c, '_');
-                }
-
-                targetIsolatedDir = Path.Combine(_manager.ProfilesRootDirectory, safeFolderName);
-                syncedFromSystem = _manager.AccountVault.TrySyncSystemProfileToIsolatedRoot(trimmed, targetIsolatedDir);
-                if (!syncedFromSystem)
-                {
-                    _ = Directory.CreateDirectory(targetIsolatedDir);
-                }
-            }
-        }
-        else
-        {
-            string folderName = Path.GetFileName(trimmed);
-            foreach (char c in Path.GetInvalidFileNameChars())
-            {
-                folderName = folderName.Replace(c, '_');
-            }
-
-            if (string.IsNullOrWhiteSpace(folderName))
-            {
-                folderName = $"profile_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-            }
-
-            targetIsolatedDir = Path.Combine(_manager.ProfilesRootDirectory, folderName);
-            _ = Directory.CreateDirectory(targetIsolatedDir);
-        }
+        (string targetIsolatedDir, string friendlyLabel, bool syncedFromSystem) = _manager.AccountVault.PrepareIsolatedProfileDirectory(
+            profileNameOrPath,
+            _manager.ProfilesRootDirectory);
 
         _manager.StorageUsage.InvalidateCache();
         bool hasFbCookies = _manager.AccountVault.HasProfileAuthenticatedCookieStore(targetIsolatedDir);
@@ -677,7 +681,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             string newUid = $"browser_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
             targetAccount = new AccountProfile(
                 Uid: newUid,
-                DisplayName: $"Tài khoản {Path.GetFileName(targetIsolatedDir)}",
+                DisplayName: friendlyLabel,
                 CookieHeader: string.Empty,
                 UserAgent: OperatingSystem.IsMacOS() ? ProtocolConstants.Protocol.DefaultMacOsUserAgent : ProtocolConstants.Protocol.DefaultWindowsUserAgent,
                 ProfileDirectory: targetIsolatedDir,
@@ -686,6 +690,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             await _manager.AccountStore.UpsertAccountAsync(targetAccount, ct).ConfigureAwait(false);
             _ = await _manager.SwitchActiveAccountAsync(targetAccount.Uid, ct).ConfigureAwait(false);
         }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            targetAccount,
+            friendlyLabel,
+            $"MCP bound browser profile '{friendlyLabel}' to account '{targetAccount.DisplayName}'.",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
@@ -742,6 +754,14 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
 
         Directory.Delete(targetDir, recursive: true);
         _manager.StorageUsage.InvalidateCache();
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            account: null,
+            Path.GetFileName(targetDir),
+            $"MCP deleted managed browser profile folder '{Path.GetFileName(targetDir)}'.",
+            ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {

@@ -543,6 +543,14 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .ReactToPostAsync(session, postId.Trim(), parsedReaction, ct)
             .ConfigureAwait(false);
 
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Post,
+            ok ? AuditSeverity.Success : AuditSeverity.Warning,
+            account,
+            postId.Trim(),
+            $"MCP reacted '{parsedReaction}' on post '{postId.Trim()}' (ok={ok}).",
+            ct: ct).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(new
         {
             status = ok ? "success" : "failed",
@@ -592,6 +600,17 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
         bool deleted = await _manager.AccountStore.DeletePublishedPostAsync(postId.Trim(), ct).ConfigureAwait(false);
+        if (deleted)
+        {
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Post,
+                AuditSeverity.Info,
+                account: null,
+                postId.Trim(),
+                $"MCP deleted published post record '{postId.Trim()}' from local SQLite.",
+                ct: ct).ConfigureAwait(false);
+        }
+
         return JsonSerializer.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",
@@ -672,6 +691,16 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
 
         string targetId = matched?.Id ?? cleanTarget;
         bool deleted = await _manager.AccountStore.DeleteCampaignTemplateAsync(targetId, ct).ConfigureAwait(false);
+        if (deleted)
+        {
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                account: null,
+                matched?.Title ?? targetId,
+                $"MCP deleted campaign template '{matched?.Title ?? targetId}'.",
+                ct: ct).ConfigureAwait(false);
+        }
 
         return JsonSerializer.Serialize(new
         {
