@@ -3,11 +3,16 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
+using Facebook.Net.Mcp;
+using Facebook.Net.Mcp.Tools;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Leads;
@@ -15,6 +20,8 @@ using Facebook.Net.UI.Core.Threading;
 using Facebook.Net.UI.ViewModels.AiAssistant;
 using Facebook.Net.UI.ViewModels.Services;
 using Facebook.Net.UI.ViewModels.Shell;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;
@@ -24,8 +31,10 @@ namespace Facebook.Net.UI.Tests;
 /// <see cref="IAgyCliService"/>, <see cref="AgyCliService"/>, <see cref="AiAssistantViewModel"/>,
 /// and <see cref="AppConfig.AiSystemPrompt"/>.
 /// </summary>
-public sealed class AiAssistantAndMemoryStoreTests : IDisposable
+public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
 {
+    [GeneratedRegex(@"\bfb_[a-z0-9_]+\b", RegexOptions.CultureInvariant)]
+    private static partial Regex FbToolNameRegex();
     private readonly string _tempDir;
 
     public AiAssistantAndMemoryStoreTests()
@@ -812,6 +821,148 @@ public sealed class AiAssistantAndMemoryStoreTests : IDisposable
         PostSummary updatedPost = Assert.Single(reloaded);
         Assert.True(updatedPost.HasTag(createdLeadTag.Id));
         Assert.Equal("Đã gọi điện tư vấn căn hộ Sunrise City, hẹn thứ 7 xem nhà", updatedPost.Notes);
+    }
+
+    [Fact]
+    public void McpServerTools_And_SystemPrompts_Have100PercentSchemaParity()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
+
+        HashSet<string> registeredMcpTools = new(StringComparer.Ordinal);
+        CollectTools<AccountTools>(registeredMcpTools);
+        CollectTools<GroupTools>(registeredMcpTools);
+        CollectTools<PublisherTools>(registeredMcpTools);
+        CollectTools<SalesLeadsTools>(registeredMcpTools);
+        CollectTools<AiMemoryTools>(registeredMcpTools);
+
+        // Verify all 40 MCP tools are registered
+        Assert.Equal(40, registeredMcpTools.Count);
+        Assert.Contains("fb_analyze_workspace_data", registeredMcpTools);
+        Assert.Contains("fb_auto_tag_groups_by_keywords", registeredMcpTools);
+        Assert.Contains("fb_clean_and_classify_all_groups", registeredMcpTools);
+        Assert.Contains("fb_delete_group_tag", registeredMcpTools);
+        Assert.Contains("fb_delete_lead_tag", registeredMcpTools);
+        Assert.Contains("fb_search_leads_advanced", registeredMcpTools);
+        Assert.Contains("fb_create_lead_tags_batch", registeredMcpTools);
+
+        // Verify every fb_* tool mentioned in System Prompts, Resources, and Prompts exists in the MCP Server
+        string analyzePromptText = ((TextContentBlock)Prompts.AnalyzeGroupLeads("test").Messages[0].Content).Text;
+        string composePromptText = ((TextContentBlock)Prompts.ComposeSpintaxCampaign("test").Messages[0].Content).Text;
+
+        string[] promptSources =
+        [
+            AppConfig.DefaultAiSystemPrompt,
+            Resources.Overview(),
+            Resources.SalesAgentGuide(),
+            analyzePromptText,
+            composePromptText
+        ];
+
+        Regex toolRegex = FbToolNameRegex();
+        foreach (string source in promptSources)
+        {
+            foreach (Match match in toolRegex.Matches(source))
+            {
+                string mentionedTool = match.Value;
+                Assert.Contains(mentionedTool, registeredMcpTools);
+            }
+        }
+    }
+
+    private static void CollectTools<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>(
+        HashSet<string> target)
+    {
+        foreach (MethodInfo method in typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
+        {
+            McpServerToolAttribute? attr = method.GetCustomAttribute<McpServerToolAttribute>();
+            if (attr is not null && !string.IsNullOrWhiteSpace(attr.Name))
+            {
+                _ = target.Add(attr.Name);
+            }
+        }
+    }
+
+    [Fact]
+    public void LeadScoringService_CalculateBuyerIntentScore_ScoresHighIntentEvenWhenKeywordsEmpty()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
+        LeadScoringService scorer = LeadScoringService.Instance;
+
+        int scoreWithEmptyKeywords = scorer.CalculateBuyerIntentScore(
+            "Mình cần mua bàn ghế văn phòng gấp, liên hệ báo giá giúp mình qua số 0987.654.321 nhé?",
+            rawKeywords: string.Empty);
+
+        Assert.True(scoreWithEmptyKeywords >= 75);
+    }
+
+    [Fact]
+    public async Task SqliteAccountStore_InitializeAsync_RepairsMassTagBdsPollution_AndNormalizesLegacyTags()
+    {
+        string workspaceDir = Path.Combine(_tempDir, "tag_pollution_repair_test");
+        FakeAgyCliService fakeAgy = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            agyCliService: fakeAgy);
+
+        await context.AccountStore.InitializeAsync();
+
+        // Simulate 12 groups where all 12 were accidentally mass-tagged with tag_bds + legacy tag_jobs/tag_sales
+        string[] sampleNames =
+        [
+            "Cộng đồng C# .NET Việt Nam",
+            "Hội lập trình viên Claude AI & ChatGPT",
+            "Tuyển dụng IT Việc làm Phần mềm",
+            "Chợ Mua Bán Đồ Cũ Sài Gòn",
+            "Mua Bán Nhà Đất Bất Động Sản Quận 7",
+            "Hội Sinh Viên Giao Lưu Kết Bạn",
+            "Lập trình Python & Data Science",
+            "Chợ Thanh Lý Nội Thất Gia Đình",
+            "Tuyển Dụng Nhân Sự Freelance",
+            "Cộng đồng ReactJS & Frontend Dev",
+            "VOZ Góc Công Nghệ",
+            "Hội Chung Cư Vinhomes Grand Park"
+        ];
+
+        for (int i = 0; i < sampleNames.Length; i++)
+        {
+            await context.AccountStore.UpsertTargetGroupAsync(new SavedTargetGroup(
+                GroupId: $"grp_{i + 1}",
+                GroupName: sampleNames[i],
+                IsEnabled: true,
+                TagsCsv: "tag_bds,tag_jobs,tag_sales"));
+        }
+
+        // Re-run InitializeAsync to trigger NormalizeAndCleanGroupTagsAsync
+        await context.AccountStore.InitializeAsync();
+
+        IReadOnlyList<SavedTargetGroup> cleaned = await context.AccountStore.GetAllTargetGroupsAsync();
+        Assert.Equal(12, cleaned.Count);
+
+        SavedTargetGroup? dotNetGroup = null;
+        SavedTargetGroup? bdsGroup = null;
+        for (int i = 0; i < cleaned.Count; i++)
+        {
+            if (string.Equals(cleaned[i].GroupId, "grp_1", StringComparison.Ordinal))
+            {
+                dotNetGroup = cleaned[i];
+            }
+            else if (string.Equals(cleaned[i].GroupId, "grp_5", StringComparison.Ordinal))
+            {
+                bdsGroup = cleaned[i];
+            }
+        }
+
+        Assert.NotNull(dotNetGroup);
+        Assert.False(dotNetGroup.HasTag("tag_bds"));
+        Assert.True(dotNetGroup.HasTag("tag_tech"));
+        Assert.True(dotNetGroup.HasTag("tag_job"));
+        Assert.True(dotNetGroup.HasTag("tag_market"));
+
+        Assert.NotNull(bdsGroup);
+        Assert.True(bdsGroup.HasTag("tag_bds"));
     }
 
     public void Dispose()

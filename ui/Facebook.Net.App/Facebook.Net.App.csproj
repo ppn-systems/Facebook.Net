@@ -42,6 +42,7 @@
     <ProjectReference Include="..\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
     <ProjectReference Include="..\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
     <ProjectReference Include="..\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
+    <ProjectReference Include="..\..\mcp\Facebook.Net.Mcp\Facebook.Net.Mcp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <Target Name="RemovePdbAndXmlFromSingleFilePublish"

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
@@ -17,6 +18,7 @@
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
+    <ProjectReference Include="..\..\mcp\Facebook.Net.Mcp\Facebook.Net.Mcp.csproj" />
   </ItemGroup>
 
 </Project>

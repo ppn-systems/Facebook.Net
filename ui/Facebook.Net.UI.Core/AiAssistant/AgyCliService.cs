@@ -1374,7 +1374,8 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         _ = sb.AppendLine("[MCP TOOLS, SILENT SELF-LEARNING & ACTION TAGS]");
         _ = sb.AppendLine("- Workspace state, saved templates, target groups, group tags, lead tags, and AI memories are ALREADY pre-loaded above. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless explicitly asked for data not in the snapshot.");
         _ = sb.AppendLine("- SILENT SELF-LEARNING: Whenever the user shares product info, pricing, target audience, tone preferences, or when you discover high-performing groups/keywords during analysis, silently append `[LEARN:Category|Key|Content]` (`ProductKnowledge`, `WritingStyle`, `CampaignRule`, `GroupStrategy`, `LeadPlaybook`, or `UserPreference`) at the end of your reply. NEVER tell the user you saved or learned something into memory.");
-        _ = sb.AppendLine("- CRM TAGGING & ANALYTICS: Use `fb_analyze_workspace_data`, `fb_search_leads_advanced`, `fb_create_group_tags_batch`, `fb_auto_tag_groups_by_keywords`, `fb_create_lead_tags_batch`, `fb_assign_lead_tag`, and `fb_auto_tag_leads_by_rules` when analyzing or organizing groups/leads.");
+        _ = sb.AppendLine("- GROUP & CUSTOMER CRM TAGGING: Use `fb_clean_and_classify_all_groups`, `fb_create_group_tags_batch`, `fb_auto_tag_groups_by_keywords`, `fb_assign_group_tag`, and `fb_delete_group_tag` for group tags; use `fb_list_lead_tags`, `fb_create_lead_tags_batch`, `fb_assign_lead_tag`, `fb_auto_tag_leads_by_rules`, `fb_delete_lead_tag`, and `fb_update_lead_notes` for customer/lead tags and CRM notes.");
+        _ = sb.AppendLine("- ANALYTICS, SEARCH & PUBLISHING: Use `fb_analyze_workspace_data`, `fb_search_leads_advanced`, `fb_query_scraped_leads`, `fb_publish_post`, `fb_create_comment`, and `fb_bump_recent_posts`.");
         _ = sb.AppendLine("- INTERACTIVE ACTION TAGS: Append at most one `[ACTION:...]` tag at the very end of your reply: `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]`, `[ACTION:SEARCH_GROUPS|keyword=<text>]`, `[ACTION:SCAN_LEADS|keyword=<text>]`, `[ACTION:FILTER_LEADS|tagId=<lead_tag_id>|keyword=<text>]`, `[ACTION:COMMENT_LEAD|targetId=<post_id>|content=<comment_spintax>]`, `[ACTION:OPEN_GROUP_TAGS|targetId=<group_tag_id>]`, or `[ACTION:BUMP_POSTS|content=<bump_spintax>]`.");
         _ = sb.AppendLine("- Always reply concisely in the exact language of the user's message.");
         _ = sb.AppendLine();
@@ -1682,6 +1683,17 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     private static bool CheckIsFacebookMcpRegistered()
     {
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string schemaCacheDir = Path.Combine(userProfile, ".gemini", "antigravity-cli", "mcp", "facebook");
+        if (Directory.Exists(schemaCacheDir))
+        {
+            string requiredAnalyticsSchema = Path.Combine(schemaCacheDir, "fb_analyze_workspace_data.json");
+            string requiredClassifySchema = Path.Combine(schemaCacheDir, "fb_clean_and_classify_all_groups.json");
+            if (!File.Exists(requiredAnalyticsSchema) || !File.Exists(requiredClassifySchema))
+            {
+                return false;
+            }
+        }
+
         string[] configFiles =
         [
             Path.Combine(userProfile, ".gemini", "config", "mcp_config.json"),

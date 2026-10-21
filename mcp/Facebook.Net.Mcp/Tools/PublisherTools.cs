@@ -21,12 +21,12 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
     private readonly FacebookMcpSessionManager _manager = manager;
 
     [McpServerTool(Name = "fb_publish_post")]
-    [Description("Publish a new post (supporting Spintax '{a|b}' and optional local photo path) to the personal timeline ('Feed') or a community group ('Group').")]
+    [Description("Publish a new post (supporting Spintax '{a|b}', dynamic variables '{group_name}', '{date}', '{time}', '{random_id}', and single or semicolon-separated multi-photo local paths) to the personal timeline ('Feed') or a community group ('Group').")]
     public async Task<string> PublishPostAsync(
         [Description("Message content or Spintax text to publish")] string messageText,
         [Description("Optional target Facebook Group ID. Leave empty/null to publish to the personal profile timeline.")] string? targetGroupId = null,
-        [Description("Optional target group display name (for history logging)")] string? targetGroupName = null,
-        [Description("Optional local file path to an image to attach to the post")] string? mediaFilePath = null,
+        [Description("Optional target group display name (for history logging and {group_name} variable)")] string? targetGroupName = null,
+        [Description("Optional single or semicolon-separated local image file paths to attach to the post")] string? mediaFilePath = null,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -37,14 +37,27 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
 
         List<string>? photoIds = null;
         string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePath) ? null : mediaFilePath.Trim();
-        if (!string.IsNullOrWhiteSpace(trimmedMedia) && File.Exists(trimmedMedia))
+        if (!string.IsNullOrWhiteSpace(trimmedMedia))
         {
-            string? uploadedFbid = await _manager.CometClient
-                .UploadUfiPhotoAsync(session, trimmedMedia, ct)
-                .ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(uploadedFbid))
+            string[] candidatePaths = trimmedMedia.Split([';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            List<string> uploadedIds = [];
+            for (int i = 0; i < candidatePaths.Length; i++)
             {
-                photoIds = [uploadedFbid];
+                if (File.Exists(candidatePaths[i]))
+                {
+                    string? uploadedFbid = await _manager.CometClient
+                        .UploadUfiPhotoAsync(session, candidatePaths[i], ct)
+                        .ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                    {
+                        uploadedIds.Add(uploadedFbid);
+                    }
+                }
+            }
+
+            if (uploadedIds.Count > 0)
+            {
+                photoIds = uploadedIds;
             }
         }
 
@@ -55,8 +68,10 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             ? targetGroupName.Trim()
             : (isGroup ? $"Group {cleanGroupId}" : "Trang cá nhân");
 
+        string resolvedMessage = ResolveDynamicTokens(messageText, account.DisplayName, groupLabel);
+
         string? postId = await _manager.CometClient
-            .PublishPostAsync(session, messageText, composerTarget, cleanGroupId, photoIds, ct: ct)
+            .PublishPostAsync(session, resolvedMessage, composerTarget, cleanGroupId, photoIds, ct: ct)
             .ConfigureAwait(false);
 
         string recordedPostId = !string.IsNullOrWhiteSpace(postId)
@@ -83,7 +98,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             AccountUid: session.AccountUid,
             AuthorName: account.DisplayName,
             AuthorAvatarUrl: account.AvatarUrl,
-            MessageText: PayloadBuilder.SpinText(messageText),
+            MessageText: PayloadBuilder.SpinText(resolvedMessage),
             MediaPreviewUrl: null,
             LocalMediaFilePath: trimmedMedia,
             TargetGroupId: cleanGroupId,
@@ -110,12 +125,13 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             account_uid = account.Uid,
             target = isGroup ? "Group" : "Feed",
             target_group_id = cleanGroupId,
+            attached_photos_count = photoIds?.Count ?? 0,
             permalink_url = permalink
         });
     }
 
     [McpServerTool(Name = "fb_create_comment")]
-    [Description("Post a comment (supporting Spintax '{a|b}' and optional image attachment) on a Facebook post, with duplicate-comment protection.")]
+    [Description("Post a comment (supporting Spintax '{a|b}', dynamic variables '{author_name}', '{group_name}', '{date}', '{time}', '{random_id}', and optional image attachment) on a Facebook post, with duplicate-comment protection.")]
     public async Task<string> CreateCommentAsync(
         [Description("Target Facebook Post ID")] string postId,
         [Description("Comment text or Spintax template")] string commentText,
@@ -164,8 +180,14 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 .ConfigureAwait(false);
         }
 
+        IReadOnlyList<PostSummary> cachedPosts = await _manager.AccountStore
+            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 500, ct: ct)
+            .ConfigureAwait(false);
+        PostSummary? matchedPost = cachedPosts.FirstOrDefault(p => string.Equals(p.PostId, cleanPostId, StringComparison.Ordinal));
+        string resolvedComment = ResolveDynamicTokens(commentText, matchedPost?.AuthorName, matchedPost?.GroupName);
+
         string? commentId = await _manager.CometClient
-            .CreateCommentAsync(session, cleanPostId, commentText, attachmentFbid, ct)
+            .CreateCommentAsync(session, cleanPostId, resolvedComment, attachmentFbid, ct)
             .ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(commentId))
@@ -404,5 +426,25 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             bumped_count = bumpedPosts.Count,
             bumped_posts = bumpedPosts
         });
+    }
+
+    private static string ResolveDynamicTokens(string rawText, string? authorName, string? groupName)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return string.Empty;
+        }
+
+        DateTimeOffset nowLocal = DateTimeOffset.Now;
+        string authorLabel = !string.IsNullOrWhiteSpace(authorName) ? authorName.Trim() : "bạn";
+        string groupLabel = !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : "cộng đồng";
+        string randomToken = Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        return rawText
+            .Replace("{author_name}", authorLabel, StringComparison.OrdinalIgnoreCase)
+            .Replace("{group_name}", groupLabel, StringComparison.OrdinalIgnoreCase)
+            .Replace("{date}", nowLocal.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            .Replace("{time}", nowLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            .Replace("{random_id}", randomToken, StringComparison.OrdinalIgnoreCase);
     }
 }

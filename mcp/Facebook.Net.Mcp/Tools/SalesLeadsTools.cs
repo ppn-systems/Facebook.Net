@@ -741,6 +741,58 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         });
     }
 
+    [McpServerTool(Name = "fb_delete_lead_tag")]
+    [Description("Delete a customer/lead color tag or clear it from all scraped customer posts in local SQLite.")]
+    public async Task<string> DeleteLeadTagAsync(
+        [Description("Customer/lead tag ID or tag name to delete or clear")] string tagNameOrId,
+        [Description("If true, deletes the lead tag definition completely; if false, only removes the tag assignment from all scraped posts (default true)")] bool deleteTagDefinition = true,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagNameOrId);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string cleanTarget = tagNameOrId.Trim();
+        string normTarget = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTarget);
+
+        IReadOnlyList<GroupTag> leadTags = await _manager.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(false);
+        GroupTag? targetTag = leadTags.FirstOrDefault(t =>
+            string.Equals(t.Id, cleanTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(t.Name, cleanTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTarget, StringComparison.OrdinalIgnoreCase));
+
+        string effectiveTagId = targetTag?.Id ?? cleanTarget;
+        IReadOnlyList<PostSummary> allPosts = await _manager.AccountStore
+            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 2000, ct: ct)
+            .ConfigureAwait(false);
+
+        int clearedCount = 0;
+        for (int i = 0; i < allPosts.Count; i++)
+        {
+            PostSummary post = allPosts[i];
+            string? updatedCsv = ApplyTagIdToCsv(post.GetTagIds(), effectiveTagId, assign: false, out bool changed);
+            if (changed)
+            {
+                await _manager.AccountStore.UpdateScrapedPostTagsAndNotesAsync(post.PostId, updatedCsv, notes: null, ct).ConfigureAwait(false);
+                clearedCount++;
+            }
+        }
+
+        bool deletedDef = false;
+        if (deleteTagDefinition && targetTag is not null)
+        {
+            deletedDef = await _manager.AccountStore.DeleteLeadTagAsync(targetTag.Id, ct).ConfigureAwait(false);
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            tag_id = effectiveTagId,
+            tag_name = targetTag?.Name ?? cleanTarget,
+            deleted_definition = deletedDef,
+            cleared_posts_count = clearedCount
+        });
+    }
+
     [McpServerTool(Name = "fb_analyze_workspace_data")]
     [Description("Compute a deep multi-dimensional analytics report across all scraped group posts and target groups: Group ROI ranking, low-performing groups, repeat authors/seeders detection, top inquiry keywords, and peak posting hours.")]
     public async Task<string> AnalyzeWorkspaceDataAsync(

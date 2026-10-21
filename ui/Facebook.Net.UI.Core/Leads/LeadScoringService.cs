@@ -95,9 +95,31 @@ public sealed class LeadScoringService : ILeadScoringService
     private sealed record CachedTextAnalysis(
         string NormalizedText,
         IReadOnlyList<string> ExtractedPhones,
-        bool HasInquirySignal);
+        bool HasInquirySignal,
+        int BuiltInCommercialMatches);
 
-    private static readonly CachedTextAnalysis s_emptyAnalysis = new(string.Empty, [], false);
+    private static readonly string[] s_builtInCommercialSignalsNormalized =
+    [
+        "can mua",
+        "tim mua",
+        "bao gia",
+        "tu van",
+        "can thue",
+        "sang nhuong",
+        "thanh ly",
+        "pass lai",
+        "xin gia",
+        "gia sao",
+        "lien he",
+        "inbox",
+        "zalo",
+        "chinh chu",
+        "can tim",
+        "looking for",
+        "recommend"
+    ];
+
+    private static readonly CachedTextAnalysis s_emptyAnalysis = new(string.Empty, [], false, 0);
     private static readonly ConcurrentDictionary<string, CachedTextAnalysis> s_analysisCache =
         new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, string> s_diacriticCache =
@@ -117,19 +139,30 @@ public sealed class LeadScoringService : ILeadScoringService
         CachedTextAnalysis analysis = this.GetOrAnalyzeText(messageText);
         int score = 40;
         string[] keywords = string.IsNullOrWhiteSpace(rawKeywords)
-            ? Array.Empty<string>()
+            ? []
             : rawKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         int matchedCount = 0;
-        for (int i = 0; i < keywords.Length; i++)
+        if (keywords.Length > 0)
         {
-            if (messageText.Contains(keywords[i], StringComparison.OrdinalIgnoreCase))
+            for (int i = 0; i < keywords.Length; i++)
             {
-                matchedCount++;
+                string kw = keywords[i];
+                string normKw = this.RemoveVietnameseDiacritics(kw);
+                if (messageText.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(normKw) && analysis.NormalizedText.Contains(normKw, StringComparison.OrdinalIgnoreCase)))
+                {
+                    matchedCount++;
+                }
             }
+
+            score += Math.Min(45, matchedCount * 20);
+        }
+        else
+        {
+            score += Math.Min(35, analysis.BuiltInCommercialMatches * 15);
         }
 
-        score += Math.Min(45, matchedCount * 20);
         if (analysis.HasInquirySignal)
         {
             score += 15;
@@ -137,7 +170,7 @@ public sealed class LeadScoringService : ILeadScoringService
 
         if (analysis.ExtractedPhones.Count > 0)
         {
-            score += 15;
+            score += 20;
         }
 
         return Math.Clamp(score, 0, 100);
@@ -694,7 +727,16 @@ public sealed class LeadScoringService : ILeadScoringService
             text.Contains("looking for", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("price", StringComparison.OrdinalIgnoreCase);
 
-        CachedTextAnalysis analysis = new(normalizedText, extractedPhones, hasInquiry);
+        int builtInMatches = 0;
+        for (int i = 0; i < s_builtInCommercialSignalsNormalized.Length; i++)
+        {
+            if (normalizedText.Contains(s_builtInCommercialSignalsNormalized[i], StringComparison.OrdinalIgnoreCase))
+            {
+                builtInMatches++;
+            }
+        }
+
+        CachedTextAnalysis analysis = new(normalizedText, extractedPhones, hasInquiry, builtInMatches);
         if (s_analysisCache.Count > 1500)
         {
             int evicted = 0;
