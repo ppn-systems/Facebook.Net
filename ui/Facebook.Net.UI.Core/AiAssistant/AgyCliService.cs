@@ -15,7 +15,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Contracts.Abstractions;
-using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.Configuration;
 
 namespace Facebook.Net.UI.Core.AiAssistant;
