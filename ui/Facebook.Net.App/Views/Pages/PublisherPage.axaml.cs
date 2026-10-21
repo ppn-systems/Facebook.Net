@@ -110,7 +110,7 @@ public sealed partial class PublisherPage : UserControl
         // =====================================================================
         Grid composerGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto,Auto,Auto"),
             RowSpacing = 10
         };
 
@@ -250,74 +250,100 @@ public sealed partial class PublisherPage : UserControl
         Grid.SetRow(identityInset, 0);
         composerGrid.Children.Add(identityInset);
 
-        // Row 1: Spintax & Dynamic Variable Quick-Insert Chips
-        WrapPanel macroChipsRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            ItemSpacing = 6,
-            LineSpacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBox localContentBox = null!;
-
-        void AddMacroChip(string chipLabel, string tokenToInsert)
-        {
-            Border chip = new()
-            {
-                Background = this._theme.Palette.SecondarySurface,
-                BorderBrush = this._theme.Palette.SubtleBorder,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(9, 3),
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Child = SectionHeader.CreateLabel(this._theme, chipLabel, 11, FontWeight.SemiBold, isSecondary: true)
-            };
-            chip.PointerPressed += (_, _) =>
-            {
-                string current = localContentBox.Text ?? string.Empty;
-                localContentBox.Text = string.IsNullOrEmpty(current)
-                    ? tokenToInsert
-                    : $"{current} {tokenToInsert}";
-                localContentBox.CaretIndex = localContentBox.Text.Length;
-            };
-            macroChipsRow.Children.Add(chip);
-        }
-
-        AddMacroChip("+ {Xin chào|Hello}", "{Xin chào|Chào cả nhà|Chào anh chị em}");
-        AddMacroChip("+ Tên nhóm {group_name}", "{group_name}");
-        AddMacroChip("+ Ngày {date}", "{date}");
-        AddMacroChip("+ Giờ {time}", "{time}");
-        AddMacroChip("+ Mã {random_id}", "#{random_id}");
-
-        Grid.SetRow(macroChipsRow, 1);
-        composerGrid.Children.Add(macroChipsRow);
-
-        // Row 2: Facebook-style Multiline Post Composer Box
-        localContentBox = FormField.CreateTextBox(
+        // Row 1: Facebook-style Multiline Post Composer Box
+        TextBox localContentBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Publisher.ContentPlaceholder"],
             this._vm.PostSpintaxText,
             multiline: true,
-            height: 155);
+            height: 165);
         localContentBox.VerticalAlignment = VerticalAlignment.Stretch;
         localContentBox.FontSize = 13.5;
         localContentBox.TextChanged += (_, _) => this._vm.PostSpintaxText = localContentBox.Text ?? string.Empty;
-        Grid.SetRow(localContentBox, 2);
+        Grid.SetRow(localContentBox, 1);
         composerGrid.Children.Add(localContentBox);
         contentBox = localContentBox;
 
-        // Row 3: Navigate to Full-Page Simulated Facebook Post Preview
+        // Row 2: 1-Button Dynamic Variable Picker Flyout + Simulated Facebook Post Preview
+        StackPanel variableMenuStack = new()
+        {
+            Spacing = 4,
+            MinWidth = 240
+        };
+
+        Flyout variableFlyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = SurfaceCard.Create(this._theme, variableMenuStack, new Thickness(8))
+        };
+
+        void RebuildVariableFlyoutItems()
+        {
+            variableMenuStack.Children.Clear();
+            (string Label, string Token)[] items =
+            [
+                ($"{this._i18n["Common.VarGreetingLabel"]}  •  {{Xin chào|Hello}}", "{Xin chào|Chào cả nhà|Chào anh chị em}"),
+                ($"{this._i18n["Common.VarGroupNameLabel"]}  •  {{group_name}}", "{group_name}"),
+                ($"{this._i18n["Common.VarDateLabel"]}  •  {{date}}", "{date}"),
+                ($"{this._i18n["Common.VarTimeLabel"]}  •  {{time}}", "{time}"),
+                ($"{this._i18n["Common.VarRandomIdLabel"]}  •  #{{random_id}}", "#{random_id}")
+            ];
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                (string itemLabel, string tokenToInsert) = items[i];
+                Button itemBtn = new()
+                {
+                    Content = SectionHeader.CreateLabel(this._theme, itemLabel, 12, FontWeight.SemiBold),
+                    Background = this._theme.Palette.SecondarySurface,
+                    BorderBrush = this._theme.Palette.SubtleBorder,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(10, 6),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                itemBtn.Click += (_, _) =>
+                {
+                    variableFlyout.Hide();
+                    string current = localContentBox.Text ?? string.Empty;
+                    localContentBox.Text = string.IsNullOrEmpty(current)
+                        ? tokenToInsert
+                        : $"{current} {tokenToInsert}";
+                    localContentBox.CaretIndex = localContentBox.Text.Length;
+                    _ = localContentBox.Focus();
+                };
+                variableMenuStack.Children.Add(itemBtn);
+            }
+        }
+
+        RebuildVariableFlyoutItems();
+
+        Button insertVarBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Common.BtnInsertVariable"],
+            null,
+            VectorIcons.Plus);
+        insertVarBtn.Flyout = variableFlyout;
+
         Button previewSpintaxBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Publisher.BtnPreviewSpintax"],
             null,
             VectorIcons.Browser);
-        previewSpintaxBtn.HorizontalAlignment = HorizontalAlignment.Left;
-        Grid.SetRow(previewSpintaxBtn, 3);
-        composerGrid.Children.Add(previewSpintaxBtn);
 
-        // Row 4: Photo Picker + Live Attached Image Thumbnail Preview
+        StackPanel composerToolbarRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { insertVarBtn, previewSpintaxBtn }
+        };
+        Grid.SetRow(composerToolbarRow, 2);
+        composerGrid.Children.Add(composerToolbarRow);
+
+        // Row 3: Photo Picker + Live Attached Image Thumbnail Preview
         StackPanel mediaStack = new() { Spacing = 8 };
 
         Grid photoRow = FilePickerInput.Create(
@@ -451,11 +477,11 @@ public sealed partial class PublisherPage : UserControl
 
         mediaStack.Children.Add(photoRow);
         mediaStack.Children.Add(photoPreviewContainer);
-        Grid.SetRow(mediaStack, 4);
+        Grid.SetRow(mediaStack, 3);
         composerGrid.Children.Add(mediaStack);
         photoBox = localPhotoBox;
 
-        // Row 5: Auto-React + Schedule Delay Row
+        // Row 4: Auto-React + Schedule Delay Row
         Grid optionsRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto,78"),
@@ -496,10 +522,10 @@ public sealed partial class PublisherPage : UserControl
         optionsRow.Children.Add(autoReactOwnPostCheck);
         optionsRow.Children.Add(scheduleDelayLbl);
         optionsRow.Children.Add(scheduleDelayBox);
-        Grid.SetRow(optionsRow, 5);
+        Grid.SetRow(optionsRow, 4);
         composerGrid.Children.Add(optionsRow);
 
-        // Row 6: Save Template + Dynamic Primary Publish Button
+        // Row 5: Save Template + Dynamic Primary Publish Button
         Grid btnRow = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
@@ -522,7 +548,7 @@ public sealed partial class PublisherPage : UserControl
         Grid.SetColumn(publishBtn, 1);
         btnRow.Children.Add(saveTplBtn);
         btnRow.Children.Add(publishBtn);
-        Grid.SetRow(btnRow, 6);
+        Grid.SetRow(btnRow, 5);
         composerGrid.Children.Add(btnRow);
 
         Border leftCard = SurfaceCard.Create(this._theme, composerGrid, new Thickness(16));
@@ -826,6 +852,8 @@ public sealed partial class PublisherPage : UserControl
             }
         };
 
+        this._theme.ThemeChanged += (_, _) => RebuildVariableFlyoutItems();
+
         refreshI18n = () =>
         {
             StatusPill.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
@@ -838,6 +866,8 @@ public sealed partial class PublisherPage : UserControl
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
             localContentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
+            AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
+            RebuildVariableFlyoutItems();
             AppButton.SetText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);
             localPhotoBox.PlaceholderText = this._i18n["Publisher.PhotoPlaceholder"];
             AppButton.SetText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
@@ -949,7 +979,7 @@ public sealed partial class PublisherPage : UserControl
             this._i18n["Common.FilterButton"],
             this._i18n["Groups.FilterPlaceholder"]);
 
-        void RebuildPickerState()
+        void UpdatePickerHeaderAndTagChips()
         {
             int enabledTotal = 0;
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -996,6 +1026,13 @@ public sealed partial class PublisherPage : UserControl
                 tagChipsWrap.Children.Add(chip);
             }
 
+            onSelectionChanged?.Invoke();
+        }
+
+        void RebuildPickerState()
+        {
+            UpdatePickerHeaderAndTagChips();
+
             string q = (groupSearchBar.SearchTextBox.Text ?? string.Empty).Trim();
             List<SavedTargetGroup> matches = new(this._vm.TargetGroups.Count);
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -1033,7 +1070,6 @@ public sealed partial class PublisherPage : UserControl
             }
 
             filteredPickerGroups.ReplaceAll(matches);
-            onSelectionChanged?.Invoke();
         }
 
         FilterCategoryDefinition tagCategory = new(
@@ -1095,14 +1131,20 @@ public sealed partial class PublisherPage : UserControl
                 async nextState =>
                 {
                     await this._vm.ToggleTargetGroupEnabledAsync(tg, nextState).ConfigureAwait(true);
-                    RebuildPickerState();
+                    if (!string.IsNullOrEmpty(selectedSelectionFilter))
+                    {
+                        RebuildPickerState();
+                    }
                 },
                 assignedTags: this._vm.GetGroupTagsForGroup(tg.GroupId),
                 allTags: this._vm.GroupTags,
                 onToggleTag: async tagId =>
                 {
                     await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, tagId).ConfigureAwait(true);
-                    RebuildPickerState();
+                    if (!string.IsNullOrEmpty(selectedTagFilter))
+                    {
+                        RebuildPickerState();
+                    }
                 },
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"]),
             isVisible: true);
@@ -1110,7 +1152,27 @@ public sealed partial class PublisherPage : UserControl
         Grid.SetRow(pickerList, 4);
         pickerGrid.Children.Add(pickerList);
 
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RebuildPickerState();
+        this._vm.TargetGroups.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                string.IsNullOrEmpty(selectedTagFilter) &&
+                string.IsNullOrEmpty(selectedSelectionFilter) &&
+                e.NewItems is { Count: > 0 } &&
+                e.NewItems[0] is SavedTargetGroup updatedTg)
+            {
+                for (int i = 0; i < filteredPickerGroups.Count; i++)
+                {
+                    if (string.Equals(filteredPickerGroups[i].GroupId, updatedTg.GroupId, StringComparison.Ordinal))
+                    {
+                        filteredPickerGroups[i] = updatedTg;
+                        UpdatePickerHeaderAndTagChips();
+                        return;
+                    }
+                }
+            }
+
+            RebuildPickerState();
+        };
         this._vm.GroupTags.CollectionChanged += (_, _) =>
         {
             groupSearchBar.RefreshFilterChips();

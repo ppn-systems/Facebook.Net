@@ -621,5 +621,12 @@
   "Settings.UpdateStatusAvailable": "Đã có phiên bản mới {0} — phát hành ngày {1}. Nhấn nút bên dưới để tự động tải và cài đặt.",
   "Settings.UpdateStatusDownloading": "Đang tải bản cập nhật {0}: {1}%...",
   "Settings.UpdateStatusInstalling": "Đang cài đặt bản cập nhật {0} và tự động khởi động lại ứng dụng...",
-  "Settings.UpdateStatusFailed": "Không thể kiểm tra cập nhật lúc này: {0}"
+  "Settings.UpdateStatusFailed": "Không thể kiểm tra cập nhật lúc này: {0}",
+  "Common.BtnInsertVariable": "Chèn biến động ▾",
+  "Common.VarGreetingLabel": "Lời chào ngẫu nhiên",
+  "Common.VarAuthorNameLabel": "Tên người đăng bài",
+  "Common.VarGroupNameLabel": "Tên hội nhóm",
+  "Common.VarDateLabel": "Ngày hiện tại",
+  "Common.VarTimeLabel": "Giờ hiện tại",
+  "Common.VarRandomIdLabel": "Mã số ngẫu nhiên"
 }

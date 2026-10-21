@@ -261,12 +261,20 @@ public sealed partial class ShellViewModel
             }
         }
 
-        if (keywords.Length > 0)
+        if (keywords.Length > 0 && matched.Count > 1)
         {
-            matched.Sort((a, b) =>
-                _context.LeadScoring.CalculateBuyerIntentScore(b.MessageText, this.BuyerIntentKeywords)
-                                    .CompareTo(_context.LeadScoring
-                                    .CalculateBuyerIntentScore(a.MessageText, this.BuyerIntentKeywords)));
+            (PostSummary Post, int Score)[] scored = new (PostSummary Post, int Score)[matched.Count];
+            for (int i = 0; i < matched.Count; i++)
+            {
+                PostSummary p = matched[i];
+                scored[i] = (p, _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords));
+            }
+
+            Array.Sort(scored, static (a, b) => b.Score.CompareTo(a.Score));
+            for (int i = 0; i < scored.Length; i++)
+            {
+                matched[i] = scored[i].Post;
+            }
         }
 
         this.ScrapedPosts.ReplaceAll(matched);
@@ -453,6 +461,7 @@ public sealed partial class ShellViewModel
                     feeds = await Task.WhenAll(feedTasks).ConfigureAwait(true);
                 }
 
+                List<PostSummary> chunkCollected = new();
                 for (int offset = 0; offset < chunkCount; offset++)
                 {
                     (string groupId, string groupName, string? groupAvatarUrl) = targets[chunkStart + offset];
@@ -468,17 +477,34 @@ public sealed partial class ShellViewModel
 
                         if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
                         {
+                            chunkCollected.Add(post);
                             collectedForDb.Add(post);
                         }
                     }
                 }
-            }
 
-            if (collectedForDb.Count > 0)
-            {
-                await _context.AccountStore
-                    .UpsertScrapedPostsAsync(collectedForDb, ct)
-                    .ConfigureAwait(true);
+                if (chunkCollected.Count > 0)
+                {
+                    await _context.AccountStore
+                        .UpsertScrapedPostsAsync(chunkCollected, ct)
+                        .ConfigureAwait(true);
+
+                    for (int i = chunkCollected.Count - 1; i >= 0; i--)
+                    {
+                        PostSummary incoming = chunkCollected[i];
+                        int existingIdx = _allScrapedPosts.FindIndex(p => string.Equals(p.PostId, incoming.PostId, StringComparison.Ordinal));
+                        if (existingIdx >= 0)
+                        {
+                            _allScrapedPosts[existingIdx] = incoming;
+                        }
+                        else
+                        {
+                            _allScrapedPosts.Insert(0, incoming);
+                        }
+                    }
+
+                    this.FilterCachedPostsFromDb();
+                }
             }
 
             await this.QueryLocalScrapedPostsAsync(ct).ConfigureAwait(true);
@@ -788,8 +814,9 @@ public sealed partial class ShellViewModel
                 .ConfigureAwait(true);
         }
 
+        string resolvedCommentSpintax = ResolveDynamicCommentVariables(this.SalesCommentSpintaxText, post.AuthorName, post.GroupName);
         string? commentId = await _context.CometClient
-            .CreateCommentAsync(session, post.PostId, this.SalesCommentSpintaxText, attachmentFbid, ct: ct)
+            .CreateCommentAsync(session, post.PostId, resolvedCommentSpintax, attachmentFbid, ct: ct)
             .ConfigureAwait(true);
 
         if (!string.IsNullOrWhiteSpace(commentId))
@@ -815,6 +842,27 @@ public sealed partial class ShellViewModel
             targetLabel,
             _context.Localization.Format("Log.SalesCommentSent", targetLabel),
             post.PermalinkUrl).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Resolves dynamic personalization variables (<c>{author_name}</c>, <c>{group_name}</c>, <c>{date}</c>, <c>{time}</c>, <c>{random_id}</c>) in a sales comment or post template.
+    /// </summary>
+    public static string ResolveDynamicCommentVariables(string? rawTemplate, string? authorName, string? groupName)
+    {
+        if (string.IsNullOrWhiteSpace(rawTemplate))
+        {
+            return string.Empty;
+        }
+
+        string safeAuthor = !string.IsNullOrWhiteSpace(authorName) ? authorName.Trim() : "bạn";
+        string safeGroup = !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : "nhóm";
+        DateTime now = DateTime.Now;
+        return rawTemplate
+            .Replace("{author_name}", safeAuthor, StringComparison.OrdinalIgnoreCase)
+            .Replace("{group_name}", safeGroup, StringComparison.OrdinalIgnoreCase)
+            .Replace("{date}", now.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            .Replace("{time}", now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

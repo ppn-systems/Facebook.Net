@@ -200,7 +200,10 @@ public sealed partial class SalesLeadsPage
                 onToggleTag: async tagId =>
                 {
                     await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, tagId).ConfigureAwait(true);
-                    RefreshFilteredGroups();
+                    if (!string.IsNullOrEmpty(selectedTagFilterId))
+                    {
+                        RefreshFilteredGroups();
+                    }
                 },
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"]),
             selectedItem: this._vm.SelectedTargetGroup,
@@ -213,8 +216,24 @@ public sealed partial class SalesLeadsPage
             out TextBlock emptyTargetsTb);
         emptyTargetsBanner.IsVisible = filteredTargetGroups.Count == 0;
 
-        this._vm.TargetGroups.CollectionChanged += (_, _) =>
+        this._vm.TargetGroups.CollectionChanged += (_, e) =>
         {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                targetStateFilter == 2 &&
+                string.IsNullOrEmpty(selectedTagFilterId) &&
+                e.NewItems is { Count: > 0 } &&
+                e.NewItems[0] is SavedTargetGroup updatedTg)
+            {
+                for (int i = 0; i < filteredTargetGroups.Count; i++)
+                {
+                    if (string.Equals(filteredTargetGroups[i].GroupId, updatedTg.GroupId, StringComparison.Ordinal))
+                    {
+                        filteredTargetGroups[i] = updatedTg;
+                        return;
+                    }
+                }
+            }
+
             RefreshFilteredGroups();
             bool isEmpty = filteredTargetGroups.Count == 0;
             emptyTargetsBanner.IsVisible = isEmpty;

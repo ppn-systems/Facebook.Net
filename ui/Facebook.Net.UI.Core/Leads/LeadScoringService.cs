@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -40,6 +41,17 @@ public interface ILeadScoringService
 /// </summary>
 public sealed class LeadScoringService : ILeadScoringService
 {
+    private sealed record CachedTextAnalysis(
+        string NormalizedText,
+        IReadOnlyList<string> ExtractedPhones,
+        bool HasInquirySignal);
+
+    private static readonly CachedTextAnalysis s_emptyAnalysis = new(string.Empty, [], false);
+    private static readonly ConcurrentDictionary<string, CachedTextAnalysis> s_analysisCache =
+        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, string> s_diacriticCache =
+        new(StringComparer.Ordinal);
+
     /// <summary>Gets the shared stateless singleton instance of <see cref="LeadScoringService"/>.</summary>
     public static LeadScoringService Instance { get; } = new();
 
@@ -51,6 +63,7 @@ public sealed class LeadScoringService : ILeadScoringService
             return 25;
         }
 
+        CachedTextAnalysis analysis = this.GetOrAnalyzeText(messageText);
         int score = 40;
         string[] keywords = string.IsNullOrWhiteSpace(rawKeywords)
             ? Array.Empty<string>()
@@ -66,18 +79,12 @@ public sealed class LeadScoringService : ILeadScoringService
         }
 
         score += Math.Min(45, matchedCount * 20);
-        if (messageText.Contains('?', StringComparison.Ordinal) ||
-            messageText.Contains("cần", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("tìm", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("mua", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("tư vấn", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("looking for", StringComparison.OrdinalIgnoreCase) ||
-            messageText.Contains("price", StringComparison.OrdinalIgnoreCase))
+        if (analysis.HasInquirySignal)
         {
             score += 15;
         }
 
-        if (this.ExtractPrimaryPhoneNumber(messageText) is not null)
+        if (analysis.ExtractedPhones.Count > 0)
         {
             score += 15;
         }
@@ -99,8 +106,9 @@ public sealed class LeadScoringService : ILeadScoringService
             return false;
         }
 
-        string normalizedMsg = this.RemoveVietnameseDiacritics(messageText);
-        IReadOnlyList<string> extractedPhones = this.ExtractVietnamesePhoneNumbers(messageText);
+        CachedTextAnalysis analysis = this.GetOrAnalyzeText(messageText);
+        string normalizedMsg = analysis.NormalizedText;
+        IReadOnlyList<string> extractedPhones = analysis.ExtractedPhones;
         for (int i = 0; i < keywords.Count; i++)
         {
             string kw = keywords[i];
@@ -125,10 +133,11 @@ public sealed class LeadScoringService : ILeadScoringService
             return true;
         }
 
-        string normMsg = !string.IsNullOrWhiteSpace(post.MessageText) ? this.RemoveVietnameseDiacritics(post.MessageText) : string.Empty;
+        CachedTextAnalysis msgAnalysis = this.GetOrAnalyzeText(post.MessageText);
+        string normMsg = msgAnalysis.NormalizedText;
         string normAuthor = !string.IsNullOrWhiteSpace(post.AuthorName) ? this.RemoveVietnameseDiacritics(post.AuthorName) : string.Empty;
         string normGroup = !string.IsNullOrWhiteSpace(post.GroupName) ? this.RemoveVietnameseDiacritics(post.GroupName) : string.Empty;
-        IReadOnlyList<string> extractedPhones = this.ExtractVietnamesePhoneNumbers(post.MessageText);
+        IReadOnlyList<string> extractedPhones = msgAnalysis.ExtractedPhones;
 
         for (int i = 0; i < keywords.Count; i++)
         {
@@ -154,6 +163,11 @@ public sealed class LeadScoringService : ILeadScoringService
             return string.Empty;
         }
 
+        if (s_diacriticCache.TryGetValue(input, out string? cached))
+        {
+            return cached;
+        }
+
         string normalized = input.Normalize(NormalizationForm.FormD);
         StringBuilder sb = new(normalized.Length);
         for (int i = 0; i < normalized.Length; i++)
@@ -170,7 +184,22 @@ public sealed class LeadScoringService : ILeadScoringService
             }
         }
 
-        return sb.ToString().Normalize(NormalizationForm.FormC);
+        string result = sb.ToString().Normalize(NormalizationForm.FormC);
+        if (s_diacriticCache.Count > 2000)
+        {
+            int evicted = 0;
+            foreach (string key in s_diacriticCache.Keys)
+            {
+                _ = s_diacriticCache.TryRemove(key, out _);
+                if (++evicted >= 200)
+                {
+                    break;
+                }
+            }
+        }
+
+        s_diacriticCache[input] = result;
+        return result;
     }
 
     /// <inheritdoc />
@@ -181,12 +210,52 @@ public sealed class LeadScoringService : ILeadScoringService
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<string> ExtractVietnamesePhoneNumbers(string? text)
+    public IReadOnlyList<string> ExtractVietnamesePhoneNumbers(string? text) =>
+        this.GetOrAnalyzeText(text).ExtractedPhones;
+
+    private CachedTextAnalysis GetOrAnalyzeText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return [];
+            return s_emptyAnalysis;
         }
+
+        if (s_analysisCache.TryGetValue(text, out CachedTextAnalysis? cached))
+        {
+            return cached;
+        }
+
+        string normalizedText = this.RemoveVietnameseDiacritics(text);
+        IReadOnlyList<string> extractedPhones = ExtractVietnamesePhoneNumbersCore(text);
+        bool hasInquiry =
+            text.Contains('?', StringComparison.Ordinal) ||
+            text.Contains("cần", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("tìm", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("mua", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("tư vấn", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("looking for", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("price", StringComparison.OrdinalIgnoreCase);
+
+        CachedTextAnalysis analysis = new(normalizedText, extractedPhones, hasInquiry);
+        if (s_analysisCache.Count > 1500)
+        {
+            int evicted = 0;
+            foreach (string key in s_analysisCache.Keys)
+            {
+                _ = s_analysisCache.TryRemove(key, out _);
+                if (++evicted >= 150)
+                {
+                    break;
+                }
+            }
+        }
+
+        s_analysisCache[text] = analysis;
+        return analysis;
+    }
+
+    private static IReadOnlyList<string> ExtractVietnamesePhoneNumbersCore(string text)
+    {
 
         // Step 1: Normalize Unicode fancy/enclosed/keycap/fullwidth/mathematical digits to ASCII '0'..'9'
         // and strip keycap variation selectors / zero-width joiners.
