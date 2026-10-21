@@ -39,7 +39,7 @@ public sealed class NavigationService : INavigationService
     /// <summary>
     /// Initializes a new instance of the <see cref="NavigationService"/> class.
     /// </summary>
-    public NavigationService(NavigationSection initialSection = NavigationSection.Accounts) =>
+    public NavigationService(NavigationSection initialSection = NavigationSection.Overview) =>
         _currentSection = initialSection;
 
     /// <inheritdoc />

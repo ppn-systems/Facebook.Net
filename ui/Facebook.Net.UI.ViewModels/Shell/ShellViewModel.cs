@@ -68,7 +68,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(context);
         _context = context;
-        this.Navigation = new NavigationService(NavigationSection.Accounts);
+        this.Navigation = new NavigationService(NavigationSection.Overview);
         this.Navigation.Navigated += (_, section) =>
         {
             if (this.CurrentSection != section)
@@ -199,7 +199,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets or sets the currently active navigation screen.</summary>
     [ObservableProperty]
-    public partial NavigationSection CurrentSection { get; set; } = NavigationSection.Accounts;
+    public partial NavigationSection CurrentSection { get; set; } = NavigationSection.Overview;
 
     partial void OnCurrentSectionChanged(NavigationSection value)
     {
