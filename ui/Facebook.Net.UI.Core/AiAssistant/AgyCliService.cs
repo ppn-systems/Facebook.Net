@@ -177,13 +177,13 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     ];
 
     private const string OAuthSessionUid = "agy_oauth_session";
-    private static readonly string AgyOAuthClientId = string.Concat(
+    private static readonly string s_agyOAuthClientId = string.Concat(
         "1071006060591",
         "-",
         "tmhssin2h21lcre235vtolojh4g403ep",
         ".apps.",
         "googleusercontent.com");
-    private static readonly string AgyOAuthClientSecret = string.Concat(
+    private static readonly string s_agyOAuthClientSecret = string.Concat(
         "GOC",
         "SPX-",
         "K58FWR486LdLJ1m",
@@ -2120,7 +2120,7 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
 
         return "https://accounts.google.com/o/oauth2/auth" +
                "?access_type=offline" +
-               $"&client_id={Uri.EscapeDataString(AgyOAuthClientId)}" +
+               $"&client_id={Uri.EscapeDataString(s_agyOAuthClientId)}" +
                $"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
                "&code_challenge_method=S256" +
                "&prompt=consent" +
@@ -2139,8 +2139,8 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         {
             KeyValuePair<string, string>[] formFields =
             [
-                new("client_id", AgyOAuthClientId),
-                new("client_secret", AgyOAuthClientSecret),
+                new("client_id", s_agyOAuthClientId),
+                new("client_secret", s_agyOAuthClientSecret),
                 new("code", authCode),
                 new("code_verifier", codeVerifier),
                 new("grant_type", "authorization_code"),

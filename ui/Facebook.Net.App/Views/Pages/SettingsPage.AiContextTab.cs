@@ -133,7 +133,7 @@ public sealed partial class SettingsPage
 
         Grid sysButtonsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("1.25*,1*"),
+            ColumnDefinitions = new ColumnDefinitions("1.2*,1*,Auto"),
             ColumnSpacing = 8
         };
 
@@ -149,10 +149,14 @@ public sealed partial class SettingsPage
             aiVm.ResetSystemPromptCommand,
             VectorIcons.Sync);
 
+        Button presetsBtn = this.CreateSettingsPromptPresetsFlyoutButton(aiVm, out Action refreshPresetsBtnI18n);
+
         Grid.SetColumn(saveSysPromptBtn, 0);
         Grid.SetColumn(resetSysPromptBtn, 1);
+        Grid.SetColumn(presetsBtn, 2);
         sysButtonsRow.Children.Add(saveSysPromptBtn);
         sysButtonsRow.Children.Add(resetSysPromptBtn);
+        sysButtonsRow.Children.Add(presetsBtn);
 
         // 2. Separator
         Border sectionDivider = new()
@@ -268,6 +272,24 @@ public sealed partial class SettingsPage
             _i18n["Common.FilterButton"],
             _i18n["Ai.BrainSearchPlaceholder"]);
 
+        Button clearAllMemoriesBtn = AppButton.CreateDanger(
+            _theme,
+            _i18n["Ai.BtnClearAllMemories"],
+            aiVm.ClearAllMemoriesCommand,
+            VectorIcons.Trash);
+        clearAllMemoriesBtn.VerticalAlignment = VerticalAlignment.Center;
+
+        Grid rightHeaderBar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(memorySearchBar, 0);
+        Grid.SetColumn(clearAllMemoriesBtn, 1);
+        rightHeaderBar.Children.Add(memorySearchBar);
+        rightHeaderBar.Children.Add(clearAllMemoriesBtn);
+
         StackPanel memoriesListStack = new()
         {
             Spacing = 8
@@ -283,6 +305,7 @@ public sealed partial class SettingsPage
         void RebuildFilteredMemories()
         {
             memoriesListStack.Children.Clear();
+            clearAllMemoriesBtn.IsVisible = aiVm.Memories.Count > 0;
             string query = (memorySearchBar.SearchTextBox.Text ?? string.Empty).Trim();
 
             int renderedCount = 0;
@@ -353,9 +376,9 @@ public sealed partial class SettingsPage
         memorySearchBar.SearchTextBox.TextChanged += (_, _) => RebuildFilteredMemories();
         memorySearchBar.SearchButton.Click += (_, _) => RebuildFilteredMemories();
 
-        Grid.SetRow(memorySearchBar, 0);
+        Grid.SetRow(rightHeaderBar, 0);
         Grid.SetRow(memoriesScroll, 1);
-        rightGrid.Children.Add(memorySearchBar);
+        rightGrid.Children.Add(rightHeaderBar);
         rightGrid.Children.Add(memoriesScroll);
 
         Border rightCard = SurfaceCard.Create(_theme, rightGrid, new Thickness(18));
@@ -418,6 +441,8 @@ public sealed partial class SettingsPage
             sysPromptBox.PlaceholderText = _i18n["Ai.SystemPromptPlaceholder"];
             AppButton.SetText(saveSysPromptBtn, _i18n["Ai.BtnSaveSystemPrompt"]);
             AppButton.SetText(resetSysPromptBtn, _i18n["Ai.BtnResetSystemPrompt"]);
+            refreshPresetsBtnI18n();
+            AppButton.SetText(clearAllMemoriesBtn, _i18n["Ai.BtnClearAllMemories"]);
 
             memTitleTb.Text = _i18n["Ai.BrainHeaderTitle"];
             memDescTb.Text = _i18n["Ai.BrainHeaderDesc"];
@@ -513,6 +538,89 @@ public sealed partial class SettingsPage
         cardStack.Children.Add(contentTb);
 
         return SurfaceCard.CreateInset(_theme, cardStack, new Thickness(12, 10));
+    }
+
+    private Button CreateSettingsPromptPresetsFlyoutButton(AiAssistantViewModel aiVm, out Action refreshI18n)
+    {
+        Flyout flyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedRight,
+            ShowMode = FlyoutShowMode.Standard
+        };
+
+        StackPanel flyoutStack = new()
+        {
+            Spacing = 6,
+            Width = 280
+        };
+
+        Border flyoutCard = SurfaceCard.Create(_theme, flyoutStack, new Thickness(10));
+        flyout.Content = flyoutCard;
+
+        (string PresetKey, string LabelKey, string IconName)[] presets =
+        [
+            ("closing_expert", "Ai.PresetClosingExpert", VectorIcons.SalesComment),
+            ("viral_copywriter", "Ai.PresetViralCopywriter", VectorIcons.Publish),
+            ("data_analyst", "Ai.PresetDataAnalyst", VectorIcons.AiSparkle)
+        ];
+
+        void RebuildPresetItems()
+        {
+            flyoutStack.Children.Clear();
+
+            for (int i = 0; i < presets.Length; i++)
+            {
+                (string presetKey, string labelKey, string iconName) = presets[i];
+                Control itemIcon = VectorIcons.Create(iconName, 14, _theme.Palette.BrandPrimary);
+                TextBlock itemLabel = SectionHeader.CreateLabel(_theme, _i18n[labelKey], 12, FontWeight.SemiBold);
+                itemLabel.VerticalAlignment = VerticalAlignment.Center;
+                itemLabel.TextWrapping = TextWrapping.Wrap;
+
+                Grid rowGrid = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(itemIcon, 0);
+                Grid.SetColumn(itemLabel, 1);
+                rowGrid.Children.Add(itemIcon);
+                rowGrid.Children.Add(itemLabel);
+
+                Button presetBtn = new()
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    CornerRadius = new CornerRadius(7),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(10, 7),
+                    Background = _theme.Palette.SecondarySurface,
+                    BorderBrush = _theme.Palette.SubtleBorder,
+                    Content = rowGrid,
+                    Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+                };
+
+                presetBtn.Click += (_, _) =>
+                {
+                    flyout.Hide();
+                    aiVm.ApplySystemPromptPreset(presetKey);
+                };
+
+                flyoutStack.Children.Add(presetBtn);
+            }
+        }
+
+        flyout.Opening += (_, _) => RebuildPresetItems();
+
+        Button btn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnPromptPresets"],
+            command: null,
+            iconSvg: VectorIcons.AiSparkle);
+        btn.Flyout = flyout;
+
+        refreshI18n = () => AppButton.SetText(btn, _i18n["Ai.BtnPromptPresets"]);
+        return btn;
     }
 
     private string FormatCategoryLabel(AiMemoryCategory category) =>

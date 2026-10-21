@@ -82,12 +82,10 @@ public sealed class AiAssistantPanel : Border
         Control installView = this.BuildInstallView(out Action refreshInstallView, out Action refreshInstallI18n);
         Control authView = this.BuildOAuthView(out Action refreshAuthView, out Action refreshAuthI18n);
         Control chatSubView = this.BuildReadyChatSubView(out Action refreshChatView, out Action refreshChatI18n);
-        Control brainSubView = this.BuildSecondBrainAndMcpView(out Action refreshBrainView, out Action refreshBrainI18n);
 
         stageBodyGrid.Children.Add(installView);
         stageBodyGrid.Children.Add(authView);
         stageBodyGrid.Children.Add(chatSubView);
-        stageBodyGrid.Children.Add(brainSubView);
 
         Grid.SetRow(topBar, 0);
         Grid.SetRow(statusStrip, 1);
@@ -107,8 +105,7 @@ public sealed class AiAssistantPanel : Border
 
             installView.IsVisible = isInstallStage;
             authView.IsVisible = isAuthStage;
-            chatSubView.IsVisible = isReadyOrChat && _aiVm.IsChatTabActive;
-            brainSubView.IsVisible = isReadyOrChat && _aiVm.IsSecondBrainTabActive;
+            chatSubView.IsVisible = isReadyOrChat;
         }
 
         void RefreshAllVisuals()
@@ -123,7 +120,6 @@ public sealed class AiAssistantPanel : Border
             refreshInstallView();
             refreshAuthView();
             refreshChatView();
-            refreshBrainView();
         }
 
         RefreshAllVisuals();
@@ -135,7 +131,6 @@ public sealed class AiAssistantPanel : Border
             refreshInstallI18n();
             refreshAuthI18n();
             refreshChatI18n();
-            refreshBrainI18n();
             RefreshAllVisuals();
         };
 
@@ -148,7 +143,6 @@ public sealed class AiAssistantPanel : Border
                 UpdateActiveStageVisibility();
                 refreshInstallView();
                 refreshAuthView();
-                refreshBrainView();
             }
 
             if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.StatusBannerText), StringComparison.Ordinal) ||
@@ -449,23 +443,6 @@ public sealed class AiAssistantPanel : Border
         ToolTip.SetTip(historyBtn, _i18n["Ai.HistoryTooltip"]);
         AutomationProperties.SetName(historyBtn, _i18n["Ai.HistoryTooltip"]);
 
-        Control brainTabIcon = VectorIcons.Create(VectorIcons.AiContext, 14, initialPalette.TextSecondary);
-        Button brainTabBtn = new()
-        {
-            Width = 26,
-            Height = 26,
-            CornerRadius = new CornerRadius(7),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Content = brainTabIcon,
-            Cursor = new Cursor(StandardCursorType.Hand)
-        };
-        ToolTip.SetTip(brainTabBtn, _i18n["Ai.TabBrain"]);
-        AutomationProperties.SetName(brainTabBtn, _i18n["Ai.TabBrain"]);
-        brainTabBtn.Click += (_, _) => _aiVm.ActiveSubTabIndex = _aiVm.ActiveSubTabIndex == 1 ? 0 : 1;
-
         TextBlock minimizeGlyph = new()
         {
             Text = "─",
@@ -491,7 +468,6 @@ public sealed class AiAssistantPanel : Border
         ToolTip.SetTip(minimizeBtn, _i18n["Ai.BtnToggleTip"]);
         AutomationProperties.SetName(minimizeBtn, _i18n["Ai.BtnToggleTip"]);
 
-        rightActions.Children.Add(brainTabBtn);
         rightActions.Children.Add(historyBtn);
         rightActions.Children.Add(minimizeBtn);
 
@@ -513,7 +489,6 @@ public sealed class AiAssistantPanel : Border
             bool isInstallOrAuth = stage is AiAssistantSetupStage.NeedsInstall or AiAssistantSetupStage.Installing
                 or AiAssistantSetupStage.NeedsAuth or AiAssistantSetupStage.Authenticating;
             historyBtn.IsVisible = !isInstallOrAuth;
-            brainTabBtn.IsVisible = !isInstallOrAuth;
             RebuildHistoryFlyoutItems();
         }
 
@@ -537,11 +512,6 @@ public sealed class AiAssistantPanel : Border
             VectorIcons.SetForeground(sparkleIcon, p.BrandPrimary);
             panelTitleTb.Foreground = p.TextPrimary;
 
-            bool isBrainTab = _aiVm.IsSecondBrainTabActive;
-            brainTabBtn.Background = isBrainTab ? p.BrandSubtleFill : p.SecondarySurface;
-            brainTabBtn.BorderBrush = isBrainTab ? p.BrandSubtleBorder : p.InteractiveBorder;
-            VectorIcons.SetForeground(brainTabIcon, isBrainTab ? p.BrandPrimary : p.TextSecondary);
-
             historyBtn.Background = p.SecondarySurface;
             historyBtn.BorderBrush = p.InteractiveBorder;
             VectorIcons.SetForeground(historyIcon, p.TextSecondary);
@@ -558,8 +528,6 @@ public sealed class AiAssistantPanel : Border
             panelTitleTb.Text = _i18n["Ai.PanelTitle"];
             flyoutHeaderTb.Text = _i18n["Ai.HistoryPlaceholder"];
             newConvPopupTb.Text = _i18n["Ai.BtnNewChat"];
-            ToolTip.SetTip(brainTabBtn, _i18n["Ai.TabBrain"]);
-            AutomationProperties.SetName(brainTabBtn, _i18n["Ai.TabBrain"]);
             ToolTip.SetTip(historyBtn, _i18n["Ai.HistoryTooltip"]);
             AutomationProperties.SetName(historyBtn, _i18n["Ai.HistoryTooltip"]);
             ToolTip.SetTip(minimizeBtn, _i18n["Ai.BtnToggleTip"]);
@@ -1582,224 +1550,6 @@ public sealed class AiAssistantPanel : Border
             "templates_posts" => _i18n["Ai.CtxTemplatesAndPosts"],
             _ => packId
         };
-
-    // ───────────────────────────── 2D. Second Brain & System Prompt Sub-View ─────────────────────────────
-
-    private ScrollViewer BuildSecondBrainAndMcpView(out Action refreshState, out Action refreshI18n)
-    {
-        StackPanel outerStack = new()
-        {
-            Spacing = 12,
-            Margin = new Thickness(12, 12, 12, 14)
-        };
-
-        // 1. System Prompt Header + (Kịch bản mẫu ▾) Flyout Button
-        Grid sysHeaderRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock sysTitleTb = SectionHeader.CreateLabel(
-            _theme,
-            _i18n["Ai.SystemPromptHeaderTitle"],
-            13,
-            FontWeight.Bold);
-
-        Button presetsBtn = this.CreatePromptPresetsFlyoutButton(out Action refreshPresetsTheme, out Action refreshPresetsI18n);
-
-        Grid.SetColumn(sysTitleTb, 0);
-        Grid.SetColumn(presetsBtn, 1);
-        sysHeaderRow.Children.Add(sysTitleTb);
-        sysHeaderRow.Children.Add(presetsBtn);
-
-        TextBox sysPromptBox = FormField.CreateTextBox(
-            _theme,
-            _i18n["Ai.SystemPromptPlaceholder"],
-            _aiVm.SystemPromptText,
-            multiline: true,
-            height: 110);
-
-        bool updatingSysPrompt = false;
-        sysPromptBox.TextChanged += (_, _) =>
-        {
-            if (!updatingSysPrompt)
-            {
-                _aiVm.SystemPromptText = sysPromptBox.Text ?? string.Empty;
-            }
-        };
-
-        Grid sysButtonsRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*"),
-            ColumnSpacing = 6
-        };
-
-        Button saveSysBtn = AppButton.CreatePrimary(
-            _theme,
-            _i18n["Ai.BtnSaveSystemPrompt"],
-            _aiVm.SaveSystemPromptCommand,
-            VectorIcons.CheckCircle);
-
-        Button resetSysBtn = AppButton.CreateSecondary(
-            _theme,
-            _i18n["Ai.BtnResetSystemPrompt"],
-            _aiVm.ResetSystemPromptCommand,
-            VectorIcons.Sync);
-
-        Grid.SetColumn(saveSysBtn, 0);
-        Grid.SetColumn(resetSysBtn, 1);
-        sysButtonsRow.Children.Add(saveSysBtn);
-        sysButtonsRow.Children.Add(resetSysBtn);
-
-        StackPanel sysCardStack = new()
-        {
-            Spacing = 8,
-            Children = { sysHeaderRow, sysPromptBox, sysButtonsRow }
-        };
-
-        Border sysCard = SurfaceCard.CreateInset(_theme, sysCardStack, new Thickness(12));
-        outerStack.Children.Add(sysCard);
-
-        // 2. Second Brain Memories Header + (Xóa toàn bộ bộ nhớ) Button
-        Grid memHeaderRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock memTitleTb = SectionHeader.CreateLabel(
-            _theme,
-            _i18n["Ai.BrainHeaderTitle"],
-            13,
-            FontWeight.Bold);
-
-        Button clearAllMemoriesBtn = AppButton.CreateDanger(
-            _theme,
-            _i18n["Ai.BtnClearAllMemories"],
-            _aiVm.ClearAllMemoriesCommand,
-            VectorIcons.Trash);
-        clearAllMemoriesBtn.Padding = new Thickness(8, 4);
-
-        Grid.SetColumn(memTitleTb, 0);
-        Grid.SetColumn(clearAllMemoriesBtn, 1);
-        memHeaderRow.Children.Add(memTitleTb);
-        memHeaderRow.Children.Add(clearAllMemoriesBtn);
-        outerStack.Children.Add(memHeaderRow);
-
-        StackPanel memoriesStack = new()
-        {
-            Spacing = 6
-        };
-        outerStack.Children.Add(memoriesStack);
-
-        void RebuildMemoriesList()
-        {
-            memoriesStack.Children.Clear();
-            clearAllMemoriesBtn.IsVisible = _aiVm.Memories.Count > 0;
-
-            if (_aiVm.Memories.Count == 0)
-            {
-                Border emptyBanner = EmptyStateBanner.Create(
-                    _theme,
-                    _i18n["Ai.BrainEmptyHint"],
-                    VectorIcons.AiContext,
-                    out _);
-                memoriesStack.Children.Add(emptyBanner);
-                return;
-            }
-
-            for (int i = 0; i < _aiVm.Memories.Count; i++)
-            {
-                AiMemoryRecord rec = _aiVm.Memories[i];
-                Grid topRow = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                    ColumnSpacing = 6,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                TextBlock keyTb = SectionHeader.CreateLabel(_theme, rec.Key, 12, FontWeight.Bold);
-                keyTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                Button delBtn = AppButton.CreateDanger(
-                    _theme,
-                    _i18n["Ai.BtnDeleteMemory"],
-                    command: null,
-                    iconSvg: VectorIcons.Trash);
-                delBtn.Padding = new Thickness(7, 3);
-                delBtn.Click += (_, _) =>
-                {
-                    if (_aiVm.DeleteMemoryCommand.CanExecute(rec))
-                    {
-                        _aiVm.DeleteMemoryCommand.Execute(rec);
-                    }
-                };
-
-                Grid.SetColumn(keyTb, 0);
-                Grid.SetColumn(delBtn, 1);
-                topRow.Children.Add(keyTb);
-                topRow.Children.Add(delBtn);
-
-                SelectableTextBlock bodyTb = new()
-                {
-                    Text = rec.Content,
-                    FontSize = 11.5,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = _theme.Palette.TextSecondary
-                };
-
-                StackPanel itemStack = new()
-                {
-                    Spacing = 4,
-                    Children = { topRow, bodyTb }
-                };
-
-                memoriesStack.Children.Add(SurfaceCard.CreateInset(_theme, itemStack, new Thickness(10, 8)));
-            }
-        }
-
-        _aiVm.Memories.CollectionChanged += (_, _) => RebuildMemoriesList();
-        _aiVm.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SystemPromptText), StringComparison.Ordinal))
-            {
-                if (!string.Equals(sysPromptBox.Text, _aiVm.SystemPromptText, StringComparison.Ordinal))
-                {
-                    updatingSysPrompt = true;
-                    sysPromptBox.Text = _aiVm.SystemPromptText;
-                    updatingSysPrompt = false;
-                }
-            }
-        };
-
-        refreshState = () =>
-        {
-            refreshPresetsTheme();
-            RebuildMemoriesList();
-        };
-
-        refreshI18n = () =>
-        {
-            sysTitleTb.Text = _i18n["Ai.SystemPromptHeaderTitle"];
-            sysPromptBox.PlaceholderText = _i18n["Ai.SystemPromptPlaceholder"];
-            AppButton.SetText(saveSysBtn, _i18n["Ai.BtnSaveSystemPrompt"]);
-            AppButton.SetText(resetSysBtn, _i18n["Ai.BtnResetSystemPrompt"]);
-            memTitleTb.Text = _i18n["Ai.BrainHeaderTitle"];
-            AppButton.SetText(clearAllMemoriesBtn, _i18n["Ai.BtnClearAllMemories"]);
-            refreshPresetsI18n();
-            RebuildMemoriesList();
-        };
-
-        return new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = outerStack
-        };
-    }
 
     private Border BuildWelcomeCard(out Action refreshTheme, out Action refreshI18n)
     {
