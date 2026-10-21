@@ -315,6 +315,7 @@ public sealed partial class GroupsPage : UserControl
         this._vm.TargetGroups.CollectionChanged += (_, e) =>
         {
             if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                string.IsNullOrEmpty(targetStateFilter) &&
                 string.IsNullOrEmpty(selectedTagFilterId) &&
                 e.NewItems is { Count: > 0 } &&
                 e.NewItems[0] is SavedTargetGroup updatedTg)

@@ -62,7 +62,10 @@ public sealed partial class OverviewPage : UserControl
 
     private Control BuildLayout()
     {
-        Control tab1View = this.BuildDashboardTab(out Action refreshTab1, out Action refreshTab1I18n);
+        Control tab1View = this.BuildDashboardTab(
+            out Action refreshTab1Lightweight,
+            out Action refreshLeadsWidget,
+            out Action refreshTab1I18n);
         Control tab2View = this.BuildDataAnalyticsTab(out Action refreshTab2, out Action refreshTab2I18n);
 
         SubTabBar subTabBar = new(
@@ -72,20 +75,68 @@ public sealed partial class OverviewPage : UserControl
                 new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.CheckCircle, tab2View)
             ]);
 
+        void RefreshTab2IfVisible()
+        {
+            if (subTabBar.SelectedIndex == 1)
+            {
+                refreshTab2();
+            }
+        }
+
         void RefreshAll()
         {
-            refreshTab1();
+            refreshTab1Lightweight();
+            refreshLeadsWidget();
             refreshTab2();
         }
 
         RefreshAll();
+        subTabBar.SelectedIndexChanged += (_, idx) =>
+        {
+            if (idx == 1)
+            {
+                refreshTab2();
+            }
+        };
+
         this._theme.ThemeChanged += (_, _) => RefreshAll();
-        this._vm.PropertyChanged += (_, _) => RefreshAll();
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshAll();
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshAll();
-        this._vm.ScrapedPosts.CollectionChanged += (_, _) => RefreshAll();
-        this._vm.AuditDrawer.FilteredLogs.CollectionChanged += (_, _) => RefreshAll();
-        this._vm.AuditDrawer.PropertyChanged += (_, _) => RefreshAll();
+        this._vm.PropertyChanged += (_, e) =>
+        {
+            refreshTab1Lightweight();
+            if (string.IsNullOrEmpty(e.PropertyName) ||
+                string.Equals(e.PropertyName, nameof(ShellViewModel.BuyerIntentKeywords), StringComparison.Ordinal))
+            {
+                refreshLeadsWidget();
+            }
+
+            RefreshTab2IfVisible();
+        };
+        this._vm.Accounts.CollectionChanged += (_, _) =>
+        {
+            refreshTab1Lightweight();
+            RefreshTab2IfVisible();
+        };
+        this._vm.TargetGroups.CollectionChanged += (_, _) =>
+        {
+            refreshTab1Lightweight();
+            RefreshTab2IfVisible();
+        };
+        this._vm.ScrapedPosts.CollectionChanged += (_, _) =>
+        {
+            refreshTab1Lightweight();
+            refreshLeadsWidget();
+            RefreshTab2IfVisible();
+        };
+        this._vm.AuditDrawer.FilteredLogs.CollectionChanged += (_, _) =>
+        {
+            refreshTab1Lightweight();
+            RefreshTab2IfVisible();
+        };
+        this._vm.AuditDrawer.PropertyChanged += (_, _) =>
+        {
+            refreshTab1Lightweight();
+            RefreshTab2IfVisible();
+        };
 
         this._i18n.LanguageChanged += (_, _) =>
         {
@@ -102,7 +153,10 @@ public sealed partial class OverviewPage : UserControl
         return subTabBar;
     }
 
-    private Control BuildDashboardTab(out Action refreshState, out Action refreshI18n)
+    private Control BuildDashboardTab(
+        out Action refreshLightweightState,
+        out Action refreshLeadsWidget,
+        out Action refreshI18n)
     {
         Grid pageGrid = new()
         {
@@ -369,7 +423,7 @@ public sealed partial class OverviewPage : UserControl
         Grid.SetRow(mainSplit, 2);
         pageGrid.Children.Add(mainSplit);
 
-        refreshState = () =>
+        refreshLightweightState = () =>
         {
             ThemePalette p = this._theme.Palette;
             AccountProfile? acc = this._vm.SelectedAccount;
@@ -439,8 +493,11 @@ public sealed partial class OverviewPage : UserControl
             grpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
             leadsValTb.Text = this._vm.ScrapedPosts.Count.ToString(CultureInfo.InvariantCulture);
             okValTb.Text = this._vm.AuditDrawer.SuccessCount.ToString(CultureInfo.InvariantCulture);
+        };
 
-            // Populate Latest Uncommented Buyer Leads Widget
+        refreshLeadsWidget = () =>
+        {
+            ThemePalette p = this._theme.Palette;
             StackPanel leadsListStack = new() { Spacing = 8 };
             int shownLeads = 0;
 

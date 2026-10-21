@@ -621,5 +621,12 @@
   "Settings.UpdateStatusAvailable": "New version {0} is available — released on {1}. Click below to automatically download and install.",
   "Settings.UpdateStatusDownloading": "Downloading update {0}: {1}%...",
   "Settings.UpdateStatusInstalling": "Installing update {0} and automatically restarting the application...",
-  "Settings.UpdateStatusFailed": "Could not check for updates right now: {0}"
+  "Settings.UpdateStatusFailed": "Could not check for updates right now: {0}",
+  "Common.BtnInsertVariable": "Insert Variable ▾",
+  "Common.VarGreetingLabel": "Random Greeting",
+  "Common.VarAuthorNameLabel": "Post Author Name",
+  "Common.VarGroupNameLabel": "Group Name",
+  "Common.VarDateLabel": "Current Date",
+  "Common.VarTimeLabel": "Current Time",
+  "Common.VarRandomIdLabel": "Random Code"
 }
