@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 
@@ -33,12 +34,17 @@ public static class LeadPostTableRow
         Action? onQuickReply = null,
         string? quickReplyLabel = null,
         Action? onOpenInBrowser = null,
-        string? openBrowserLabel = null)
+        string? openBrowserLabel = null,
+        string? detectedPhone = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(i18n);
         ArgumentNullException.ThrowIfNull(post);
         ArgumentNullException.ThrowIfNull(formatIntentBadge);
+
+        string? resolvedPhone = !string.IsNullOrWhiteSpace(detectedPhone)
+            ? detectedPhone
+            : LeadScoringService.Instance.ExtractPrimaryPhoneNumber(post.MessageText);
 
         Grid row = new()
         {
@@ -217,6 +223,14 @@ public static class LeadPostTableRow
             Children = { statusPill, intentPill }
         };
 
+        Border? phonePill = null;
+        if (!string.IsNullOrWhiteSpace(resolvedPhone))
+        {
+            phonePill = StatusPill.Create(theme, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}", AuditSeverity.Success);
+            phonePill.HorizontalAlignment = HorizontalAlignment.Left;
+            statusStack.Children.Add(phonePill);
+        }
+
         if (onQuickReply is not null || onOpenInBrowser is not null)
         {
             StackPanel actionRow = new()
@@ -270,6 +284,10 @@ public static class LeadPostTableRow
 
             StatusPill.SetText(intentPill, formatIntentBadge());
             StatusPill.SetText(statusPill, isCommented ? i18n["Leads.StatusCommented"] : i18n["Leads.StatusPending"]);
+            if (phonePill is not null && !string.IsNullOrWhiteSpace(resolvedPhone))
+            {
+                StatusPill.SetText(phonePill, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}");
+            }
         };
 
         Grid.SetColumn(authorCell, 0);

@@ -602,5 +602,22 @@
   "Ai.HistoryEmpty": "No previous conversations",
   "Ai.BtnDeleteConversationTip": "Delete selected conversation",
   "Ai.NewConversationDefaultTitle": "New Conversation",
-  "Settings.TabAiContext": "AI & Context"
+  "Settings.TabAiContext": "AI & Context",
+  "Leads.PhoneBadgePrefix": "Tel:",
+  "Leads.FilterHasPhone": "Has phone number",
+  "Leads.BtnCopyPhone": "Copy Phone",
+  "Log.PhoneCopied": "Copied phone number {0} to clipboard.",
+  "Publisher.PhotosAttachedCount": "{0} photos attached",
+  "Publisher.BtnAddMorePhotos": "Select Photos",
+  "Log.UploadingMultiplePhotos": "Uploading {0} attached photos for post...",
+  "Settings.UpdateCardTitle": "Application Version & Updates",
+  "Settings.UpdateCardDesc": "Check for the latest version to get new features and performance improvements.",
+  "Settings.CurrentVersionLabel": "Current version: {0}",
+  "Settings.BtnCheckUpdate": "Check for Updates",
+  "Settings.BtnDownloadUpdate": "Update to {0}",
+  "Settings.UpdateStatusIdle": "Click Check for Updates to check for the latest release.",
+  "Settings.UpdateStatusChecking": "Checking for updates...",
+  "Settings.UpdateStatusUpToDate": "You are running the latest version {0}.",
+  "Settings.UpdateStatusAvailable": "New version {0} is available — released on {1}. Click below to download the update.",
+  "Settings.UpdateStatusFailed": "Could not check for updates right now: {0}"
 }

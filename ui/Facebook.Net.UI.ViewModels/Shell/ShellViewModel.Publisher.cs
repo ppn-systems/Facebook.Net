@@ -63,9 +63,52 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial string SpintaxPreviewText { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the optional local photo path for post publishing.</summary>
+    /// <summary>Gets or sets the optional local photo path (or semicolon-separated multi-photo paths) for post publishing.</summary>
     [ObservableProperty]
     public partial string PostMediaFilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Splits a single or semicolon/pipe-delimited multi-photo path string into trimmed, deduplicated file path entries.
+    /// </summary>
+    public static List<string> SplitMediaFilePaths(string? rawPaths)
+    {
+        List<string> results = new();
+        if (string.IsNullOrWhiteSpace(rawPaths))
+        {
+            return results;
+        }
+
+        string[] parts = rawPaths.Split([';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string candidate = parts[i].Trim('"', '\'');
+            if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
+            {
+                results.Add(candidate);
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Parses a single or semicolon-delimited multi-photo path string into existing local file paths.
+    /// </summary>
+    public static List<string> ParseExistingMediaFilePaths(string? rawPaths)
+    {
+        List<string> candidates = SplitMediaFilePaths(rawPaths);
+        List<string> existing = new(candidates.Count);
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            if (File.Exists(candidates[i]))
+            {
+                existing.Add(candidates[i]);
+            }
+        }
+
+        return existing;
+    }
 
     /// <summary>Gets or sets the currently selected template in the saved content library.</summary>
     [ObservableProperty]
@@ -104,9 +147,19 @@ public sealed partial class ShellViewModel
     private string _lastDefaultPostSpintax = string.Empty;
     private string _lastDefaultBumpSpintax = string.Empty;
     private string _lastDefaultSalesCommentSpintax = string.Empty;
+    private string _lastDefaultUpdateStatusIdle = string.Empty;
 
     private void SyncLocalizedDefaultPrompts()
     {
+        string nextIdleUpdate = _context.Localization["Settings.UpdateStatusIdle"];
+        if (string.IsNullOrWhiteSpace(this.UpdateStatusMessage) ||
+            string.Equals(this.UpdateStatusMessage, _lastDefaultUpdateStatusIdle, StringComparison.Ordinal))
+        {
+            this.UpdateStatusMessage = nextIdleUpdate;
+        }
+
+        _lastDefaultUpdateStatusIdle = nextIdleUpdate;
+
         string nextPost = _context.Localization["Publisher.DefaultPostSpintax"];
         if (string.IsNullOrWhiteSpace(this.PostSpintaxText) ||
             string.Equals(this.PostSpintaxText, _lastDefaultPostSpintax, StringComparison.Ordinal))
@@ -253,22 +306,35 @@ public sealed partial class ShellViewModel
                 return;
             }
 
+            List<string> mediaFiles = ParseExistingMediaFilePaths(this.PostMediaFilePath);
             List<string>? photoIds = null;
-            if (!string.IsNullOrWhiteSpace(this.PostMediaFilePath) && File.Exists(this.PostMediaFilePath.Trim()))
+            if (mediaFiles.Count > 0)
             {
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Info,
                     _context.Localization["Audit.Cat.Post"],
-                    _context.Localization["Log.UploadingPhoto"]).ConfigureAwait(true);
+                    mediaFiles.Count == 1
+                        ? _context.Localization["Log.UploadingPhoto"]
+                        : _context.Localization.Format("Log.UploadingMultiplePhotos", mediaFiles.Count)).ConfigureAwait(true);
 
-                string uploadedFbid = await _context.CometClient
-                    .UploadUfiPhotoAsync(session, this.PostMediaFilePath.Trim(), ct)
-                    .ConfigureAwait(true);
-
-                if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                List<string> uploadedIds = new(mediaFiles.Count);
+                for (int i = 0; i < mediaFiles.Count; i++)
                 {
-                    photoIds = new List<string>(1) { uploadedFbid };
+                    ct.ThrowIfCancellationRequested();
+                    string uploadedFbid = await _context.CometClient
+                        .UploadUfiPhotoAsync(session, mediaFiles[i], ct)
+                        .ConfigureAwait(true);
+
+                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                    {
+                        uploadedIds.Add(uploadedFbid);
+                    }
+                }
+
+                if (uploadedIds.Count > 0)
+                {
+                    photoIds = uploadedIds;
                 }
             }
 
@@ -277,7 +343,9 @@ public sealed partial class ShellViewModel
 
             string accountName = this.SelectedAccount?.DisplayName ?? session.AccountUid;
             string? accountAvatar = this.SelectedAccount?.AvatarUrl;
-            string? trimmedMediaPath = string.IsNullOrWhiteSpace(this.PostMediaFilePath) ? null : this.PostMediaFilePath.Trim();
+            string? trimmedMediaPath = mediaFiles.Count > 0
+                ? string.Join(";", mediaFiles)
+                : (string.IsNullOrWhiteSpace(this.PostMediaFilePath) ? null : this.PostMediaFilePath.Trim());
 
             if (publishToFeed)
             {
@@ -638,15 +706,35 @@ public sealed partial class ShellViewModel
                 return;
             }
 
+            List<string> mediaFiles = ParseExistingMediaFilePaths(sourcePost.LocalMediaFilePath);
             List<string>? photoIds = null;
-            if (!string.IsNullOrWhiteSpace(sourcePost.LocalMediaFilePath) && File.Exists(sourcePost.LocalMediaFilePath))
+            if (mediaFiles.Count > 0)
             {
-                string uploadedFbid = await _context.CometClient
-                    .UploadUfiPhotoAsync(session, sourcePost.LocalMediaFilePath, ct)
-                    .ConfigureAwait(true);
-                if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                _ = await this.LogAuditAsync(
+                    AuditCategory.Post,
+                    AuditSeverity.Info,
+                    _context.Localization["Audit.Cat.Post"],
+                    mediaFiles.Count == 1
+                        ? _context.Localization["Log.UploadingPhoto"]
+                        : _context.Localization.Format("Log.UploadingMultiplePhotos", mediaFiles.Count)).ConfigureAwait(true);
+
+                List<string> uploadedIds = new(mediaFiles.Count);
+                for (int i = 0; i < mediaFiles.Count; i++)
                 {
-                    photoIds = new List<string>(1) { uploadedFbid };
+                    ct.ThrowIfCancellationRequested();
+                    string uploadedFbid = await _context.CometClient
+                        .UploadUfiPhotoAsync(session, mediaFiles[i], ct)
+                        .ConfigureAwait(true);
+
+                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                    {
+                        uploadedIds.Add(uploadedFbid);
+                    }
+                }
+
+                if (uploadedIds.Count > 0)
+                {
+                    photoIds = uploadedIds;
                 }
             }
 

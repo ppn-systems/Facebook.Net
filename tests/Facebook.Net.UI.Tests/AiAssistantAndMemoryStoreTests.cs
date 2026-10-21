@@ -10,6 +10,7 @@ using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Threading;
 using Facebook.Net.UI.ViewModels.AiAssistant;
 using Facebook.Net.UI.ViewModels.Services;
@@ -579,6 +580,75 @@ public sealed class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.Null(resultDelta);
         Assert.Equal("Xin chào bạn!\n", finalResponse);
         Assert.Null(resultErr);
+    }
+
+    [Fact]
+    public void LeadScoringService_ExtractVietnamesePhoneNumbers_HandlesAllObfuscations_AndRejectsFalsePositives()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
+        LeadScoringService scorer = LeadScoringService.Instance;
+
+        // 1. Dots, commas, spaces, hyphens, parentheses
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Liên hệ ngay: 098.765.4321 hoặc inbox"));
+        Assert.Equal("0912345678", scorer.ExtractPrimaryPhoneNumber("SĐT: 0912,345,678"));
+        Assert.Equal("0389998888", scorer.ExtractPrimaryPhoneNumber("Zalo (038) - 999 - 8888"));
+        Assert.Equal("0776543210", scorer.ExtractPrimaryPhoneNumber("Gọi 0 7 7 6 5 4 3 2 1 0 nhé"));
+
+        // 2. Emoji & icon separators between digit groups
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Chốt đơn 098🔥765🔥4321 giao ngay"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Hotline 098☎️765☎️4321"));
+        Assert.Equal("0912345678", scorer.ExtractPrimaryPhoneNumber("Alo 0912👉345👉678"));
+
+        // 3. Keycap emojis, circled digits, fullwidth & math bold digits
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Số zalo: 0️⃣9️⃣8️⃣7️⃣6️⃣5️⃣4️⃣3️⃣2️⃣1️⃣"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Gọi ngay: ⓪⑨⑧.⑦⑥⑤.④③②①"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Fullwidth: ０９８.７６５.４３２１"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Math bold: 𝟎𝟗𝟖𝟕𝟔𝟓𝟒𝟑𝟐𝟏"));
+
+        // 4. Letter O/o lookalikes for zero
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Sđt O987.654.321"));
+        Assert.Equal("0980123456", scorer.ExtractPrimaryPhoneNumber("Sđt 098O.123.456"));
+        Assert.Equal("0389998888", scorer.ExtractPrimaryPhoneNumber("Zalo o38,999,8888"));
+
+        // 5. Vietnamese spoken digit words
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Gọi số không chín tám 765 4321"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Alo 0987 sáu năm bốn 321 nha"));
+
+        // 6. +84 / 84 / 0084 country code normalization
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH +84 987 654 321"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH (+84) 0987.654.321"));
+        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH 0084 987 654 321"));
+
+        // 7. False-positive rejection: 15-digit Facebook IDs and prices like 090.000.000 / 100.000.000
+        Assert.Null(scorer.ExtractPrimaryPhoneNumber("https://www.facebook.com/groups/100098765432100/posts/998877665544332"));
+        Assert.Null(scorer.ExtractPrimaryPhoneNumber("Giá bán: 090.000.000 VNĐ thương lượng"));
+        Assert.Null(scorer.ExtractPrimaryPhoneNumber("Giá chỉ 100.000.000 đồng"));
+
+        // 8. Search keyword matching against obfuscated phone numbers
+        Assert.True(scorer.MatchesBuyerKeywords("Liên hệ O98🔥765🔥4321", ["0987654321"]));
+    }
+
+    [Fact]
+    public void ShellViewModel_MultiPhotoAndUpdateVersionParsing_WorkCorrectly()
+    {
+        string img1 = Path.Combine(_tempDir, "photo1.jpg");
+        string img2 = Path.Combine(_tempDir, "photo2.png");
+        string missingImg = Path.Combine(_tempDir, "missing.jpg");
+        File.WriteAllBytes(img1, [0xFF, 0xD8, 0xFF]);
+        File.WriteAllBytes(img2, [0x89, 0x50, 0x4E, 0x47]);
+
+        string rawPaths = $"{img1} ; {img2} ; {missingImg} ; {img1}";
+        List<string> existing = ShellViewModel.ParseExistingMediaFilePaths(rawPaths);
+
+        Assert.Equal(2, existing.Count);
+        Assert.Equal(img1, existing[0]);
+        Assert.Equal(img2, existing[1]);
+
+        Version v1 = ShellViewModel.TryParseReleaseVersion("v1.2.4");
+        Version v2 = ShellViewModel.TryParseReleaseVersion("v1.3.0-preview.1");
+        Assert.True(v2 > v1);
+        Assert.Equal(new Version(1, 2, 4), v1);
+        Assert.Equal(new Version(1, 3, 0), v2);
     }
 
     public void Dispose()

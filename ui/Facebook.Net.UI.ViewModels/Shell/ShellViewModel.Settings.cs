@@ -3,7 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Models;
@@ -56,6 +60,30 @@ public sealed partial class ShellViewModel
     /// <summary>Gets or sets the maximum safe human delay in seconds between actions.</summary>
     [ObservableProperty]
     public partial int MaxDelaySeconds { get; set; } = 5;
+
+    /// <summary>Gets or sets the current application version string (e.g., <c>v1.0.0</c>).</summary>
+    [ObservableProperty]
+    public partial string CurrentAppVersion { get; set; } = GetCurrentAppVersionString();
+
+    /// <summary>Gets or sets the human-readable status message of the in-app update checker.</summary>
+    [ObservableProperty]
+    public partial string UpdateStatusMessage { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a value indicating whether an update check against GitHub Releases is in progress.</summary>
+    [ObservableProperty]
+    public partial bool IsCheckingForUpdate { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a newer release is available on GitHub Releases.</summary>
+    [ObservableProperty]
+    public partial bool IsUpdateAvailable { get; set; }
+
+    /// <summary>Gets or sets the tag name of the latest GitHub release (e.g., <c>v1.1.0</c>).</summary>
+    [ObservableProperty]
+    public partial string LatestReleaseTag { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the direct installer or release page download URL for the latest GitHub release.</summary>
+    [ObservableProperty]
+    public partial string LatestReleaseDownloadUrl { get; set; } = string.Empty;
 
     partial void OnIsSidebarCollapsedChanged(bool value)
     {
@@ -516,5 +544,182 @@ public sealed partial class ShellViewModel
         }
 
         return folderName;
+    }
+
+    private static string GetCurrentAppVersionString()
+    {
+        Version? asmVersion = typeof(ShellViewModel).Assembly.GetName().Version;
+        if (asmVersion is null)
+        {
+            return "v1.0.0";
+        }
+
+        int build = asmVersion.Build >= 0 ? asmVersion.Build : 0;
+        return $"v{asmVersion.Major}.{asmVersion.Minor}.{build}";
+    }
+
+    /// <summary>
+    /// Normalizes a release tag or version string (such as <c>v1.2.3-beta.1</c>) into a comparable 3-part <see cref="Version"/>.
+    /// </summary>
+    public static Version TryParseReleaseVersion(string? rawVersion)
+    {
+        if (string.IsNullOrWhiteSpace(rawVersion))
+        {
+            return new Version(1, 0, 0);
+        }
+
+        string cleaned = rawVersion.Trim().TrimStart('v', 'V');
+        int dashIdx = cleaned.IndexOfAny(['-', '+']);
+        if (dashIdx > 0)
+        {
+            cleaned = cleaned[..dashIdx];
+        }
+
+        if (Version.TryParse(cleaned, out Version? parsed) && parsed is not null)
+        {
+            int build = parsed.Build >= 0 ? parsed.Build : 0;
+            return new Version(parsed.Major, parsed.Minor, build);
+        }
+
+        return new Version(1, 0, 0);
+    }
+
+    /// <summary>
+    /// Queries GitHub Releases (<c>ppn-systems/Facebook.Net</c>) to check if a newer application version is available.
+    /// </summary>
+    public async Task CheckForUpdatesAsync()
+    {
+        if (this.IsCheckingForUpdate)
+        {
+            return;
+        }
+
+        this.IsCheckingForUpdate = true;
+        this.UpdateStatusMessage = _context.Localization["Settings.UpdateStatusChecking"];
+
+        try
+        {
+            using HttpClient http = new()
+            {
+                Timeout = TimeSpan.FromSeconds(15)
+            };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+            const string ReleasesPageFallback = "https://github.com/ppn-systems/Facebook.Net/releases";
+            string json = await http
+                .GetStringAsync(new Uri("https://api.github.com/repos/ppn-systems/Facebook.Net/releases?per_page=5"))
+                .ConfigureAwait(true);
+
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                this.IsUpdateAvailable = false;
+                this.LatestReleaseTag = this.CurrentAppVersion;
+                this.LatestReleaseDownloadUrl = ReleasesPageFallback;
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
+                return;
+            }
+
+            JsonElement? chosenRelease = null;
+            foreach (JsonElement item in doc.RootElement.EnumerateArray())
+            {
+                bool isDraft = item.TryGetProperty("draft", out JsonElement draftProp) && draftProp.ValueKind == JsonValueKind.True;
+                if (!isDraft && item.TryGetProperty("tag_name", out JsonElement tagCheck) && !string.IsNullOrWhiteSpace(tagCheck.GetString()))
+                {
+                    chosenRelease = item;
+                    break;
+                }
+            }
+
+            chosenRelease ??= doc.RootElement[0];
+            JsonElement rel = chosenRelease.Value;
+
+            string tagName = rel.TryGetProperty("tag_name", out JsonElement tagEl) && !string.IsNullOrWhiteSpace(tagEl.GetString())
+                ? tagEl.GetString()!.Trim()
+                : this.CurrentAppVersion;
+
+            string htmlUrl = rel.TryGetProperty("html_url", out JsonElement htmlEl) && !string.IsNullOrWhiteSpace(htmlEl.GetString())
+                ? htmlEl.GetString()!.Trim()
+                : ReleasesPageFallback;
+
+            string rawDate = string.Empty;
+            if (rel.TryGetProperty("published_at", out JsonElement pubEl) && !string.IsNullOrWhiteSpace(pubEl.GetString()))
+            {
+                rawDate = pubEl.GetString()!;
+            }
+            else if (rel.TryGetProperty("created_at", out JsonElement createdEl) && !string.IsNullOrWhiteSpace(createdEl.GetString()))
+            {
+                rawDate = createdEl.GetString()!;
+            }
+
+            string dateText = DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset dto)
+                ? dto.ToLocalTime().ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
+                : "—";
+
+            string preferredExt = OperatingSystem.IsMacOS() ? ".dmg" : ".msi";
+            string? assetUrl = null;
+            if (rel.TryGetProperty("assets", out JsonElement assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement asset in assetsEl.EnumerateArray())
+                {
+                    string assetName = asset.TryGetProperty("name", out JsonElement nameEl) ? (nameEl.GetString() ?? string.Empty) : string.Empty;
+                    string dlUrl = asset.TryGetProperty("browser_download_url", out JsonElement dlEl) ? (dlEl.GetString() ?? string.Empty) : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(dlUrl) && assetName.EndsWith(preferredExt, StringComparison.OrdinalIgnoreCase))
+                    {
+                        assetUrl = dlUrl;
+                        break;
+                    }
+                }
+            }
+
+            Version remoteVersion = TryParseReleaseVersion(tagName);
+            Version currentVersion = TryParseReleaseVersion(this.CurrentAppVersion);
+
+            if (remoteVersion > currentVersion)
+            {
+                this.IsUpdateAvailable = true;
+                this.LatestReleaseTag = tagName;
+                this.LatestReleaseDownloadUrl = assetUrl ?? htmlUrl;
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusAvailable", tagName, dateText);
+            }
+            else
+            {
+                this.IsUpdateAvailable = false;
+                this.LatestReleaseTag = tagName;
+                this.LatestReleaseDownloadUrl = htmlUrl;
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
+            }
+        }
+        catch (Exception ex)
+        {
+            this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusFailed", ex.Message);
+        }
+        finally
+        {
+            this.IsCheckingForUpdate = false;
+        }
+    }
+
+    /// <summary>
+    /// Opens the latest release download URL or GitHub Releases page in the system default browser.
+    /// </summary>
+    public void OpenUpdateDownloadPage()
+    {
+        string url = !string.IsNullOrWhiteSpace(this.LatestReleaseDownloadUrl)
+            ? this.LatestReleaseDownloadUrl
+            : "https://github.com/ppn-systems/Facebook.Net/releases";
+
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo(url)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore shell launch failures in headless environments
+        }
     }
 }

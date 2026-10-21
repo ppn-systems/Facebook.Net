@@ -62,9 +62,13 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial int ScrapeMaxGroupsPerCycle { get; set; } = 30;
 
-    /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented).</summary>
+    /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented, <c>3</c> = Has Phone).</summary>
     [ObservableProperty]
     public partial int LeadCommentStatusFilter { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether to filter the local DB leads table to only posts containing a Vietnamese phone number.</summary>
+    [ObservableProperty]
+    public partial bool FilterOnlyPostsWithPhone { get; set; }
 
     /// <summary>Gets or sets the visually selected post card from <see cref="ScrapedPosts"/> for sales commenting.</summary>
     [ObservableProperty]
@@ -138,6 +142,9 @@ public sealed partial class ShellViewModel
     partial void OnLeadCommentStatusFilterChanged(int value) =>
         this.FilterCachedPostsFromDb();
 
+    partial void OnFilterOnlyPostsWithPhoneChanged(bool value) =>
+        this.FilterCachedPostsFromDb();
+
     partial void OnAutoBackgroundScrapeEnabledChanged(bool value)
     {
         if (!this._isLoadingSettings)
@@ -164,6 +171,18 @@ public sealed partial class ShellViewModel
     /// </summary>
     public bool IsPostCommented(string? postId) =>
         !string.IsNullOrWhiteSpace(postId) && _commentedPostIds.Contains(postId);
+
+    /// <summary>
+    /// Extracts the primary normalized Vietnamese phone number from a scraped post's message text, or <see langword="null"/> if none is found.
+    /// </summary>
+    public string? ExtractPostPhoneNumber(PostSummary? post) =>
+        post is null ? null : _context.LeadScoring.ExtractPrimaryPhoneNumber(post.MessageText);
+
+    /// <summary>
+    /// Extracts all normalized Vietnamese phone numbers from a scraped post's message text.
+    /// </summary>
+    public IReadOnlyList<string> ExtractAllPostPhoneNumbers(PostSummary? post) =>
+        post is null ? [] : _context.LeadScoring.ExtractVietnamesePhoneNumbers(post.MessageText);
 
     /// <summary>
     /// Queries stored posts from the local SQLite database (<c>scraped_posts</c>) and applies the local search/filter without calling Facebook.
@@ -226,6 +245,12 @@ public sealed partial class ShellViewModel
             }
 
             if (this.LeadCommentStatusFilter == 2 && !isCommented)
+            {
+                continue;
+            }
+
+            if ((this.FilterOnlyPostsWithPhone || this.LeadCommentStatusFilter == 3) &&
+                string.IsNullOrWhiteSpace(this.ExtractPostPhoneNumber(post)))
             {
                 continue;
             }
