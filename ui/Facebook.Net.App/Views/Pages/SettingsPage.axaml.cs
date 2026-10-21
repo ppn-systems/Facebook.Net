@@ -330,7 +330,7 @@ public sealed partial class SettingsPage : UserControl
 
         minDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(minDelayBox.Value ?? 15);
+            int next = Math.Clamp((int)(minDelayBox.Value ?? 2), 0, 600);
             if (_vm.MinDelaySeconds != next)
             {
                 _vm.MinDelaySeconds = next;
@@ -339,7 +339,7 @@ public sealed partial class SettingsPage : UserControl
 
         maxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(maxDelayBox.Value ?? 45);
+            int next = Math.Clamp((int)(maxDelayBox.Value ?? 5), 0, 1200);
             if (_vm.MaxDelaySeconds != next)
             {
                 _vm.MaxDelaySeconds = next;
@@ -364,12 +364,10 @@ public sealed partial class SettingsPage : UserControl
             out NumericUpDown scrapeMinDelayBox,
             out TextBlock scrapeMaxDelayPrefix,
             out NumericUpDown scrapeMaxDelayBox);
-        scrapeMinDelayBox.Minimum = 2;
-        scrapeMaxDelayBox.Minimum = 2;
 
         scrapeMinDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(scrapeMinDelayBox.Value ?? 8);
+            int next = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 1), 0, 600);
             if (_vm.ScrapeDelayMinSeconds != next)
             {
                 _vm.ScrapeDelayMinSeconds = next;
@@ -378,7 +376,7 @@ public sealed partial class SettingsPage : UserControl
 
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(scrapeMaxDelayBox.Value ?? 18);
+            int next = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 2), 0, 1200);
             if (_vm.ScrapeDelayMaxSeconds != next)
             {
                 _vm.ScrapeDelayMaxSeconds = next;

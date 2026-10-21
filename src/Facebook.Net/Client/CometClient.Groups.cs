@@ -26,29 +26,12 @@ public sealed partial class CometClient
         string? nextCursor = cursor;
         bool hasNext = true;
 
-        if (cursor is null)
-        {
-            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
-                session,
-                $"/search/groups/?q={Uri.EscapeDataString(keyword)}",
-                ct).ConfigureAwait(false);
-
-            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
-            {
-                GroupSummary item = ssrGroups.Items[i];
-                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
-                {
-                    combined.Add(item);
-                }
-            }
-        }
-
         int maxPages = cursor is null && count > 5 ? 5 : 1;
         for (int page = 0; page < maxPages && combined.Count < count && (page == 0 || (hasNext && !string.IsNullOrWhiteSpace(nextCursor))); page++)
         {
             if (page > 0)
             {
-                await Task.Delay(250, ct).ConfigureAwait(false);
+                await Task.Delay(40, ct).ConfigureAwait(false);
             }
 
             string? currentCursor = nextCursor;
@@ -130,6 +113,23 @@ public sealed partial class CometClient
             }
         }
 
+        if (cursor is null && combined.Count == 0)
+        {
+            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
+                session,
+                $"/search/groups/?q={Uri.EscapeDataString(keyword)}",
+                ct).ConfigureAwait(false);
+
+            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
+            {
+                GroupSummary item = ssrGroups.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    combined.Add(item);
+                }
+            }
+        }
+
         return new PagedResult<GroupSummary>(combined, nextCursor, hasNext);
     }
 
@@ -143,32 +143,12 @@ public sealed partial class CometClient
         string? nextCursor = cursor;
         bool hasNext = true;
 
-        if (cursor is null)
-        {
-            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
-                session,
-                "/groups/joins?nav_source=tab&ordering=viewer_added",
-                ct).ConfigureAwait(false);
-
-            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
-            {
-                GroupSummary item = ssrGroups.Items[i];
-                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
-                {
-                    GroupSummary normalized = item.MembershipState == GroupMembershipState.Unknown
-                        ? item with { MembershipState = GroupMembershipState.Member }
-                        : item;
-                    combined.Add(normalized);
-                }
-            }
-        }
-
         int maxPages = cursor is null && count > 20 ? 25 : 1;
         for (int page = 0; page < maxPages && combined.Count < count && (page == 0 || (hasNext && !string.IsNullOrWhiteSpace(nextCursor))); page++)
         {
             if (page > 0)
             {
-                await Task.Delay(200, ct).ConfigureAwait(false);
+                await Task.Delay(40, ct).ConfigureAwait(false);
             }
 
             string? currentCursor = nextCursor;
@@ -226,6 +206,26 @@ public sealed partial class CometClient
             }
         }
 
+        if (cursor is null && combined.Count == 0)
+        {
+            PagedResult<GroupSummary> ssrGroups = await this.TryFetchGroupsSsrAsync(
+                session,
+                "/groups/joins?nav_source=tab&ordering=viewer_added",
+                ct).ConfigureAwait(false);
+
+            for (int i = 0; i < ssrGroups.Items.Count && combined.Count < count; i++)
+            {
+                GroupSummary item = ssrGroups.Items[i];
+                if (!string.Equals(item.Name, item.GroupId, StringComparison.Ordinal) && seenIds.Add(item.GroupId))
+                {
+                    GroupSummary normalized = item.MembershipState == GroupMembershipState.Unknown
+                        ? item with { MembershipState = GroupMembershipState.Member }
+                        : item;
+                    combined.Add(normalized);
+                }
+            }
+        }
+
         return new PagedResult<GroupSummary>(combined, nextCursor, hasNext);
     }
 
@@ -278,7 +278,7 @@ public sealed partial class CometClient
             firstPage = await this.FetchGroupFeedPageAsync(session, groupId, count, cursor: null, activeSorting, ct).ConfigureAwait(false);
         }
 
-        if (cursor is null && firstPage.Items.Count < count)
+        if (cursor is null && firstPage.Items.Count == 0)
         {
             PagedResult<PostSummary> ssrPage = await this.TryFetchGroupSsrStoriesAsync(session, groupId, activeSorting, ct).ConfigureAwait(false);
             if (ssrPage.Items.Count > 0)
@@ -335,7 +335,7 @@ public sealed partial class CometClient
         {
             try
             {
-                await Task.Delay(350, ct).ConfigureAwait(false);
+                await Task.Delay(40, ct).ConfigureAwait(false);
                 PagedResult<PostSummary> nextPage = await this.FetchGroupFeedPageAsync(
                     session,
                     groupId,
@@ -487,7 +487,11 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/groups/{groupId}"), ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/groups/{groupId}"), ct).ConfigureAwait(false);
+        }
+
         SessionMaterial material = session.CurrentMaterial
             ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
@@ -598,8 +602,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{groupId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{groupId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -627,8 +636,13 @@ public sealed partial class CometClient
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
         ArgumentNullException.ThrowIfNull(friendUids);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{groupId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{groupId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {

@@ -51,11 +51,11 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the minimum safe human delay in seconds between actions.</summary>
     [ObservableProperty]
-    public partial int MinDelaySeconds { get; set; } = 15;
+    public partial int MinDelaySeconds { get; set; } = 2;
 
     /// <summary>Gets or sets the maximum safe human delay in seconds between actions.</summary>
     [ObservableProperty]
-    public partial int MaxDelaySeconds { get; set; } = 45;
+    public partial int MaxDelaySeconds { get; set; } = 5;
 
     partial void OnIsSidebarCollapsedChanged(bool value)
     {

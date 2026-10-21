@@ -71,8 +71,7 @@ public sealed class CometClientTests
             photoIds: new List<string> { "111222333" });
 
         Assert.Equal("987654321", postId);
-        Assert.Contains("https://www.facebook.com/555666777", session.NavigatedUrls);
-        Assert.Contains("https://www.facebook.com/987654321", session.NavigatedUrls);
+        Assert.Empty(session.NavigatedUrls);
         Assert.Contains(ProtocolConstants.Queries.PublishStoryCreateDocId, session.LastPostedBody, StringComparison.Ordinal);
         Assert.Contains("555666777", session.LastPostedBody, StringComparison.Ordinal);
     }
@@ -92,8 +91,7 @@ public sealed class CometClientTests
             attachmentFbid: "photo_999");
 
         Assert.Equal("777888999", commentId);
-        Assert.Contains("https://www.facebook.com/12345", session.NavigatedUrls);
-        Assert.Contains("https://www.facebook.com/777888999", session.NavigatedUrls);
+        Assert.Empty(session.NavigatedUrls);
         Assert.Contains(ProtocolConstants.Queries.CreateCommentDocId, session.LastPostedBody, StringComparison.Ordinal);
     }
 

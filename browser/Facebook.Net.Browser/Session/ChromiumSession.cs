@@ -396,12 +396,12 @@ public sealed partial class ChromiumSession : IBrowserSession
         }
 
         string resolvedFbDtsg = snapshot.FbDtsg;
-        if (string.IsNullOrWhiteSpace(resolvedFbDtsg))
+        if (string.IsNullOrWhiteSpace(resolvedFbDtsg) && !string.IsNullOrWhiteSpace(snapshot.Uid))
         {
-            // Poll the active browser tab while Comet hydrates DTSGInitialData
-            for (int attempt = 0; attempt < 8 && string.IsNullOrWhiteSpace(resolvedFbDtsg); attempt++)
+            // Poll the active browser tab only when already on facebook.com while Comet hydrates DTSGInitialData
+            for (int attempt = 0; attempt < 4 && string.IsNullOrWhiteSpace(resolvedFbDtsg); attempt++)
             {
-                await Task.Delay(250, ct).ConfigureAwait(false);
+                await Task.Delay(120, ct).ConfigureAwait(false);
                 try
                 {
                     string retryJson = await this.EvaluateStringAsync(extractDomJs, awaitPromise: false, ct).ConfigureAwait(false);

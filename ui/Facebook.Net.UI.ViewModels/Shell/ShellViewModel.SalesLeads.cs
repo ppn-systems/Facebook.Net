@@ -48,19 +48,19 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the interval in minutes between background auto-scrape runs (1..120).</summary>
     [ObservableProperty]
-    public partial int AutoScrapeIntervalMinutes { get; set; } = 10;
+    public partial int AutoScrapeIntervalMinutes { get; set; } = 5;
 
-    /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMinSeconds { get; set; } = 8;
+    public partial int ScrapeDelayMinSeconds { get; set; } = 1;
 
-    /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMaxSeconds { get; set; } = 18;
+    public partial int ScrapeDelayMaxSeconds { get; set; } = 2;
 
-    /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..50).</summary>
+    /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..500).</summary>
     [ObservableProperty]
-    public partial int ScrapeMaxGroupsPerCycle { get; set; } = 5;
+    public partial int ScrapeMaxGroupsPerCycle { get; set; } = 30;
 
     /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented).</summary>
     [ObservableProperty]
@@ -345,7 +345,7 @@ public sealed partial class ShellViewModel
         }
 
         // Apply Round-Robin batch limit (ScrapeMaxGroupsPerCycle) to prevent anti-ban rate-limit spikes when many groups are enabled
-        int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
+        int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 30 : this.ScrapeMaxGroupsPerCycle, 1, 500);
         if (targets.Count > maxPerCycle)
         {
             List<(string GroupId, string GroupName, string? GroupAvatarUrl)> batch = new(maxPerCycle);
@@ -646,8 +646,8 @@ public sealed partial class ShellViewModel
 
     private async Task WaitScraperRateLimitDelayAsync(string nextGroupName, CancellationToken ct)
     {
-        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds <= 0 ? 8 : this.ScrapeDelayMinSeconds, 1, 600);
-        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds <= 0 ? 18 : this.ScrapeDelayMaxSeconds, minSec, 600);
+        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
+        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds, minSec, 600);
         TimeSpan delay = HumanJitter.NextGaussianDelay(minSec, maxSec);
         if (delay <= TimeSpan.Zero)
         {

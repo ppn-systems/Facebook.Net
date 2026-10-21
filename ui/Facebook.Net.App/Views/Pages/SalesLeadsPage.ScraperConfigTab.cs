@@ -283,9 +283,9 @@ public sealed partial class SalesLeadsPage
             out NumericUpDown scrapeMaxDelayBox);
 
         scrapeMinDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMinSeconds = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 8), 2, 600);
+            this._vm.ScrapeDelayMinSeconds = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 1), 0, 600);
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMaxSeconds = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 18), this._vm.ScrapeDelayMinSeconds, 600);
+            this._vm.ScrapeDelayMaxSeconds = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 2), this._vm.ScrapeDelayMinSeconds, 600);
 
         StackPanel scrapeDelayField = FormField.CreateLabeled(
             this._theme,
@@ -321,13 +321,13 @@ public sealed partial class SalesLeadsPage
 
         TextBox maxGroupsCycleBox = FormField.CreateTextBox(
             this._theme,
-            "5",
+            "30",
             this._vm.ScrapeMaxGroupsPerCycle.ToString(CultureInfo.InvariantCulture));
         maxGroupsCycleBox.TextChanged += (_, _) =>
         {
             if (int.TryParse(maxGroupsCycleBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int val))
             {
-                this._vm.ScrapeMaxGroupsPerCycle = Math.Clamp(val, 1, 50);
+                this._vm.ScrapeMaxGroupsPerCycle = Math.Clamp(val, 1, 500);
             }
         };
 
@@ -339,7 +339,7 @@ public sealed partial class SalesLeadsPage
 
         TextBox intervalMinBox = FormField.CreateTextBox(
             this._theme,
-            "10",
+            "5",
             this._vm.AutoScrapeIntervalMinutes.ToString(CultureInfo.InvariantCulture));
         intervalMinBox.TextChanged += (_, _) =>
         {
