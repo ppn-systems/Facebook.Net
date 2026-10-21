@@ -140,6 +140,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           dotnet tool install --global wix --version 5.0.2
           $env:PATH = "$HOME\.dotnet\tools;$env:PATH"
+          wix extension add --global WixToolset.UI.wixext/5.0.2
 
           New-Item -ItemType Directory -Force -Path "./dist/win-x64" | Out-Null
           $publishDir = (Resolve-Path "./publish/win-x64").Path
@@ -147,7 +148,8 @@ jobs:
           $msiVersion = "${{ steps.release.outputs.msi_version }}"
 
           $wxsContent = @"
-          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+               xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
             <Package Name="Facebook One Client"
                      Manufacturer="PPN Corporation"
                      Version="$msiVersion"
@@ -158,6 +160,26 @@ jobs:
               <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
               <Icon Id="AppIcon.ico" SourceFile="$iconPath" />
               <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+              <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+              <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Facebook One Client" />
+              <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+              <ui:WixUI Id="WixUI_InstallDir" />
+
+              <CustomAction Id="LaunchInstalledApp"
+                            Directory="INSTALLFOLDER"
+                            ExeCommand="[INSTALLFOLDER]FacebookOneClient.exe"
+                            Execute="immediate"
+                            Impersonate="yes"
+                            Return="asyncNoWait" />
+
+              <UI>
+                <Publish Dialog="ExitDialog"
+                         Control="Finish"
+                         Event="DoAction"
+                         Value="LaunchInstalledApp"
+                         Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+              </UI>
 
               <StandardDirectory Id="ProgramFiles64Folder">
                 <Directory Id="INSTALLFOLDER" Name="Facebook One Client">
@@ -220,7 +242,7 @@ jobs:
           "@
 
           Set-Content -Path "./installer.wxs" -Value $wxsContent -Encoding UTF8
-          wix build "./installer.wxs" -arch x64 -o "./dist/win-x64/FacebookOneClient-win-x64.msi"
+          wix build "./installer.wxs" -ext WixToolset.UI.wixext -arch x64 -o "./dist/win-x64/FacebookOneClient-win-x64.msi"
           Get-ChildItem "./dist/win-x64"
 
       - name: Upload Windows Installer Artifact
