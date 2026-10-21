@@ -31,9 +31,9 @@ public static class DelayRangeSelector
         TextBlock minPrefix = SectionHeader.CreateLabel(theme, initialMinLabel, 12);
         NumericUpDown minBox = new()
         {
-            Minimum = 1,
+            Minimum = 0,
             Maximum = 600,
-            Increment = 5,
+            Increment = 1,
             Value = initialMinSeconds,
             FormatString = "0",
             Width = 130,
@@ -43,9 +43,9 @@ public static class DelayRangeSelector
         TextBlock maxPrefix = SectionHeader.CreateLabel(theme, initialMaxLabel, 12);
         NumericUpDown maxBox = new()
         {
-            Minimum = 1,
+            Minimum = 0,
             Maximum = 1200,
-            Increment = 5,
+            Increment = 1,
             Value = initialMaxSeconds,
             FormatString = "0",
             Width = 130,

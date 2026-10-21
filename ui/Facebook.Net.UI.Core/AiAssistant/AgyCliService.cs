@@ -25,8 +25,8 @@ public sealed record AgyProposedAction(
     string SummaryText,
     string? ContentText = null,
     int TargetGroupCount = 0,
-    int MinDelaySeconds = 30,
-    int MaxDelaySeconds = 60,
+    int MinDelaySeconds = 2,
+    int MaxDelaySeconds = 5,
     string? GroupKeyword = null);
 
 /// <summary>
@@ -1184,8 +1184,8 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                     SummaryText: FirstLine(rawResponse.Trim()),
                     ContentText: rawResponse.Trim(),
                     TargetGroupCount: clampedNaturalCount,
-                    MinDelaySeconds: 30,
-                    MaxDelaySeconds: 60,
+                    MinDelaySeconds: 2,
+                    MaxDelaySeconds: 5,
                     GroupKeyword: null);
                 return (rawResponse.Trim(), fallbackAction);
             }
@@ -1197,8 +1197,8 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         string paramsRaw = match.Groups["params"].Value;
 
         int groupCount = 0;
-        int minDelay = 30;
-        int maxDelay = 60;
+        int minDelay = 2;
+        int maxDelay = 5;
         string? content = null;
         string? keyword = null;
 
@@ -1223,12 +1223,12 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             else if (key.Equals("minDelay", StringComparison.OrdinalIgnoreCase) &&
                      int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedMin))
             {
-                minDelay = Math.Clamp(parsedMin, 1, 3600);
+                minDelay = Math.Clamp(parsedMin, 0, 3600);
             }
             else if (key.Equals("maxDelay", StringComparison.OrdinalIgnoreCase) &&
                      int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedMax))
             {
-                maxDelay = Math.Clamp(parsedMax, 1, 3600);
+                maxDelay = Math.Clamp(parsedMax, 0, 3600);
             }
             else if (key.Equals("content", StringComparison.OrdinalIgnoreCase))
             {

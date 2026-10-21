@@ -147,6 +147,13 @@ jobs:
           $iconPath = (Resolve-Path "./ui/Facebook.Net.App/Assets/app.ico").Path
           $msiVersion = "${{ steps.release.outputs.msi_version }}"
 
+          # Compile standalone native Windows uninstaller launcher (uninstall.exe)
+          $cscPath = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $cscPath /nologo /target:winexe /optimize+ /platform:x64 `
+            /win32icon:"$iconPath" `
+            /out:"$publishDir\uninstall.exe" `
+            "./scripts/UninstallLauncher.cs"
+
           $wxsContent = @"
           <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
                xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
@@ -160,6 +167,9 @@ jobs:
               <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
               <Icon Id="AppIcon.ico" SourceFile="$iconPath" />
               <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+              <Property Id="ARPURLINFOABOUT" Value="https://github.com/ppn-systems/Facebook.Net" />
+              <Property Id="ARPHELPLINK" Value="https://github.com/ppn-systems/Facebook.Net/issues" />
+              <Property Id="ARPCOMMENTS" Value="Facebook One Client Desktop &amp; Companion AI MCP Server" />
               <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
               <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Facebook One Client" />
               <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
@@ -187,10 +197,19 @@ jobs:
                     <File Id="FacebookOneClientExe"
                           Source="$publishDir\FacebookOneClient.exe"
                           KeyPath="yes" />
+                    <RegistryKey Root="HKLM" Key="Software\PPNCorporation\FacebookOneClient">
+                      <RegistryValue Name="ProductCode" Type="string" Value="[ProductCode]" />
+                      <RegistryValue Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" />
+                    </RegistryKey>
                   </Component>
                   <Component Id="McpServerExecutableComponent" Guid="74B90C21-6A18-4D53-9B2E-1C8E43A9F504">
                     <File Id="FacebookNetMcpExe"
                           Source="$publishDir\Facebook.Net.Mcp.exe"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="UninstallerExecutableComponent" Guid="A6F40B82-3D59-4E91-B720-5C8E19A4D263">
+                    <File Id="UninstallExe"
+                          Source="$publishDir\uninstall.exe"
                           KeyPath="yes" />
                   </Component>
                 </Directory>
@@ -202,6 +221,11 @@ jobs:
                     <Shortcut Id="StartMenuShortcut"
                               Name="Facebook One Client"
                               Target="[INSTALLFOLDER]FacebookOneClient.exe"
+                              WorkingDirectory="INSTALLFOLDER"
+                              Icon="AppIcon.ico" />
+                    <Shortcut Id="StartMenuUninstallShortcut"
+                              Name="Uninstall Facebook One Client"
+                              Target="[INSTALLFOLDER]uninstall.exe"
                               WorkingDirectory="INSTALLFOLDER"
                               Icon="AppIcon.ico" />
                     <RemoveFolder Id="RemoveAppProgramMenuDir" On="uninstall" />
@@ -234,6 +258,7 @@ jobs:
               <Feature Id="Complete" Title="Facebook One Client &amp; AI MCP Server" Level="1">
                 <ComponentRef Id="MainExecutableComponent" />
                 <ComponentRef Id="McpServerExecutableComponent" />
+                <ComponentRef Id="UninstallerExecutableComponent" />
                 <ComponentRef Id="StartMenuShortcutComponent" />
                 <ComponentRef Id="DesktopShortcutComponent" />
               </Feature>

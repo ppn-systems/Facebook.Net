@@ -37,7 +37,7 @@ public sealed partial class CometClient : ICometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!string.IsNullOrWhiteSpace(request.PreNavigateUrl))
+        if (!string.IsNullOrWhiteSpace(request.PreNavigateUrl) && session.CurrentMaterial is null)
         {
             string fullPreUrl = ResolveFullUrl(request.PreNavigateUrl);
             await session.NavigateAsync(fullPreUrl, ct).ConfigureAwait(false);
@@ -66,12 +66,6 @@ public sealed partial class CometClient : ICometClient
             {
                 material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
                 continue;
-            }
-
-            if (result.IsSuccess && !string.IsNullOrWhiteSpace(request.PostNavigateUrl))
-            {
-                string fullPostUrl = ResolveFullUrl(request.PostNavigateUrl);
-                await session.NavigateAsync(fullPostUrl, ct).ConfigureAwait(false);
             }
 
             return result;

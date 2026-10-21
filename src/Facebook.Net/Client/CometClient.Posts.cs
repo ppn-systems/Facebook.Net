@@ -33,9 +33,14 @@ public sealed partial class CometClient
             throw new ArgumentException("Target group ID is required when publishing to a group.", nameof(targetGroupId));
         }
 
-        string preNavUrl = target == ComposerTarget.Group ? $"/{targetGroupId}" : "/";
-        await session.NavigateAsync(ResolveFullUrl(preNavUrl), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            string preNavUrl = target == ComposerTarget.Group ? $"/{targetGroupId}" : "/";
+            await session.NavigateAsync(ResolveFullUrl(preNavUrl), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string spunText = PayloadBuilder.SpinText(messageText);
         string sessionId = PayloadBuilder.NewUuidV4();
@@ -51,11 +56,6 @@ public sealed partial class CometClient
         string? createdPostId = ResponseParser.FindFirstStringProperty(res, "post_id")
             ?? ResponseParser.FindFirstStringProperty(res, "legacy_story_hideable_id");
 
-        if (!string.IsNullOrWhiteSpace(createdPostId))
-        {
-            await session.NavigateAsync(ResolveFullUrl($"/{createdPostId}"), ct).ConfigureAwait(false);
-        }
-
         return createdPostId;
     }
 
@@ -70,8 +70,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(postId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string postUrl = ResolveFullUrl($"/{postId}");
         string previewVars = BuildJson(w =>
@@ -115,8 +120,13 @@ public sealed partial class CometClient
         ArgumentException.ThrowIfNullOrWhiteSpace(postId);
         ArgumentException.ThrowIfNullOrWhiteSpace(messageText);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string spunText = PayloadBuilder.SpinText(messageText);
         string feedbackId = ProtocolCodec.EncodeFeedbackId(postId);
@@ -167,11 +177,6 @@ public sealed partial class CometClient
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         string? commentId = ExtractCreatedCommentId(res);
 
-        if (!string.IsNullOrWhiteSpace(commentId))
-        {
-            await session.NavigateAsync(ResolveFullUrl($"/{commentId}"), ct).ConfigureAwait(false);
-        }
-
         return commentId;
     }
 
@@ -181,8 +186,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(postId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string feedbackId = ProtocolCodec.EncodeFeedbackId(postId);
         string reactionId = ProtocolCodec.GetReactionId(reaction);
@@ -332,8 +342,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(postId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{postId}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string storyId = ProtocolCodec.EncodeSinglePostStoryId(material.Uid, postId);
         string variablesJson = BuildJson(w =>

@@ -52,19 +52,19 @@ public sealed record AppConfig(
     PreferredBrowserKind PreferredBrowser = PreferredBrowserKind.AutoDetect,
     string? CustomBrowserExecutablePath = null,
     bool RunBrowserHeadless = false,
-    int MinDelaySeconds = 15,
-    int MaxDelaySeconds = 45,
+    int MinDelaySeconds = 2,
+    int MaxDelaySeconds = 5,
     bool IsAuditDrawerExpanded = false,
     bool IsSidebarCollapsed = false,
     string? LastSelectedAccountUid = null,
     string ScrapeFilterKeywords = "",
     int ScrapePostsPerGroup = 15,
     bool AutoBackgroundScrapeEnabled = false,
-    int AutoScrapeIntervalMinutes = 10,
+    int AutoScrapeIntervalMinutes = 5,
     bool ScrapeAllEnabledTargetGroups = true,
-    int ScrapeDelayMinSeconds = 8,
-    int ScrapeDelayMaxSeconds = 18,
-    int ScrapeMaxGroupsPerCycle = 5,
+    int ScrapeDelayMinSeconds = 1,
+    int ScrapeDelayMaxSeconds = 2,
+    int ScrapeMaxGroupsPerCycle = 30,
     string AiSystemPrompt = "",
     string AiModel = AppConfig.DefaultAiModel,
     string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort)
@@ -93,17 +93,17 @@ public sealed record AppConfig(
     public const string DefaultAiReasoningEffort = "low";
 
     /// <summary>
-    /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>1 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
+    /// Returns a normalized copy of this configuration ensuring valid delay bounds (<c>0 &lt;= MinDelaySeconds &lt;= MaxDelaySeconds &lt;= 3600</c>).
     /// </summary>
     public AppConfig Normalize()
     {
-        int clampedMin = Math.Clamp(this.MinDelaySeconds, 1, 3600);
+        int clampedMin = Math.Clamp(this.MinDelaySeconds, 0, 3600);
         int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
         int clampedPerGroup = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
-        int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 10 : this.AutoScrapeIntervalMinutes, 1, 120);
-        int clampedScrapeMin = Math.Clamp(this.ScrapeDelayMinSeconds <= 0 ? 8 : this.ScrapeDelayMinSeconds, 2, 600);
-        int clampedScrapeMax = Math.Clamp(this.ScrapeDelayMaxSeconds <= 0 ? 18 : this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600);
-        int clampedMaxGroups = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
+        int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 5 : this.AutoScrapeIntervalMinutes, 1, 120);
+        int clampedScrapeMin = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
+        int clampedScrapeMax = Math.Clamp(this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600);
+        int clampedMaxGroups = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 30 : this.ScrapeMaxGroupsPerCycle, 1, 500);
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
@@ -513,6 +513,21 @@ public sealed class AppSettingsService : IAppSettingsService
                 AppConfig? loaded = JsonSerializer.Deserialize(json, UiCoreJsonContext.Default.AppConfig);
                 if (loaded is not null)
                 {
+                    if (loaded.MinDelaySeconds == 15 && loaded.MaxDelaySeconds == 45)
+                    {
+                        loaded = loaded with { MinDelaySeconds = 2, MaxDelaySeconds = 5 };
+                    }
+
+                    if (loaded.ScrapeDelayMinSeconds == 8 && loaded.ScrapeDelayMaxSeconds == 18)
+                    {
+                        loaded = loaded with { ScrapeDelayMinSeconds = 1, ScrapeDelayMaxSeconds = 2 };
+                    }
+
+                    if (loaded.ScrapeMaxGroupsPerCycle == 5)
+                    {
+                        loaded = loaded with { ScrapeMaxGroupsPerCycle = 30 };
+                    }
+
                     return loaded.Normalize();
                 }
             }

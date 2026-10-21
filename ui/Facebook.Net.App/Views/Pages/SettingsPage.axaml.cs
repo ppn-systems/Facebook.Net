@@ -12,6 +12,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -330,7 +331,7 @@ public sealed partial class SettingsPage : UserControl
 
         minDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(minDelayBox.Value ?? 15);
+            int next = Math.Clamp((int)(minDelayBox.Value ?? 2), 0, 600);
             if (_vm.MinDelaySeconds != next)
             {
                 _vm.MinDelaySeconds = next;
@@ -339,7 +340,7 @@ public sealed partial class SettingsPage : UserControl
 
         maxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(maxDelayBox.Value ?? 45);
+            int next = Math.Clamp((int)(maxDelayBox.Value ?? 5), 0, 1200);
             if (_vm.MaxDelaySeconds != next)
             {
                 _vm.MaxDelaySeconds = next;
@@ -364,12 +365,10 @@ public sealed partial class SettingsPage : UserControl
             out NumericUpDown scrapeMinDelayBox,
             out TextBlock scrapeMaxDelayPrefix,
             out NumericUpDown scrapeMaxDelayBox);
-        scrapeMinDelayBox.Minimum = 2;
-        scrapeMaxDelayBox.Minimum = 2;
 
         scrapeMinDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(scrapeMinDelayBox.Value ?? 8);
+            int next = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 1), 0, 600);
             if (_vm.ScrapeDelayMinSeconds != next)
             {
                 _vm.ScrapeDelayMinSeconds = next;
@@ -378,7 +377,7 @@ public sealed partial class SettingsPage : UserControl
 
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = (int)(scrapeMaxDelayBox.Value ?? 18);
+            int next = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 2), 0, 1200);
             if (_vm.ScrapeDelayMaxSeconds != next)
             {
                 _vm.ScrapeDelayMaxSeconds = next;
@@ -399,12 +398,94 @@ public sealed partial class SettingsPage : UserControl
             VectorIcons.Settings);
         rightStack.Children.Add(saveBtn);
 
+        // 3. In-App Version & GitHub Releases Update Checker Card
+        StackPanel updateCardStack = new()
+        {
+            Spacing = 10
+        };
+
+        Grid updateHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock updateCardTitleTb = SectionHeader.CreateLabel(
+            _theme,
+            _i18n["Settings.UpdateCardTitle"],
+            13.5,
+            FontWeight.Bold);
+
+        Border currentVersionPill = StatusPill.Create(
+            _theme,
+            _i18n.Format("Settings.CurrentVersionLabel", _vm.CurrentAppVersion),
+            AuditSeverity.Info);
+
+        Grid.SetColumn(updateCardTitleTb, 0);
+        Grid.SetColumn(currentVersionPill, 1);
+        updateHeaderRow.Children.Add(updateCardTitleTb);
+        updateHeaderRow.Children.Add(currentVersionPill);
+        updateCardStack.Children.Add(updateHeaderRow);
+
+        TextBlock updateStatusTb = SectionHeader.CreateLabel(
+            _theme,
+            _vm.UpdateStatusMessage,
+            12,
+            FontWeight.Normal,
+            isSecondary: true);
+        updateStatusTb.TextWrapping = TextWrapping.Wrap;
+        updateCardStack.Children.Add(updateStatusTb);
+
+        WrapPanel updateBtnRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 8,
+            LineSpacing = 8
+        };
+
+        Button checkUpdateBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Settings.BtnCheckUpdate"],
+            _vm.CheckForUpdatesCommand,
+            VectorIcons.Sync);
+
+        string initialDownloadLabel = _i18n.Format(
+            "Settings.BtnDownloadUpdate",
+            !string.IsNullOrWhiteSpace(_vm.LatestReleaseTag) ? _vm.LatestReleaseTag : _vm.CurrentAppVersion);
+
+        Button downloadUpdateBtn = AppButton.CreatePrimary(
+            _theme,
+            initialDownloadLabel,
+            _vm.OpenUpdateDownloadCommand,
+            VectorIcons.Download);
+        downloadUpdateBtn.IsVisible = _vm.IsUpdateAvailable;
+
+        updateBtnRow.Children.Add(checkUpdateBtn);
+        updateBtnRow.Children.Add(downloadUpdateBtn);
+        updateCardStack.Children.Add(updateBtnRow);
+
+        Border updateInsetCard = SurfaceCard.CreateInset(_theme, updateCardStack, new Thickness(14, 12));
+        rightStack.Children.Add(updateInsetCard);
+
         Border rightCard = SurfaceCard.Create(_theme, new ScrollViewer { Content = rightStack }, new Thickness(18));
 
         Grid.SetColumn(leftCard, 0);
         Grid.SetColumn(rightCard, 1);
         splitGrid.Children.Add(leftCard);
         splitGrid.Children.Add(rightCard);
+
+        void RefreshUpdateCheckerVisuals()
+        {
+            updateCardTitleTb.Text = _i18n["Settings.UpdateCardTitle"];
+            StatusPill.SetText(currentVersionPill, _i18n.Format("Settings.CurrentVersionLabel", _vm.CurrentAppVersion));
+            updateStatusTb.Text = _vm.UpdateStatusMessage;
+            AppButton.SetText(checkUpdateBtn, _i18n["Settings.BtnCheckUpdate"]);
+            checkUpdateBtn.IsEnabled = !_vm.IsCheckingForUpdate;
+            string tag = !string.IsNullOrWhiteSpace(_vm.LatestReleaseTag) ? _vm.LatestReleaseTag : _vm.CurrentAppVersion;
+            AppButton.SetText(downloadUpdateBtn, _i18n.Format("Settings.BtnDownloadUpdate", tag));
+            downloadUpdateBtn.IsVisible = _vm.IsUpdateAvailable;
+        }
 
         _vm.PropertyChanged += (_, e) =>
         {
@@ -446,6 +527,14 @@ public sealed partial class SettingsPage : UserControl
             {
                 scrapeMaxDelayBox.Value = _vm.ScrapeDelayMaxSeconds;
             }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.UpdateStatusMessage), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.IsUpdateAvailable), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.IsCheckingForUpdate), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.LatestReleaseTag), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentAppVersion), StringComparison.Ordinal))
+            {
+                RefreshUpdateCheckerVisuals();
+            }
         };
 
         refreshI18n = () =>
@@ -469,6 +558,7 @@ public sealed partial class SettingsPage : UserControl
             scrapeMaxDelayPrefix.Text = _i18n["Settings.MaxDelayPrefix"];
             AppButton.SetText(saveBtn, _i18n["Settings.BtnSaveSettings"]);
             UpdateDetectedBrowserStatus();
+            RefreshUpdateCheckerVisuals();
         };
 
         return splitGrid;

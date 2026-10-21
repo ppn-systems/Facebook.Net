@@ -1626,10 +1626,10 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                 : 0;
             int minDelay = root.TryGetProperty("minDelaySeconds", out JsonElement minD) && minD.TryGetInt32(out int parsedMin)
                 ? parsedMin
-                : 30;
+                : 2;
             int maxDelay = root.TryGetProperty("maxDelaySeconds", out JsonElement maxD) && maxD.TryGetInt32(out int parsedMax)
                 ? parsedMax
-                : 60;
+                : 5;
             string? keyword = root.TryGetProperty("groupKeyword", out JsonElement kw) && kw.ValueKind == JsonValueKind.String
                 ? kw.GetString()
                 : null;

@@ -338,14 +338,18 @@ public sealed partial class PublisherPage : UserControl
             Background = this._theme.Palette.SecondarySurface
         };
 
-        Image attachedPreviewImg = new()
+        StackPanel thumbnailStrip = new()
         {
-            Height = 76,
-            Width = 108,
-            Stretch = Stretch.UniformToFill
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         TextBlock attachedFileNameTb = SectionHeader.CreateLabel(this._theme, string.Empty, 12, FontWeight.SemiBold);
+        attachedFileNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        attachedFileNameTb.MaxLines = 1;
+        attachedFileNameTb.VerticalAlignment = VerticalAlignment.Center;
+
         Button clearPhotoBtn = AppButton.CreateSecondary(
             this._theme,
             "✕",
@@ -361,35 +365,67 @@ public sealed partial class PublisherPage : UserControl
             ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
-        Border imgClip = new()
-        {
-            CornerRadius = new CornerRadius(6),
-            ClipToBounds = true,
-            Child = attachedPreviewImg
-        };
-        Grid.SetColumn(imgClip, 0);
+        Grid.SetColumn(thumbnailStrip, 0);
         Grid.SetColumn(attachedFileNameTb, 1);
         Grid.SetColumn(clearPhotoBtn, 2);
-        previewInnerGrid.Children.Add(imgClip);
+        previewInnerGrid.Children.Add(thumbnailStrip);
         previewInnerGrid.Children.Add(attachedFileNameTb);
         previewInnerGrid.Children.Add(clearPhotoBtn);
         photoPreviewContainer.Child = previewInnerGrid;
 
         void RefreshPhotoPreview()
         {
-            string p = (localPhotoBox.Text ?? string.Empty).Trim();
-            if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
+            thumbnailStrip.Children.Clear();
+            List<string> files = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
+            if (files.Count > 0)
             {
-                try
+                int maxThumbs = Math.Min(files.Count, 5);
+                int validBitmaps = 0;
+                for (int i = 0; i < maxThumbs; i++)
                 {
-                    attachedPreviewImg.Source = new Bitmap(p);
-                    attachedFileNameTb.Text = Path.GetFileName(p);
+                    try
+                    {
+                        Image thumbImg = new()
+                        {
+                            Width = 64,
+                            Height = 48,
+                            Stretch = Stretch.UniformToFill,
+                            Source = new Bitmap(files[i])
+                        };
+                        Border thumbClip = new()
+                        {
+                            CornerRadius = new CornerRadius(6),
+                            ClipToBounds = true,
+                            Child = thumbImg
+                        };
+                        thumbnailStrip.Children.Add(thumbClip);
+                        validBitmaps++;
+                    }
+                    catch
+                    {
+                        // Ignore unreadable bitmap
+                    }
+                }
+
+                if (validBitmaps > 0)
+                {
+                    if (files.Count == 1)
+                    {
+                        attachedFileNameTb.Text = Path.GetFileName(files[0]);
+                    }
+                    else
+                    {
+                        List<string> fileNames = new(files.Count);
+                        for (int i = 0; i < files.Count; i++)
+                        {
+                            fileNames.Add(Path.GetFileName(files[i]));
+                        }
+
+                        attachedFileNameTb.Text = $"{this._i18n.Format("Publisher.PhotosAttachedCount", files.Count)}: {string.Join(", ", fileNames)}";
+                    }
+
                     photoPreviewContainer.IsVisible = true;
                     return;
-                }
-                catch
-                {
-                    // Not a valid bitmap
                 }
             }
 
@@ -403,11 +439,12 @@ public sealed partial class PublisherPage : UserControl
         };
         pickPhotoBtn.Click += async (_, _) =>
         {
-            string? path = await this.PickSingleFileAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
-            if (!string.IsNullOrWhiteSpace(path))
+            IReadOnlyList<string> picked = await this.PickMultipleFilesAsync(this._i18n["Publisher.BtnPickPhoto"]).ConfigureAwait(true);
+            if (picked.Count > 0)
             {
-                localPhotoBox.Text = path;
-                this._vm.PostMediaFilePath = path;
+                string joined = string.Join(";", picked);
+                localPhotoBox.Text = joined;
+                this._vm.PostMediaFilePath = joined;
                 RefreshPhotoPreview();
             }
         };
@@ -740,12 +777,12 @@ public sealed partial class PublisherPage : UserControl
             fbBodyContentTb.Text = resolvedBody;
             fbReactionSummaryTb.IsVisible = this._vm.AutoReactPublishedPost;
 
-            string mediaPath = (localPhotoBox.Text ?? string.Empty).Trim();
-            if (!string.IsNullOrWhiteSpace(mediaPath) && File.Exists(mediaPath))
+            List<string> previewMediaFiles = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
+            if (previewMediaFiles.Count > 0)
             {
                 try
                 {
-                    fbFullPreviewImage.Source = new Bitmap(mediaPath);
+                    fbFullPreviewImage.Source = new Bitmap(previewMediaFiles[0]);
                     fbMediaFrame.IsVisible = true;
                 }
                 catch
@@ -816,6 +853,7 @@ public sealed partial class PublisherPage : UserControl
             fbShareLbl.Text = $"↗  {this._i18n["Publisher.PreviewActionShare"]}";
 
             UpdatePublishButtonAndIdentity();
+            RefreshPhotoPreview();
             refreshTargetCard();
         };
 
@@ -1100,20 +1138,31 @@ public sealed partial class PublisherPage : UserControl
         return SurfaceCard.Create(this._theme, pickerGrid, new Thickness(14));
     }
 
-    private async Task<string?> PickSingleFileAsync(string title)
+    private async Task<IReadOnlyList<string>> PickMultipleFilesAsync(string title)
     {
         IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
         if (storage is null)
         {
-            return null;
+            return [];
         }
 
         IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = title,
-            AllowMultiple = false
+            AllowMultiple = true,
+            FileTypeFilter = [FilePickerFileTypes.ImageAll]
         }).ConfigureAwait(true);
 
-        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        List<string> paths = new(files.Count);
+        for (int i = 0; i < files.Count; i++)
+        {
+            string? localPath = files[i].TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(localPath))
+            {
+                paths.Add(localPath);
+            }
+        }
+
+        return paths;
     }
 }

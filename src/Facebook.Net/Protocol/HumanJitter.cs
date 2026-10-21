@@ -24,7 +24,7 @@ public static class HumanJitter
         }
 
         double minMs = clampedMin * 1000.0;
-        double maxMs = (clampedMax * 1000.0) + 950.0;
+        double maxMs = clampedMax * 1000.0;
         if (Math.Abs(maxMs - minMs) < 1.0)
         {
             return TimeSpan.FromMilliseconds(minMs);

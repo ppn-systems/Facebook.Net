@@ -538,8 +538,8 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             new ImmediateDispatcher());
         using ShellViewModel vm = new(ctx);
 
-        Assert.Equal(NavigationSection.Accounts, vm.CurrentSection);
-        Assert.Equal(NavigationSection.Accounts, vm.Navigation.CurrentSection);
+        Assert.Equal(NavigationSection.Overview, vm.CurrentSection);
+        Assert.Equal(NavigationSection.Overview, vm.Navigation.CurrentSection);
         Assert.False(vm.Navigation.CanGoBack);
 
         // Navigate to Settings -> then click Open Audit Logs at bottom of Settings

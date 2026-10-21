@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -145,15 +146,18 @@ public sealed partial class SalesLeadsPage : UserControl
             () =>
             [
                 new FilterOptionItem("pending", this._i18n["Leads.FilterSegPending"]),
-                new FilterOptionItem("commented", this._i18n["Leads.FilterSegCommented"])
+                new FilterOptionItem("commented", this._i18n["Leads.FilterSegCommented"]),
+                new FilterOptionItem("has_phone", this._i18n["Leads.FilterHasPhone"])
             ],
             selectedIds =>
             {
                 string? sel = selectedIds.Count > 0 ? selectedIds[0] : null;
+                this._vm.FilterOnlyPostsWithPhone = string.Equals(sel, "has_phone", StringComparison.Ordinal);
                 this._vm.LeadCommentStatusFilter = sel switch
                 {
                     "pending" => 1,
                     "commented" => 2,
+                    "has_phone" => 3,
                     _ => 0
                 };
             },
@@ -235,7 +239,8 @@ public sealed partial class SalesLeadsPage : UserControl
                             this._vm.OpenSelectedPostInBrowserCommand.Execute(null);
                         }
                     },
-                    openBrowserLabel: this._i18n["Leads.BtnRowOpenBrowser"]);
+                    openBrowserLabel: this._i18n["Leads.BtnRowOpenBrowser"],
+                    detectedPhone: this._vm.ExtractPostPhoneNumber(enriched));
             },
             this._i18n["Empty.Leads"],
             VectorIcons.Search,
@@ -278,6 +283,21 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.SalesComment);
         quickReplyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+        Button copyPhoneBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnCopyPhone"],
+            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
+            {
+                string? primaryPhone = this._vm.ExtractPostPhoneNumber(this._vm.SelectedScrapedPost);
+                if (!string.IsNullOrWhiteSpace(primaryPhone) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                {
+                    await clipboard.SetTextAsync(primaryPhone).ConfigureAwait(true);
+                }
+            }),
+            VectorIcons.Clipboard);
+        copyPhoneBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+        copyPhoneBtn.IsVisible = false;
+
         Button inspectOpenBrowserBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnOpenPostInBrowser"],
@@ -286,6 +306,7 @@ public sealed partial class SalesLeadsPage : UserControl
         inspectOpenBrowserBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         detailBtnStack.Children.Add(quickReplyBtn);
+        detailBtnStack.Children.Add(copyPhoneBtn);
         detailBtnStack.Children.Add(inspectOpenBrowserBtn);
         Grid.SetRow(detailBtnStack, 2);
         detailCardGrid.Children.Add(detailBtnStack);
@@ -392,6 +413,22 @@ public sealed partial class SalesLeadsPage : UserControl
             };
             metaPillsWrap.Children.Add(statusPill);
             metaPillsWrap.Children.Add(StatusPill.Create(this._theme, this._vm.FormatBuyerIntentBadge(post), intentSeverity));
+
+            IReadOnlyList<string> phones = this._vm.ExtractAllPostPhoneNumbers(post);
+            if (phones.Count > 0)
+            {
+                metaPillsWrap.Children.Add(StatusPill.Create(
+                    this._theme,
+                    $"{this._i18n["Leads.PhoneBadgePrefix"]} {string.Join(", ", phones)}",
+                    AuditSeverity.Success));
+                copyPhoneBtn.IsVisible = true;
+                AppButton.SetText(copyPhoneBtn, $"{this._i18n["Leads.BtnCopyPhone"]}: {phones[0]}");
+            }
+            else
+            {
+                copyPhoneBtn.IsVisible = false;
+            }
+
             metaPillsWrap.Children.Add(StatusPill.Create(
                 this._theme,
                 $"👍 {this._i18n["Leads.DetailReactionsPrefix"]} {post.ReactionCount}  •  💬 {this._i18n["Leads.DetailCommentsPrefix"]} {post.CommentCount}",

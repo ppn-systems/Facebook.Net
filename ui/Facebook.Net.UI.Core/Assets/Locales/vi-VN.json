@@ -602,5 +602,22 @@
   "Ai.HistoryEmpty": "Chưa có hội thoại cũ",
   "Ai.BtnDeleteConversationTip": "Xóa hội thoại đang chọn",
   "Ai.NewConversationDefaultTitle": "Hội thoại mới",
-  "Settings.TabAiContext": "Trợ lý AI & Ngữ cảnh"
+  "Settings.TabAiContext": "Trợ lý AI & Ngữ cảnh",
+  "Leads.PhoneBadgePrefix": "SĐT:",
+  "Leads.FilterHasPhone": "Có số điện thoại",
+  "Leads.BtnCopyPhone": "Sao chép SĐT",
+  "Log.PhoneCopied": "Đã sao chép số điện thoại {0} vào bộ nhớ tạm.",
+  "Publisher.PhotosAttachedCount": "Đã chọn {0} ảnh đính kèm",
+  "Publisher.BtnAddMorePhotos": "Chọn ảnh",
+  "Log.UploadingMultiplePhotos": "Đang tải lên {0} ảnh đính kèm cho bài viết...",
+  "Settings.UpdateCardTitle": "Phiên bản & Cập nhật ứng dụng",
+  "Settings.UpdateCardDesc": "Kiểm tra phiên bản mới nhất để luôn nhận các tính năng và cải tiến hiệu năng mới.",
+  "Settings.CurrentVersionLabel": "Phiên bản hiện tại: {0}",
+  "Settings.BtnCheckUpdate": "Kiểm tra cập nhật",
+  "Settings.BtnDownloadUpdate": "Cập nhật ngay bản {0}",
+  "Settings.UpdateStatusIdle": "Nhấn Kiểm tra cập nhật để kiểm tra phiên bản mới nhất.",
+  "Settings.UpdateStatusChecking": "Đang kiểm tra phiên bản mới...",
+  "Settings.UpdateStatusUpToDate": "Bạn đang sử dụng phiên bản mới nhất {0}.",
+  "Settings.UpdateStatusAvailable": "Đã có phiên bản mới {0} — phát hành ngày {1}. Nhấn nút bên dưới để tải bản cập nhật.",
+  "Settings.UpdateStatusFailed": "Không thể kiểm tra cập nhật lúc này: {0}"
 }

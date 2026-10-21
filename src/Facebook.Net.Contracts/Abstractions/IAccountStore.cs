@@ -65,6 +65,11 @@ public interface IAccountStore
     Task UpsertTargetGroupAsync(SavedTargetGroup group, CancellationToken ct = default);
 
     /// <summary>
+    /// Inserts or updates a batch of saved target groups inside a single atomic transaction.
+    /// </summary>
+    Task UpsertTargetGroupsBatchAsync(IReadOnlyList<SavedTargetGroup> groups, CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes a saved target group by ID.
     /// </summary>
     Task<bool> DeleteTargetGroupAsync(string groupId, CancellationToken ct = default);

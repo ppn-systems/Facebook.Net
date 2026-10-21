@@ -43,8 +43,13 @@ public sealed partial class CometClient
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketId);
         ArgumentException.ThrowIfNullOrWhiteSpace(storyId);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{storyId}?locale=en_EN"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{storyId}?locale=en_EN"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string encodedStoryId = ProtocolCodec.EncodeStoryCardId(storyId);
         string variablesJson = BuildJson(w =>
@@ -74,8 +79,13 @@ public sealed partial class CometClient
         ArgumentException.ThrowIfNullOrWhiteSpace(storyId);
         ArgumentException.ThrowIfNullOrWhiteSpace(emojiOrMessage);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{storyId}?locale=en_EN"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{storyId}?locale=en_EN"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string spunMessage = PayloadBuilder.SpinText(emojiOrMessage);
         string variablesJson = BuildJson(w =>
@@ -110,8 +120,13 @@ public sealed partial class CometClient
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        await session.NavigateAsync(ResolveFullUrl("/stories/create"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl("/stories/create"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -182,12 +197,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(notification);
 
-        if (!string.IsNullOrWhiteSpace(notification.TargetUrl))
+        if (session.CurrentMaterial is null && !string.IsNullOrWhiteSpace(notification.TargetUrl))
         {
             await session.NavigateAsync(ResolveFullUrl(notification.TargetUrl), ct).ConfigureAwait(false);
         }
 
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {

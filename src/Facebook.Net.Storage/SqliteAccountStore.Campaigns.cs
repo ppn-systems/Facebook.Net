@@ -69,6 +69,61 @@ public sealed partial class SqliteAccountStore
     }
 
     /// <inheritdoc />
+    public async Task UpsertTargetGroupsBatchAsync(IReadOnlyList<SavedTargetGroup> groups, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        if (groups.Count == 0)
+        {
+            return;
+        }
+
+        const string sql = """
+            INSERT INTO target_groups (group_id, group_name, is_enabled, notes, avatar_url, tags_csv)
+            VALUES ($group_id, $group_name, $is_enabled, $notes, $avatar_url, $tags_csv)
+            ON CONFLICT(group_id) DO UPDATE SET
+                group_name = excluded.group_name,
+                is_enabled = excluded.is_enabled,
+                notes = excluded.notes,
+                avatar_url = COALESCE(excluded.avatar_url, target_groups.avatar_url),
+                tags_csv = COALESCE(excluded.tags_csv, target_groups.tags_csv);
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.CommandText = sql;
+
+        SqliteParameter pGroupId = cmd.Parameters.Add("$group_id", SqliteType.Text);
+        SqliteParameter pGroupName = cmd.Parameters.Add("$group_name", SqliteType.Text);
+        SqliteParameter pIsEnabled = cmd.Parameters.Add("$is_enabled", SqliteType.Integer);
+        SqliteParameter pNotes = cmd.Parameters.Add("$notes", SqliteType.Text);
+        SqliteParameter pAvatarUrl = cmd.Parameters.Add("$avatar_url", SqliteType.Text);
+        SqliteParameter pTagsCsv = cmd.Parameters.Add("$tags_csv", SqliteType.Text);
+
+        for (int i = 0; i < groups.Count; i++)
+        {
+            SavedTargetGroup group = groups[i];
+            if (group is null || string.IsNullOrWhiteSpace(group.GroupId))
+            {
+                continue;
+            }
+
+            pGroupId.Value = group.GroupId;
+            pGroupName.Value = group.GroupName;
+            pIsEnabled.Value = group.IsEnabled ? 1 : 0;
+            pNotes.Value = (object?)group.Notes ?? DBNull.Value;
+            pAvatarUrl.Value = (object?)group.AvatarUrl ?? DBNull.Value;
+            pTagsCsv.Value = (object?)group.TagsCsv ?? DBNull.Value;
+
+            _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> DeleteTargetGroupAsync(string groupId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);

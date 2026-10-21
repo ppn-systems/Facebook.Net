@@ -146,8 +146,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -172,8 +177,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.FriendRequestSendName,
             DocId: ProtocolConstants.Queries.FriendRequestSendDocId,
-            VariablesJson: variablesJson,
-            PostNavigateUrl: $"/{targetUid}");
+            VariablesJson: variablesJson);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.MapFriendshipStatus(ResponseParser.FindFirstStringProperty(res, "friendship_status"));
@@ -185,8 +189,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(requesterUid);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{requesterUid}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{requesterUid}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -207,8 +216,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.FriendRequestConfirmName,
             DocId: ProtocolConstants.Queries.FriendRequestConfirmDocId,
-            VariablesJson: variablesJson,
-            PostNavigateUrl: $"/{requesterUid}");
+            VariablesJson: variablesJson);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.MapFriendshipStatus(ResponseParser.FindFirstStringProperty(res, "friendship_status"));
@@ -220,8 +228,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string docId = isIncoming
             ? ProtocolConstants.Queries.FriendRequestRejectDocId
@@ -260,8 +273,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.FriendRequestDeleteName,
             DocId: docId,
-            VariablesJson: variablesJson,
-            PostNavigateUrl: $"/{targetUid}");
+            VariablesJson: variablesJson);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.MapFriendshipStatus(ResponseParser.FindFirstStringProperty(res, "friendship_status"));
@@ -273,8 +285,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -291,8 +308,7 @@ public sealed partial class CometClient
         GraphQlRequest request = new(
             FriendlyName: ProtocolConstants.Queries.UnfriendName,
             DocId: ProtocolConstants.Queries.UnfriendDocId,
-            VariablesJson: variablesJson,
-            PostNavigateUrl: $"/{targetUid}");
+            VariablesJson: variablesJson);
 
         GraphQlResult res = await this.ExecuteGraphQlAsync(session, request, ct).ConfigureAwait(false);
         return ResponseParser.MapFriendshipStatus(ResponseParser.FindFirstStringProperty(res, "friendship_status"));
@@ -304,8 +320,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
-        await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {
@@ -338,8 +359,13 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
-        await session.NavigateAsync(ResolveFullUrl("/pokes"), ct).ConfigureAwait(false);
-        SessionMaterial material = await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
+        if (session.CurrentMaterial is null)
+        {
+            await session.NavigateAsync(ResolveFullUrl("/pokes"), ct).ConfigureAwait(false);
+        }
+
+        SessionMaterial material = session.CurrentMaterial
+            ?? await session.ExtractMaterialAsync(ct).ConfigureAwait(false);
 
         string variablesJson = BuildJson(w =>
         {

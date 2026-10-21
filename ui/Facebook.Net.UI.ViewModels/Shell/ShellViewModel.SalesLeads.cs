@@ -48,23 +48,27 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the interval in minutes between background auto-scrape runs (1..120).</summary>
     [ObservableProperty]
-    public partial int AutoScrapeIntervalMinutes { get; set; } = 10;
+    public partial int AutoScrapeIntervalMinutes { get; set; } = 5;
 
-    /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMinSeconds { get; set; } = 8;
+    public partial int ScrapeDelayMinSeconds { get; set; } = 1;
 
-    /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (2..600).</summary>
+    /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMaxSeconds { get; set; } = 18;
+    public partial int ScrapeDelayMaxSeconds { get; set; } = 2;
 
-    /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..50).</summary>
+    /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..500).</summary>
     [ObservableProperty]
-    public partial int ScrapeMaxGroupsPerCycle { get; set; } = 5;
+    public partial int ScrapeMaxGroupsPerCycle { get; set; } = 30;
 
-    /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented).</summary>
+    /// <summary>Gets or sets the comment status filter for the local DB leads table (<c>0</c> = All, <c>1</c> = Uncommented, <c>2</c> = Commented, <c>3</c> = Has Phone).</summary>
     [ObservableProperty]
     public partial int LeadCommentStatusFilter { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether to filter the local DB leads table to only posts containing a Vietnamese phone number.</summary>
+    [ObservableProperty]
+    public partial bool FilterOnlyPostsWithPhone { get; set; }
 
     /// <summary>Gets or sets the visually selected post card from <see cref="ScrapedPosts"/> for sales commenting.</summary>
     [ObservableProperty]
@@ -138,6 +142,9 @@ public sealed partial class ShellViewModel
     partial void OnLeadCommentStatusFilterChanged(int value) =>
         this.FilterCachedPostsFromDb();
 
+    partial void OnFilterOnlyPostsWithPhoneChanged(bool value) =>
+        this.FilterCachedPostsFromDb();
+
     partial void OnAutoBackgroundScrapeEnabledChanged(bool value)
     {
         if (!this._isLoadingSettings)
@@ -164,6 +171,18 @@ public sealed partial class ShellViewModel
     /// </summary>
     public bool IsPostCommented(string? postId) =>
         !string.IsNullOrWhiteSpace(postId) && _commentedPostIds.Contains(postId);
+
+    /// <summary>
+    /// Extracts the primary normalized Vietnamese phone number from a scraped post's message text, or <see langword="null"/> if none is found.
+    /// </summary>
+    public string? ExtractPostPhoneNumber(PostSummary? post) =>
+        post is null ? null : _context.LeadScoring.ExtractPrimaryPhoneNumber(post.MessageText);
+
+    /// <summary>
+    /// Extracts all normalized Vietnamese phone numbers from a scraped post's message text.
+    /// </summary>
+    public IReadOnlyList<string> ExtractAllPostPhoneNumbers(PostSummary? post) =>
+        post is null ? [] : _context.LeadScoring.ExtractVietnamesePhoneNumbers(post.MessageText);
 
     /// <summary>
     /// Queries stored posts from the local SQLite database (<c>scraped_posts</c>) and applies the local search/filter without calling Facebook.
@@ -226,6 +245,12 @@ public sealed partial class ShellViewModel
             }
 
             if (this.LeadCommentStatusFilter == 2 && !isCommented)
+            {
+                continue;
+            }
+
+            if ((this.FilterOnlyPostsWithPhone || this.LeadCommentStatusFilter == 3) &&
+                string.IsNullOrWhiteSpace(this.ExtractPostPhoneNumber(post)))
             {
                 continue;
             }
@@ -345,7 +370,7 @@ public sealed partial class ShellViewModel
         }
 
         // Apply Round-Robin batch limit (ScrapeMaxGroupsPerCycle) to prevent anti-ban rate-limit spikes when many groups are enabled
-        int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 5 : this.ScrapeMaxGroupsPerCycle, 1, 50);
+        int maxPerCycle = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 30 : this.ScrapeMaxGroupsPerCycle, 1, 500);
         if (targets.Count > maxPerCycle)
         {
             List<(string GroupId, string GroupName, string? GroupAvatarUrl)> batch = new(maxPerCycle);
@@ -380,38 +405,71 @@ public sealed partial class ShellViewModel
             int perGroupLimit = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
             List<PostSummary> collectedForDb = new();
 
-            for (int gIdx = 0; gIdx < targets.Count; gIdx++)
+            if (targets.Count > 1 && session.CurrentMaterial is null)
+            {
+                _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+
+            int parallelChunkSize = this.ScrapeDelayMinSeconds <= 1 ? 3 : 1;
+            for (int chunkStart = 0; chunkStart < targets.Count; chunkStart += parallelChunkSize)
             {
                 ct.ThrowIfCancellationRequested();
-                (string groupId, string groupName, string? groupAvatarUrl) = targets[gIdx];
+                int chunkCount = Math.Min(parallelChunkSize, targets.Count - chunkStart);
 
-                if (gIdx > 0)
+                if (chunkStart > 0)
                 {
-                    await this.WaitScraperRateLimitDelayAsync(groupName, ct).ConfigureAwait(true);
+                    await this.WaitScraperRateLimitDelayAsync(targets[chunkStart].GroupName, ct).ConfigureAwait(true);
                 }
 
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Scrape,
-                    AuditSeverity.Info,
-                    groupName,
-                    _context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
-
-                PagedResult<PostSummary> feed = await _context.CometClient
-                    .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
-                    .ConfigureAwait(true);
-
-                for (int i = 0; i < feed.Items.Count; i++)
+                for (int offset = 0; offset < chunkCount; offset++)
                 {
-                    PostSummary post = feed.Items[i] with
-                    {
-                        GroupId = groupId,
-                        GroupName = groupName,
-                        GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
-                    };
+                    int gIdx = chunkStart + offset;
+                    string groupName = targets[gIdx].GroupName;
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Scrape,
+                        AuditSeverity.Info,
+                        groupName,
+                        _context.Localization.Format("Log.ScrapingGroupProgress", gIdx + 1, targets.Count, groupName)).ConfigureAwait(true);
+                }
 
-                    if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                PagedResult<PostSummary>[] feeds;
+                if (chunkCount == 1)
+                {
+                    (string groupId, _, _) = targets[chunkStart];
+                    PagedResult<PostSummary> singleFeed = await _context.CometClient
+                        .GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct)
+                        .ConfigureAwait(true);
+                    feeds = [singleFeed];
+                }
+                else
+                {
+                    Task<PagedResult<PostSummary>>[] feedTasks = new Task<PagedResult<PostSummary>>[chunkCount];
+                    for (int offset = 0; offset < chunkCount; offset++)
                     {
-                        collectedForDb.Add(post);
+                        string groupId = targets[chunkStart + offset].GroupId;
+                        feedTasks[offset] = _context.CometClient.GetGroupFeedAsync(session, groupId, count: perGroupLimit, ct: ct);
+                    }
+
+                    feeds = await Task.WhenAll(feedTasks).ConfigureAwait(true);
+                }
+
+                for (int offset = 0; offset < chunkCount; offset++)
+                {
+                    (string groupId, string groupName, string? groupAvatarUrl) = targets[chunkStart + offset];
+                    PagedResult<PostSummary> feed = feeds[offset];
+                    for (int i = 0; i < feed.Items.Count; i++)
+                    {
+                        PostSummary post = feed.Items[i] with
+                        {
+                            GroupId = groupId,
+                            GroupName = groupName,
+                            GroupAvatarUrl = feed.Items[i].GroupAvatarUrl ?? groupAvatarUrl
+                        };
+
+                        if (_context.LeadScoring.MatchesBuyerKeywords(post.MessageText, selectiveKeywords))
+                        {
+                            collectedForDb.Add(post);
+                        }
                     }
                 }
             }
@@ -535,15 +593,36 @@ public sealed partial class ShellViewModel
                 return;
             }
 
-            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            List<PostSummary> postsToComment = [.. this.ScrapedPosts];
+            string? batchAttachmentFbid = null;
+            if (!string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) && File.Exists(this.SalesCommentPhotoPath.Trim()))
             {
-                ct.ThrowIfCancellationRequested();
-                if (i > 0)
-                {
-                    await this.WaitAntiCheckpointDelayAsync(this.ScrapedPosts[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
-                }
+                batchAttachmentFbid = await _context.CometClient
+                    .UploadUfiPhotoAsync(session, this.SalesCommentPhotoPath.Trim(), ct)
+                    .ConfigureAwait(true);
+            }
 
-                await this.ExecuteSingleSalesCommentAsync(session, this.ScrapedPosts[i], ct).ConfigureAwait(true);
+            try
+            {
+                for (int i = 0; i < postsToComment.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (i > 0)
+                    {
+                        await this.WaitAntiCheckpointDelayAsync(postsToComment[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
+                    }
+
+                    await this.ExecuteSingleSalesCommentAsync(
+                        session,
+                        postsToComment[i],
+                        ct,
+                        refreshListAfterComment: false,
+                        preUploadedAttachmentFbid: batchAttachmentFbid).ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                this.FilterCachedPostsFromDb();
             }
         }
         catch (OperationCanceledException)
@@ -646,8 +725,8 @@ public sealed partial class ShellViewModel
 
     private async Task WaitScraperRateLimitDelayAsync(string nextGroupName, CancellationToken ct)
     {
-        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds <= 0 ? 8 : this.ScrapeDelayMinSeconds, 1, 600);
-        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds <= 0 ? 18 : this.ScrapeDelayMaxSeconds, minSec, 600);
+        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
+        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds, minSec, 600);
         TimeSpan delay = HumanJitter.NextGaussianDelay(minSec, maxSec);
         if (delay <= TimeSpan.Zero)
         {
@@ -664,15 +743,21 @@ public sealed partial class ShellViewModel
         await Task.Delay(delay, ct).ConfigureAwait(true);
     }
 
-    private async Task ExecuteSingleSalesCommentAsync(IBrowserSession session, PostSummary post, CancellationToken ct)
+    private async Task ExecuteSingleSalesCommentAsync(
+        IBrowserSession session,
+        PostSummary post,
+        CancellationToken ct,
+        bool refreshListAfterComment = true,
+        string? preUploadedAttachmentFbid = null)
     {
         string targetLabel = !string.IsNullOrWhiteSpace(post.AuthorName)
             ? _context.Localization.Format("Log.PostAuthorLabel", post.AuthorName)
             : _context.Localization["Leads.DefaultAuthor"];
 
-        bool alreadyCommented = await _context.AccountStore
-            .HasExecutedActionAsync(session.AccountUid, "COMMENT", post.PostId, ct)
-            .ConfigureAwait(true);
+        bool alreadyCommented = _commentedPostIds.Contains(post.PostId) ||
+            await _context.AccountStore
+                .HasExecutedActionAsync(session.AccountUid, "COMMENT", post.PostId, ct)
+                .ConfigureAwait(true);
 
         if (alreadyCommented)
         {
@@ -693,8 +778,10 @@ public sealed partial class ShellViewModel
                 .ConfigureAwait(true);
         }
 
-        string? attachmentFbid = null;
-        if (!string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) && File.Exists(this.SalesCommentPhotoPath.Trim()))
+        string? attachmentFbid = preUploadedAttachmentFbid;
+        if (string.IsNullOrWhiteSpace(attachmentFbid) &&
+            !string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) &&
+            File.Exists(this.SalesCommentPhotoPath.Trim()))
         {
             attachmentFbid = await _context.CometClient
                 .UploadUfiPhotoAsync(session, this.SalesCommentPhotoPath.Trim(), ct)
@@ -716,7 +803,10 @@ public sealed partial class ShellViewModel
                     commentId,
                     DateTimeOffset.UtcNow),
                 ct).ConfigureAwait(true);
-            this.FilterCachedPostsFromDb();
+            if (refreshListAfterComment)
+            {
+                this.FilterCachedPostsFromDb();
+            }
         }
 
         _ = await this.LogAuditAsync(
