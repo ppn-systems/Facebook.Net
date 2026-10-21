@@ -276,7 +276,10 @@ public sealed partial class GroupsPage : UserControl
                 onToggleTag: async tagId =>
                 {
                     await this._vm.ToggleGroupTagAsync(tg.GroupId, tg.GroupName, tg.AvatarUrl, tagId).ConfigureAwait(true);
-                    RefreshFilteredTargets();
+                    if (!string.IsNullOrEmpty(selectedTagFilterId))
+                    {
+                        RefreshFilteredTargets();
+                    }
                 },
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
                 onRemove: () =>
@@ -309,8 +312,24 @@ public sealed partial class GroupsPage : UserControl
             out TextBlock emptyTargetsTb);
         emptyTargetsBanner.IsVisible = filteredTargets.Count == 0;
 
-        this._vm.TargetGroups.CollectionChanged += (_, _) =>
+        this._vm.TargetGroups.CollectionChanged += (_, e) =>
         {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                string.IsNullOrEmpty(selectedTagFilterId) &&
+                e.NewItems is { Count: > 0 } &&
+                e.NewItems[0] is SavedTargetGroup updatedTg)
+            {
+                for (int i = 0; i < filteredTargets.Count; i++)
+                {
+                    if (string.Equals(filteredTargets[i].GroupId, updatedTg.GroupId, StringComparison.Ordinal))
+                    {
+                        filteredTargets[i] = updatedTg;
+                        UpdateHeaderStats();
+                        return;
+                    }
+                }
+            }
+
             RefreshFilteredTargets();
             bool isEmpty = filteredTargets.Count == 0;
             emptyTargetsBanner.IsVisible = isEmpty;
@@ -550,7 +569,10 @@ public sealed partial class GroupsPage : UserControl
                 onToggleTag: async tagId =>
                 {
                     await this._vm.ToggleGroupTagAsync(grp.GroupId, grp.Name, grp.AvatarUrl, tagId).ConfigureAwait(true);
-                    RefreshCatalogFilter();
+                    if (!string.IsNullOrEmpty(selectedTagFilterId))
+                    {
+                        RefreshCatalogFilter();
+                    }
                 },
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
                 isAlreadyInTargets: this._vm.FindTargetGroupById(grp.GroupId) is not null,
@@ -583,7 +605,25 @@ public sealed partial class GroupsPage : UserControl
             emptyGroupsBanner.IsVisible = isEmpty;
             groupsList.IsVisible = !isEmpty;
         };
-        this._vm.TargetGroups.CollectionChanged += (_, _) => RefreshCatalogFilter();
+        this._vm.TargetGroups.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                string.IsNullOrEmpty(selectedTagFilterId) &&
+                e.NewItems is { Count: > 0 } &&
+                e.NewItems[0] is SavedTargetGroup updatedTg)
+            {
+                for (int i = 0; i < filteredCatalog.Count; i++)
+                {
+                    if (string.Equals(filteredCatalog[i].GroupId, updatedTg.GroupId, StringComparison.Ordinal))
+                    {
+                        filteredCatalog[i] = filteredCatalog[i] with { };
+                        return;
+                    }
+                }
+            }
+
+            RefreshCatalogFilter();
+        };
         this._vm.GroupTags.CollectionChanged += (_, _) =>
         {
             RefreshCatalogFilter();
