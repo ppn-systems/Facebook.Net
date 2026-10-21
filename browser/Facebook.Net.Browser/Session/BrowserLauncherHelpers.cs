@@ -106,9 +106,9 @@ public static class BrowserLauncherHelpers
     }
 
     /// <summary>
-    /// Resolves a profile directory path into its Chromium <c>--user-data-dir</c> root and optional <c>--profile-directory</c> subfolder name.
-    /// When <paramref name="rawProfilePath"/> points to a system browser profile subfolder (such as <c>...\User Data\Default</c> or <c>...\User Data\Profile 1</c>),
-    /// splits the parent <c>User Data</c> root from the profile subfolder so Chromium does not create a nested <c>Default\Default</c> folder.
+    /// Resolves a profile directory path into a safe isolated Chromium <c>--user-data-dir</c> root.
+    /// Never points <c>--user-data-dir</c> directly at the OS system browser's <c>User Data</c> root (which would either fail CDP on Chromium 136+
+    /// or trigger App-Bound Encryption key rotation in the user's main browser <c>Local State</c>).
     /// </summary>
     public static (string UserDataRoot, string? ProfileDirectoryName) ResolveUserDataRootAndProfileDirectory(string rawProfilePath)
     {
@@ -128,7 +128,14 @@ public static class BrowserLauncherHelpers
 
             if (isSystemUserDataRoot)
             {
-                return (parentDir, folderName);
+                string safeSlug = folderName.Replace(' ', '_');
+                string isolatedFallback = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Facebook.Net",
+                    "Profiles",
+                    $"isolated_{safeSlug}");
+                _ = Directory.CreateDirectory(isolatedFallback);
+                return (isolatedFallback, null);
             }
         }
 
