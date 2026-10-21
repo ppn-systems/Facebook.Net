@@ -548,14 +548,14 @@ public sealed class AppSettingsService : IAppSettingsService
     }
 
     /// <summary>
-    /// Discovers all isolated browser profiles inside <paramref name="appProfilesRootDir"/> as well as
-    /// existing local user profile folders strictly matching <paramref name="effectiveBrowserKind"/>,
-    /// enriching system profiles with their real human-readable names from Chromium's <c>Local State</c>.
+    /// Discovers all isolated application-managed browser profiles inside <paramref name="appProfilesRootDir"/>.
+    /// System browser <c>User Data</c> directories are intentionally excluded to protect OS browser App-Bound Encryption state.
     /// </summary>
     public static List<BrowserProfileOption> DiscoverBrowserProfiles(
         string appProfilesRootDir,
         PreferredBrowserKind effectiveBrowserKind = PreferredBrowserKind.AutoDetect)
     {
+        _ = effectiveBrowserKind;
         List<BrowserProfileOption> results = new();
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -582,161 +582,7 @@ public sealed class AppSettingsService : IAppSettingsService
             }
         }
 
-        (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] systemRoots = GetSystemUserDataRoots();
-
-        for (int r = 0; r < systemRoots.Length; r++)
-        {
-            if (effectiveBrowserKind != PreferredBrowserKind.AutoDetect &&
-                systemRoots[r].Kind != effectiveBrowserKind)
-            {
-                continue;
-            }
-
-            string rootPath = systemRoots[r].UserDataRoot;
-            if (!Directory.Exists(rootPath))
-            {
-                continue;
-            }
-
-            Dictionary<string, string> localStateNames = ReadChromiumProfileFriendlyNames(rootPath);
-
-            string defaultProfileDir = Path.Combine(rootPath, "Default");
-            if (Directory.Exists(defaultProfileDir) && seenPaths.Add(defaultProfileDir))
-            {
-                bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(defaultProfileDir);
-                string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, "Default", localStateNames);
-                results.Add(new BrowserProfileOption(friendlyLabel, defaultProfileDir, IsManagedByApp: false, HasFacebookSession: hasFb));
-            }
-
-            try
-            {
-                string[] profileDirs = Directory.GetDirectories(rootPath, "Profile *");
-                Array.Sort(profileDirs, StringComparer.OrdinalIgnoreCase);
-                for (int p = 0; p < profileDirs.Length; p++)
-                {
-                    string pDir = profileDirs[p];
-                    string pName = Path.GetFileName(pDir);
-                    if (!string.IsNullOrWhiteSpace(pName) && seenPaths.Add(pDir))
-                    {
-                        bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(pDir);
-                        string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, pName, localStateNames);
-                        results.Add(new BrowserProfileOption(friendlyLabel, pDir, IsManagedByApp: false, HasFacebookSession: hasFb));
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Ignore inaccessible system profile folders
-            }
-        }
-
         return results;
-    }
-
-    private static (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] GetSystemUserDataRoots()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return
-            [
-                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
-                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
-                (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
-            ];
-        }
-
-        if (OperatingSystem.IsMacOS())
-        {
-            string appSupport = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
-            return
-            [
-                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(appSupport, "Microsoft Edge")),
-                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(appSupport, "Google", "Chrome")),
-                (PreferredBrowserKind.Brave, "Brave", Path.Combine(appSupport, "BraveSoftware", "Brave-Browser"))
-            ];
-        }
-
-        return [];
-    }
-
-    private static string FormatSystemProfileDisplayName(
-        string browserLabel,
-        string folderKey,
-        Dictionary<string, string> localStateNames)
-    {
-        if (localStateNames.TryGetValue(folderKey, out string? friendly) &&
-            !string.IsNullOrWhiteSpace(friendly) &&
-            !string.Equals(friendly, folderKey, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{browserLabel} — {friendly} · {folderKey}";
-        }
-
-        return $"{browserLabel} — {folderKey}";
-    }
-
-    private static Dictionary<string, string> ReadChromiumProfileFriendlyNames(string userDataRoot)
-    {
-        Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase);
-        string localStatePath = Path.Combine(userDataRoot, "Local State");
-        if (!File.Exists(localStatePath))
-        {
-            return map;
-        }
-
-        try
-        {
-            using FileStream fs = new(localStatePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using JsonDocument doc = JsonDocument.Parse(fs);
-            if (!doc.RootElement.TryGetProperty("profile", out JsonElement profileEl) ||
-                !profileEl.TryGetProperty("info_cache", out JsonElement cacheEl) ||
-                cacheEl.ValueKind != JsonValueKind.Object)
-            {
-                return map;
-            }
-
-            foreach (JsonProperty prop in cacheEl.EnumerateObject())
-            {
-                JsonElement val = prop.Value;
-                if (val.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                string? shortcutName = val.TryGetProperty("shortcut_name", out JsonElement snEl) ? snEl.GetString() : null;
-                string? name = val.TryGetProperty("name", out JsonElement nameEl) ? nameEl.GetString() : null;
-                string? userName = val.TryGetProperty("user_name", out JsonElement unEl) ? unEl.GetString() : null;
-
-                string chosen = !string.IsNullOrWhiteSpace(shortcutName) &&
-                                !string.Equals(shortcutName, "Person 1", StringComparison.OrdinalIgnoreCase)
-                    ? shortcutName.Trim()
-                    : (!string.IsNullOrWhiteSpace(name) ? name.Trim() : string.Empty);
-
-                // Strip any parentheses to keep UI labels clean
-                chosen = chosen.Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal).Trim();
-
-                if (!string.IsNullOrWhiteSpace(userName))
-                {
-                    string cleanUser = userName.Trim().Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal);
-                    chosen = !string.IsNullOrWhiteSpace(chosen) &&
-                             !string.Equals(chosen, "Person 1", StringComparison.OrdinalIgnoreCase) &&
-                             !string.Equals(chosen, cleanUser, StringComparison.OrdinalIgnoreCase)
-                        ? $"{chosen} · {cleanUser}"
-                        : cleanUser;
-                }
-
-                if (!string.IsNullOrWhiteSpace(chosen))
-                {
-                    map[prop.Name] = chosen;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // Ignore unreadable Local State
-        }
-
-        return map;
     }
 
     private static PreferredBrowserKind? TryGetOsDefaultBrowserKind()
@@ -857,6 +703,33 @@ public sealed class AppSettingsService : IAppSettingsService
                 }
             }
         }
+    }
+
+    private static (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] GetSystemUserDataRoots()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
+            ];
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            string appSupport = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
+            return
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(appSupport, "Microsoft Edge")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(appSupport, "Google", "Chrome")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(appSupport, "BraveSoftware", "Brave-Browser"))
+            ];
+        }
+
+        return [];
     }
 
     private static DateTimeOffset GetLastProfileActivityUtc(PreferredBrowserKind kind)

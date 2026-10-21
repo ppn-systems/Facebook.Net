@@ -126,6 +126,13 @@ public sealed class AccountVaultDomainService : IAccountVaultDomainService
             modified = true;
         }
 
+        if (IsSystemBrowserUserDataPath(acc.ProfileDirectory))
+        {
+            string isolatedDir = this.ResolveSafeIsolatedProfileForAccount(acc.Uid);
+            acc = acc with { ProfileDirectory = isolatedDir };
+            modified = true;
+        }
+
         if ((acc.Status == AccountStatus.CookieExpired || acc.Status == AccountStatus.Idle) &&
             (!string.IsNullOrWhiteSpace(acc.CookieHeader) || this.HasProfileAuthenticatedCookieStore(acc.ProfileDirectory)))
         {
@@ -134,6 +141,58 @@ public sealed class AccountVaultDomainService : IAccountVaultDomainService
         }
 
         return (acc, modified);
+    }
+
+    private static bool IsSystemBrowserUserDataPath(string? profileDir)
+    {
+        if (string.IsNullOrWhiteSpace(profileDir))
+        {
+            return false;
+        }
+
+        string normalized = profileDir.Replace('/', '\\');
+        if (normalized.Contains("\\User Data", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string? parent = Path.GetDirectoryName(profileDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return !string.IsNullOrWhiteSpace(parent) &&
+               string.Equals(Path.GetFileName(parent), "User Data", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveSafeIsolatedProfileForAccount(string uid)
+    {
+        string profilesRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Facebook.Net",
+            "Profiles");
+        _ = Directory.CreateDirectory(profilesRoot);
+
+        string dedicatedDir = Path.Combine(profilesRoot, $"fb_{this.SanitizeProfileFolderSlug(uid)}");
+        if (Directory.Exists(dedicatedDir) && this.HasProfileAuthenticatedCookieStore(dedicatedDir))
+        {
+            return dedicatedDir;
+        }
+
+        try
+        {
+            string[] existingDirs = Directory.GetDirectories(profilesRoot);
+            for (int i = 0; i < existingDirs.Length; i++)
+            {
+                if (this.HasProfileAuthenticatedCookieStore(existingDirs[i]))
+                {
+                    return existingDirs[i];
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore directory enumeration failure
+        }
+
+        _ = Directory.CreateDirectory(dedicatedDir);
+        return dedicatedDir;
     }
 
     /// <inheritdoc />
