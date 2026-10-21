@@ -5,6 +5,9 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
@@ -13,13 +16,16 @@ using Avalonia.Threading;
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Standalone asynchronous remote image loader and memory cache for group avatars, author avatars, and post media thumbnails.
+/// Standalone asynchronous remote image loader with persistent disk cache and bounded memory cache
+/// for group avatars, author avatars, and post media thumbnails.
 /// </summary>
 public static class RemoteImageLoader
 {
     private static readonly HttpClient s_sharedHttpClient = CreateClient();
     private static readonly ConcurrentDictionary<string, Bitmap> s_bitmapCache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, Task<Bitmap?>> s_inFlightLoads = new(StringComparer.Ordinal);
+    private static readonly string s_diskCacheDir = InitializeDiskCacheDir();
+    private static readonly SemaphoreSlim s_downloadGate = new(8, 8);
 
     /// <summary>
     /// Asynchronously loads an image from <paramref name="imageUrl"/> into <paramref name="targetImage"/>.
@@ -93,28 +99,111 @@ public static class RemoteImageLoader
                 return existing;
             }
 
-            byte[] bytes = await s_sharedHttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
-            if (bytes.Length == 0 || bytes.Length > 8 * 1024 * 1024)
+            string diskPath = GetDiskCachePath(url);
+            if (File.Exists(diskPath))
             {
-                return null;
+                try
+                {
+                    byte[] cachedBytes = await File.ReadAllBytesAsync(diskPath).ConfigureAwait(false);
+                    if (cachedBytes.Length > 0 && cachedBytes.Length <= 8 * 1024 * 1024)
+                    {
+                        using MemoryStream cachedStream = new(cachedBytes);
+                        Bitmap cachedBitmap = new(cachedStream);
+                        CacheBitmapInMemory(url, cachedBitmap);
+                        return cachedBitmap;
+                    }
+                }
+                catch
+                {
+                    // Fall back to network download if disk cache read or decode fails.
+                }
             }
 
-            using MemoryStream ms = new(bytes);
-            Bitmap bitmap = new(ms);
-
-            // Keep memory cache bounded
-            if (s_bitmapCache.Count > 350)
+            await s_downloadGate.WaitAsync().ConfigureAwait(false);
+            try
             {
-                s_bitmapCache.Clear();
-            }
+                if (s_bitmapCache.TryGetValue(url, out existing))
+                {
+                    return existing;
+                }
 
-            s_bitmapCache[url] = bitmap;
-            return bitmap;
+                byte[] bytes = await s_sharedHttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+                if (bytes.Length == 0 || bytes.Length > 8 * 1024 * 1024)
+                {
+                    return null;
+                }
+
+                using MemoryStream ms = new(bytes);
+                Bitmap bitmap = new(ms);
+
+                try
+                {
+                    await File.WriteAllBytesAsync(diskPath, bytes).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Ignore best-effort disk write failures.
+                }
+
+                CacheBitmapInMemory(url, bitmap);
+                return bitmap;
+            }
+            finally
+            {
+                _ = s_downloadGate.Release();
+            }
         }
         catch
         {
             return null;
         }
+    }
+
+    private static void CacheBitmapInMemory(string url, Bitmap bitmap)
+    {
+        if (s_bitmapCache.Count > 500)
+        {
+            int removed = 0;
+            foreach (string key in s_bitmapCache.Keys)
+            {
+                if (s_bitmapCache.TryRemove(key, out _))
+                {
+                    removed++;
+                    if (removed >= 80)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        s_bitmapCache[url] = bitmap;
+    }
+
+    private static string GetDiskCachePath(string url)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(url));
+        return Path.Combine(s_diskCacheDir, $"{Convert.ToHexStringLower(hash)}.cache");
+    }
+
+    private static string InitializeDiskCacheDir()
+    {
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FacebookOneClient",
+            "Data",
+            "ImageCache");
+
+        try
+        {
+            _ = Directory.CreateDirectory(path);
+        }
+        catch
+        {
+            // Ignore directory creation failures.
+        }
+
+        return path;
     }
 
     private static HttpClient CreateClient()

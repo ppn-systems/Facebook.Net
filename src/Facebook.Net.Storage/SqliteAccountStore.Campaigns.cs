@@ -327,37 +327,51 @@ public sealed partial class SqliteAccountStore
         using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.CommandText = sql;
+
+        SqliteParameter pPostId = cmd.Parameters.Add("$post_id", SqliteType.Text);
+        SqliteParameter pGroupId = cmd.Parameters.Add("$group_id", SqliteType.Text);
+        SqliteParameter pGroupName = cmd.Parameters.Add("$group_name", SqliteType.Text);
+        SqliteParameter pAuthorUid = cmd.Parameters.Add("$author_uid", SqliteType.Text);
+        SqliteParameter pAuthorName = cmd.Parameters.Add("$author_name", SqliteType.Text);
+        SqliteParameter pMessageText = cmd.Parameters.Add("$message_text", SqliteType.Text);
+        SqliteParameter pPermalinkUrl = cmd.Parameters.Add("$permalink_url", SqliteType.Text);
+        SqliteParameter pReactionCount = cmd.Parameters.Add("$reaction_count", SqliteType.Integer);
+        SqliteParameter pCommentCount = cmd.Parameters.Add("$comment_count", SqliteType.Integer);
+        SqliteParameter pCreatedAt = cmd.Parameters.Add("$created_at", SqliteType.Text);
+        SqliteParameter pScrapedAt = cmd.Parameters.Add("$scraped_at", SqliteType.Text);
+        SqliteParameter pMediaPreviewUrl = cmd.Parameters.Add("$media_preview_url", SqliteType.Text);
+        SqliteParameter pIsVideo = cmd.Parameters.Add("$is_video", SqliteType.Integer);
+        SqliteParameter pAuthorAvatarUrl = cmd.Parameters.Add("$author_avatar_url", SqliteType.Text);
+        SqliteParameter pGroupAvatarUrl = cmd.Parameters.Add("$group_avatar_url", SqliteType.Text);
+        pScrapedAt.Value = nowIso;
 
         for (int i = 0; i < posts.Count; i++)
         {
             PostSummary p = posts[i];
-            if (string.IsNullOrWhiteSpace(p.PostId))
+            if (p is null || string.IsNullOrWhiteSpace(p.PostId))
             {
                 continue;
             }
 
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.Transaction = (SqliteTransaction)tx;
-            cmd.CommandText = sql;
-            _ = cmd.Parameters.AddWithValue("$post_id", p.PostId);
-            _ = cmd.Parameters.AddWithValue("$group_id", p.GroupId ?? string.Empty);
-            _ = cmd.Parameters.AddWithValue("$group_name", p.GroupName ?? string.Empty);
-            _ = cmd.Parameters.AddWithValue("$author_uid", p.AuthorUid ?? string.Empty);
-            _ = cmd.Parameters.AddWithValue("$author_name", (object?)p.AuthorName ?? DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$message_text", (object?)p.MessageText ?? DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$permalink_url", (object?)p.PermalinkUrl ?? DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$reaction_count", p.ReactionCount);
-            _ = cmd.Parameters.AddWithValue("$comment_count", p.CommentCount);
-            _ = cmd.Parameters.AddWithValue(
-                "$created_at",
-                p.CreatedAt.HasValue
-                    ? p.CreatedAt.Value.ToString("O", CultureInfo.InvariantCulture)
-                    : DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$scraped_at", nowIso);
-            _ = cmd.Parameters.AddWithValue("$media_preview_url", (object?)p.MediaPreviewUrl ?? DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$is_video", p.IsVideo ? 1 : 0);
-            _ = cmd.Parameters.AddWithValue("$author_avatar_url", (object?)p.AuthorAvatarUrl ?? DBNull.Value);
-            _ = cmd.Parameters.AddWithValue("$group_avatar_url", (object?)p.GroupAvatarUrl ?? DBNull.Value);
+            pPostId.Value = p.PostId;
+            pGroupId.Value = p.GroupId ?? string.Empty;
+            pGroupName.Value = p.GroupName ?? string.Empty;
+            pAuthorUid.Value = p.AuthorUid ?? string.Empty;
+            pAuthorName.Value = (object?)p.AuthorName ?? DBNull.Value;
+            pMessageText.Value = (object?)p.MessageText ?? DBNull.Value;
+            pPermalinkUrl.Value = (object?)p.PermalinkUrl ?? DBNull.Value;
+            pReactionCount.Value = p.ReactionCount;
+            pCommentCount.Value = p.CommentCount;
+            pCreatedAt.Value = p.CreatedAt.HasValue
+                ? p.CreatedAt.Value.ToString("O", CultureInfo.InvariantCulture)
+                : DBNull.Value;
+            pMediaPreviewUrl.Value = (object?)p.MediaPreviewUrl ?? DBNull.Value;
+            pIsVideo.Value = p.IsVideo ? 1 : 0;
+            pAuthorAvatarUrl.Value = (object?)p.AuthorAvatarUrl ?? DBNull.Value;
+            pGroupAvatarUrl.Value = (object?)p.GroupAvatarUrl ?? DBNull.Value;
 
             _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -604,6 +618,96 @@ public sealed partial class SqliteAccountStore
         _ = cmd.Parameters.AddWithValue("$comment_count", post.CommentCount);
 
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertPublishedPostsBatchAsync(IReadOnlyList<PublishedPostRecord> posts, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(posts);
+        if (posts.Count == 0)
+        {
+            return;
+        }
+
+        const string sql = """
+            INSERT INTO published_posts (
+                post_id, account_uid, account_name, account_avatar_url,
+                target_kind, target_group_id, target_group_name, target_group_avatar_url,
+                message_text, media_file_path, media_preview_url, permalink_url,
+                published_at, reaction_count, comment_count
+            )
+            VALUES (
+                $post_id, $account_uid, $account_name, $account_avatar_url,
+                $target_kind, $target_group_id, $target_group_name, $target_group_avatar_url,
+                $message_text, $media_file_path, $media_preview_url, $permalink_url,
+                $published_at, $reaction_count, $comment_count
+            )
+            ON CONFLICT(post_id) DO UPDATE SET
+                account_name = CASE WHEN excluded.account_name <> '' THEN excluded.account_name ELSE published_posts.account_name END,
+                account_avatar_url = COALESCE(excluded.account_avatar_url, published_posts.account_avatar_url),
+                target_kind = excluded.target_kind,
+                target_group_id = COALESCE(excluded.target_group_id, published_posts.target_group_id),
+                target_group_name = COALESCE(excluded.target_group_name, published_posts.target_group_name),
+                target_group_avatar_url = COALESCE(excluded.target_group_avatar_url, published_posts.target_group_avatar_url),
+                message_text = CASE WHEN excluded.message_text <> '' THEN excluded.message_text ELSE published_posts.message_text END,
+                media_file_path = COALESCE(excluded.media_file_path, published_posts.media_file_path),
+                media_preview_url = COALESCE(excluded.media_preview_url, published_posts.media_preview_url),
+                permalink_url = COALESCE(excluded.permalink_url, published_posts.permalink_url),
+                reaction_count = MAX(published_posts.reaction_count, excluded.reaction_count),
+                comment_count = MAX(published_posts.comment_count, excluded.comment_count);
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.CommandText = sql;
+
+        SqliteParameter pPostId = cmd.Parameters.Add("$post_id", SqliteType.Text);
+        SqliteParameter pAccountUid = cmd.Parameters.Add("$account_uid", SqliteType.Text);
+        SqliteParameter pAccountName = cmd.Parameters.Add("$account_name", SqliteType.Text);
+        SqliteParameter pAccountAvatarUrl = cmd.Parameters.Add("$account_avatar_url", SqliteType.Text);
+        SqliteParameter pTargetKind = cmd.Parameters.Add("$target_kind", SqliteType.Text);
+        SqliteParameter pTargetGroupId = cmd.Parameters.Add("$target_group_id", SqliteType.Text);
+        SqliteParameter pTargetGroupName = cmd.Parameters.Add("$target_group_name", SqliteType.Text);
+        SqliteParameter pTargetGroupAvatarUrl = cmd.Parameters.Add("$target_group_avatar_url", SqliteType.Text);
+        SqliteParameter pMessageText = cmd.Parameters.Add("$message_text", SqliteType.Text);
+        SqliteParameter pMediaFilePath = cmd.Parameters.Add("$media_file_path", SqliteType.Text);
+        SqliteParameter pMediaPreviewUrl = cmd.Parameters.Add("$media_preview_url", SqliteType.Text);
+        SqliteParameter pPermalinkUrl = cmd.Parameters.Add("$permalink_url", SqliteType.Text);
+        SqliteParameter pPublishedAt = cmd.Parameters.Add("$published_at", SqliteType.Text);
+        SqliteParameter pReactionCount = cmd.Parameters.Add("$reaction_count", SqliteType.Integer);
+        SqliteParameter pCommentCount = cmd.Parameters.Add("$comment_count", SqliteType.Integer);
+
+        for (int i = 0; i < posts.Count; i++)
+        {
+            PublishedPostRecord post = posts[i];
+            if (post is null || string.IsNullOrWhiteSpace(post.PostId))
+            {
+                continue;
+            }
+
+            pPostId.Value = post.PostId;
+            pAccountUid.Value = post.AccountUid;
+            pAccountName.Value = post.AuthorName ?? string.Empty;
+            pAccountAvatarUrl.Value = (object?)post.AuthorAvatarUrl ?? DBNull.Value;
+            pTargetKind.Value = post.IsPersonalProfilePost ? "Feed" : "Group";
+            pTargetGroupId.Value = (object?)post.TargetGroupId ?? DBNull.Value;
+            pTargetGroupName.Value = (object?)post.TargetGroupName ?? DBNull.Value;
+            pTargetGroupAvatarUrl.Value = (object?)post.TargetGroupAvatarUrl ?? DBNull.Value;
+            pMessageText.Value = post.MessageText;
+            pMediaFilePath.Value = (object?)post.LocalMediaFilePath ?? DBNull.Value;
+            pMediaPreviewUrl.Value = (object?)post.MediaPreviewUrl ?? DBNull.Value;
+            pPermalinkUrl.Value = (object?)post.PermalinkUrl ?? DBNull.Value;
+            pPublishedAt.Value = post.CreatedAt.ToString("O", CultureInfo.InvariantCulture);
+            pReactionCount.Value = post.ReactionCount;
+            pCommentCount.Value = post.CommentCount;
+
+            _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

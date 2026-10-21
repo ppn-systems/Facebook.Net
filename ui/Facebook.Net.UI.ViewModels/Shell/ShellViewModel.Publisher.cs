@@ -274,6 +274,69 @@ public sealed partial class ShellViewModel
             _context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
     }
 
+    private async Task<List<string>?> UploadMediaFilesParallelAsync(
+        IBrowserSession session,
+        List<string> mediaFiles,
+        CancellationToken ct)
+    {
+        if (mediaFiles.Count == 0)
+        {
+            return null;
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Post,
+            AuditSeverity.Info,
+            _context.Localization["Audit.Cat.Post"],
+            mediaFiles.Count == 1
+                ? _context.Localization["Log.UploadingPhoto"]
+                : _context.Localization.Format("Log.UploadingMultiplePhotos", mediaFiles.Count)).ConfigureAwait(true);
+
+        if (mediaFiles.Count == 1)
+        {
+            ct.ThrowIfCancellationRequested();
+            string singleFbid = await _context.CometClient
+                .UploadUfiPhotoAsync(session, mediaFiles[0], ct)
+                .ConfigureAwait(true);
+            return !string.IsNullOrWhiteSpace(singleFbid) ? [singleFbid] : null;
+        }
+
+        string?[] uploadedByIndex = new string?[mediaFiles.Count];
+        using SemaphoreSlim gate = new(3, 3);
+        Task[] uploadTasks = new Task[mediaFiles.Count];
+        for (int i = 0; i < mediaFiles.Count; i++)
+        {
+            int idx = i;
+            string filePath = mediaFiles[idx];
+            uploadTasks[idx] = Task.Run(async () =>
+            {
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    uploadedByIndex[idx] = await _context.CometClient
+                        .UploadUfiPhotoAsync(session, filePath, ct)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ = gate.Release();
+                }
+            }, ct);
+        }
+
+        await Task.WhenAll(uploadTasks).ConfigureAwait(true);
+        List<string> uploadedIds = new(mediaFiles.Count);
+        for (int i = 0; i < uploadedByIndex.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(uploadedByIndex[i]))
+            {
+                uploadedIds.Add(uploadedByIndex[i]!);
+            }
+        }
+
+        return uploadedIds.Count > 0 ? uploadedIds : null;
+    }
+
     private async Task PublishCampaignAsync()
     {
         if (string.IsNullOrWhiteSpace(this.PostSpintaxText))
@@ -307,36 +370,7 @@ public sealed partial class ShellViewModel
             }
 
             List<string> mediaFiles = ParseExistingMediaFilePaths(this.PostMediaFilePath);
-            List<string>? photoIds = null;
-            if (mediaFiles.Count > 0)
-            {
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Post,
-                    AuditSeverity.Info,
-                    _context.Localization["Audit.Cat.Post"],
-                    mediaFiles.Count == 1
-                        ? _context.Localization["Log.UploadingPhoto"]
-                        : _context.Localization.Format("Log.UploadingMultiplePhotos", mediaFiles.Count)).ConfigureAwait(true);
-
-                List<string> uploadedIds = new(mediaFiles.Count);
-                for (int i = 0; i < mediaFiles.Count; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    string uploadedFbid = await _context.CometClient
-                        .UploadUfiPhotoAsync(session, mediaFiles[i], ct)
-                        .ConfigureAwait(true);
-
-                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
-                    {
-                        uploadedIds.Add(uploadedFbid);
-                    }
-                }
-
-                if (uploadedIds.Count > 0)
-                {
-                    photoIds = uploadedIds;
-                }
-            }
+            List<string>? photoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
 
             bool publishToFeed = !this.PublishToTargetGroups || this.PublishTargetMode == 0 || this.PublishTargetMode == 2;
             bool publishToGroups = this.PublishToTargetGroups && (this.PublishTargetMode == 1 || this.PublishTargetMode == 2);
@@ -495,6 +529,8 @@ public sealed partial class ShellViewModel
                     IsPersonalProfilePost: false);
 
                 await _context.AccountStore.UpsertPublishedPostAsync(groupRecord, ct).ConfigureAwait(true);
+                this.PublishedPosts.Insert(0, groupRecord);
+                this.SelectedPublishedPost ??= groupRecord;
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
@@ -594,7 +630,7 @@ public sealed partial class ShellViewModel
                 }
             }
 
-            int syncedCount = 0;
+            List<PublishedPostRecord> syncedRecords = new(timeline.Items.Count);
             for (int i = 0; i < timeline.Items.Count; i++)
             {
                 PostSummary p = timeline.Items[i];
@@ -624,8 +660,12 @@ public sealed partial class ShellViewModel
                     CreatedAt: p.CreatedAt ?? DateTimeOffset.UtcNow,
                     IsPersonalProfilePost: true);
 
-                await _context.AccountStore.UpsertPublishedPostAsync(rec, ct).ConfigureAwait(true);
-                syncedCount++;
+                syncedRecords.Add(rec);
+            }
+
+            if (syncedRecords.Count > 0)
+            {
+                await _context.AccountStore.UpsertPublishedPostsBatchAsync(syncedRecords, ct).ConfigureAwait(true);
             }
 
             await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
@@ -634,7 +674,7 @@ public sealed partial class ShellViewModel
                 AuditCategory.Post,
                 AuditSeverity.Success,
                 accountName,
-                _context.Localization.Format("Log.SyncedTimelinePostsCount", syncedCount, accountName)).ConfigureAwait(true);
+                _context.Localization.Format("Log.SyncedTimelinePostsCount", syncedRecords.Count, accountName)).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -707,36 +747,7 @@ public sealed partial class ShellViewModel
             }
 
             List<string> mediaFiles = ParseExistingMediaFilePaths(sourcePost.LocalMediaFilePath);
-            List<string>? photoIds = null;
-            if (mediaFiles.Count > 0)
-            {
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Post,
-                    AuditSeverity.Info,
-                    _context.Localization["Audit.Cat.Post"],
-                    mediaFiles.Count == 1
-                        ? _context.Localization["Log.UploadingPhoto"]
-                        : _context.Localization.Format("Log.UploadingMultiplePhotos", mediaFiles.Count)).ConfigureAwait(true);
-
-                List<string> uploadedIds = new(mediaFiles.Count);
-                for (int i = 0; i < mediaFiles.Count; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    string uploadedFbid = await _context.CometClient
-                        .UploadUfiPhotoAsync(session, mediaFiles[i], ct)
-                        .ConfigureAwait(true);
-
-                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
-                    {
-                        uploadedIds.Add(uploadedFbid);
-                    }
-                }
-
-                if (uploadedIds.Count > 0)
-                {
-                    photoIds = uploadedIds;
-                }
-            }
+            List<string>? photoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
 
             string accountName = this.SelectedAccount?.DisplayName ?? session.AccountUid;
             string? accountAvatar = this.SelectedAccount?.AvatarUrl;
@@ -815,6 +826,8 @@ public sealed partial class ShellViewModel
                     IsPersonalProfilePost: false);
 
                 await _context.AccountStore.UpsertPublishedPostAsync(repostRecord, ct).ConfigureAwait(true);
+                this.PublishedPosts.Insert(0, repostRecord);
+                this.SelectedPublishedPost ??= repostRecord;
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,

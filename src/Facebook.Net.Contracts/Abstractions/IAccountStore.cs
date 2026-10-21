@@ -151,6 +151,11 @@ public interface IAccountStore
     Task UpsertPublishedPostAsync(PublishedPostRecord post, CancellationToken ct = default);
 
     /// <summary>
+    /// Inserts or updates a batch of published post or synchronized personal profile post records inside a single atomic transaction.
+    /// </summary>
+    Task UpsertPublishedPostsBatchAsync(IReadOnlyList<PublishedPostRecord> posts, CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes a published post record by ID.
     /// </summary>
     Task<bool> DeletePublishedPostAsync(string postId, CancellationToken ct = default);
