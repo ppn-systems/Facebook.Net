@@ -84,6 +84,9 @@ public interface ILeadScoringService
 
     /// <summary>Formats a <see cref="WorkspaceDataAnalyticsReport"/> into a structured summary for the AI Assistant.</summary>
     string FormatAnalyticsReportForAi(WorkspaceDataAnalyticsReport report);
+
+    /// <summary>Applies or removes <paramref name="tagId"/> on a lead's tag ID list and returns the updated comma-separated string (or <see langword="null"/> if empty) and whether any change occurred.</summary>
+    (string? UpdatedTagsCsv, bool Changed) ApplyLeadTagChange(IReadOnlyList<string> currentTagIds, string tagId, bool assign);
 }
 
 /// <summary>
@@ -702,6 +705,64 @@ public sealed class LeadScoringService : ILeadScoringService
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <inheritdoc />
+    public (string? UpdatedTagsCsv, bool Changed) ApplyLeadTagChange(
+        IReadOnlyList<string> currentTagIds,
+        string tagId,
+        bool assign)
+    {
+        ArgumentNullException.ThrowIfNull(currentTagIds);
+        if (string.IsNullOrWhiteSpace(tagId))
+        {
+            string? existingCsv = currentTagIds.Count > 0 ? string.Join(",", currentTagIds) : null;
+            return (existingCsv, false);
+        }
+
+        string trimmedTagId = tagId.Trim();
+        List<string> nextIds = new(currentTagIds.Count + 1);
+        for (int i = 0; i < currentTagIds.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(currentTagIds[i]))
+            {
+                nextIds.Add(currentTagIds[i].Trim());
+            }
+        }
+
+        bool changed = false;
+        if (assign)
+        {
+            bool exists = false;
+            for (int i = 0; i < nextIds.Count; i++)
+            {
+                if (string.Equals(nextIds[i], trimmedTagId, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists)
+            {
+                nextIds.Add(trimmedTagId);
+                changed = true;
+            }
+        }
+        else
+        {
+            for (int i = nextIds.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(nextIds[i], trimmedTagId, StringComparison.OrdinalIgnoreCase))
+                {
+                    nextIds.RemoveAt(i);
+                    changed = true;
+                }
+            }
+        }
+
+        string? updatedCsv = nextIds.Count > 0 ? string.Join(",", nextIds) : null;
+        return (updatedCsv, changed);
     }
 
     private CachedTextAnalysis GetOrAnalyzeText(string? text)

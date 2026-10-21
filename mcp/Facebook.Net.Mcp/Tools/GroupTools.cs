@@ -12,12 +12,24 @@ using ModelContextProtocol.Server;
 namespace Facebook.Net.Mcp.Tools;
 
 /// <summary>
-/// MCP Tools for Facebook Community Group Discovery, Joining, Target Group Management, and Color Tagging.
+/// MCP Tools for Facebook Community Group Discovery, Joining, Target Group Management, Anti-Spam Rotation Selection, and Color Tagging.
 /// Strictly adheres to the safety rule: NEVER invokes LeaveGroupAsync.
 /// </summary>
 [McpServerToolType]
 public sealed class GroupTools(FacebookMcpSessionManager manager)
 {
+    private static readonly string[] s_defaultTagColors =
+    [
+        "#F6821F",
+        "#3B82F6",
+        "#10B981",
+        "#8B5CF6",
+        "#F43F5E",
+        "#06B6D4",
+        "#EAB308",
+        "#EC4899"
+    ];
+
     private readonly FacebookMcpSessionManager _manager = manager;
 
     [McpServerTool(Name = "fb_list_target_groups")]
@@ -186,6 +198,109 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
         });
     }
 
+    [McpServerTool(Name = "fb_batch_join_groups")]
+    [Description("Batch-join multiple Facebook community groups (either from comma-separated groupIdsCsv OR discovered via searchKeyword) with safe anti-checkpoint delay between requests, automatically saving newly joined groups to Target Groups.")]
+    public async Task<string> BatchJoinGroupsAsync(
+        [Description("Optional comma- or semicolon-separated Facebook Group IDs to join")] string? groupIdsCsv = null,
+        [Description("Optional search keyword to find and join unjoined groups if groupIdsCsv is omitted")] string? searchKeyword = null,
+        [Description("Maximum number of groups to join in this batch (1..20, default 5)")] int maxGroupsToJoin = 5,
+        [Description("Anti-checkpoint delay in seconds between join requests (2..120, default 5)")] int delaySeconds = 5,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(groupIdsCsv) && string.IsNullOrWhiteSpace(searchKeyword))
+        {
+            throw new ArgumentException("Either 'groupIdsCsv' or 'searchKeyword' must be provided.");
+        }
+
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        int cap = Math.Clamp(maxGroupsToJoin, 1, 20);
+        int delaySec = Math.Clamp(delaySeconds, 2, 120);
+        List<(string GroupId, string GroupName, string? AvatarUrl)> candidates = [];
+
+        if (!string.IsNullOrWhiteSpace(groupIdsCsv))
+        {
+            string[] ids = groupIdsCsv.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            for (int i = 0; i < ids.Length && candidates.Count < cap; i++)
+            {
+                candidates.Add((ids[i], $"Group {ids[i]}", null));
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(searchKeyword))
+        {
+            PagedResult<GroupSummary> searchResult = await _manager.CometClient
+                .SearchGroupsAsync(session, searchKeyword.Trim(), count: Math.Max(cap * 3, 20), ct: ct)
+                .ConfigureAwait(false);
+
+            for (int i = 0; i < searchResult.Items.Count && candidates.Count < cap; i++)
+            {
+                GroupSummary grp = searchResult.Items[i];
+                if (grp.MembershipState is GroupMembershipState.CanJoin or GroupMembershipState.Unknown)
+                {
+                    candidates.Add((grp.GroupId, grp.Name, grp.AvatarUrl));
+                }
+            }
+        }
+
+        List<object> results = [];
+        int joinedMemberCount = 0;
+        int requestedApprovalCount = 0;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (i > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySec), ct).ConfigureAwait(false);
+            }
+
+            (string gid, string gname, string? avatar) = candidates[i];
+            GroupMembershipState state = await _manager.CometClient
+                .JoinGroupAsync(session, gid, ct)
+                .ConfigureAwait(false);
+
+            if (state == GroupMembershipState.Member)
+            {
+                joinedMemberCount++;
+                await _manager.AccountStore.UpsertTargetGroupAsync(
+                    new SavedTargetGroup(gid, gname, IsEnabled: true, Notes: null, AvatarUrl: avatar),
+                    ct).ConfigureAwait(false);
+            }
+            else if (state == GroupMembershipState.Requested)
+            {
+                requestedApprovalCount++;
+            }
+
+            results.Add(new
+            {
+                group_id = gid,
+                group_name = gname,
+                membership_state = state.ToString()
+            });
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Group,
+            AuditSeverity.Success,
+            account,
+            searchKeyword ?? "Batch Join",
+            $"MCP batch-joined {candidates.Count} groups ({joinedMemberCount} joined, {requestedApprovalCount} pending approval).",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            attempted_count = candidates.Count,
+            joined_member_count = joinedMemberCount,
+            requested_approval_count = requestedApprovalCount,
+            results
+        });
+    }
+
     [McpServerTool(Name = "fb_save_target_group")]
     [Description("Add or update a Facebook group in the local Target Groups list for campaigns and scraping.")]
     public async Task<string> SaveTargetGroupAsync(
@@ -227,6 +342,138 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
         });
     }
 
+    [McpServerTool(Name = "fb_remove_target_group")]
+    [Description("Remove one or more Facebook groups from the local Target Groups list in SQLite without leaving the group on Facebook.")]
+    public async Task<string> RemoveTargetGroupAsync(
+        [Description("Comma- or semicolon-separated Facebook Group IDs to remove from Target Groups")] string groupIdsCsv,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupIdsCsv);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string[] ids = groupIdsCsv.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        int removedCount = 0;
+
+        for (int i = 0; i < ids.Length; i++)
+        {
+            if (await _manager.AccountStore.DeleteTargetGroupAsync(ids[i], ct).ConfigureAwait(false))
+            {
+                removedCount++;
+            }
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            account: null,
+            "Remove Target Groups",
+            $"MCP removed {removedCount} target groups from local list.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            removed_count = removedCount,
+            requested_ids = ids
+        });
+    }
+
+    [McpServerTool(Name = "fb_configure_target_groups_selection")]
+    [Description("Configure which saved Target Groups are enabled for campaigns and scraping using modes: 'enable_all', 'disable_all', 'only_tag' (enable only groups carrying tagIdOrName), 'enable_tag', 'disable_tag', or 'random' (anti-spam Fisher-Yates random rotation of randomCount groups).")]
+    public async Task<string> ConfigureTargetGroupsSelectionAsync(
+        [Description("Selection mode: 'enable_all', 'disable_all', 'only_tag', 'enable_tag', 'disable_tag', or 'random'")] string mode,
+        [Description("Optional group color tag ID or tag name when mode is 'only_tag', 'enable_tag', or 'disable_tag'")] string? tagIdOrName = null,
+        [Description("Number of random groups to enable when mode is 'random' (default 20)")] int randomCount = 20,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mode);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string? resolvedTagId = null;
+        if (!string.IsNullOrWhiteSpace(tagIdOrName))
+        {
+            string cleanTag = tagIdOrName.Trim();
+            string normTag = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTag);
+            IReadOnlyList<GroupTag> allTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+            GroupTag? matchedTag = allTags.FirstOrDefault(t =>
+                string.Equals(t.Id, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t.Name, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTag, StringComparison.OrdinalIgnoreCase));
+            resolvedTagId = matchedTag?.Id ?? cleanTag;
+        }
+
+        IReadOnlyList<SavedTargetGroup> groups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
+        (IReadOnlyList<SavedTargetGroup> modifiedGroups, int enabledCount, int disabledCount) =
+            _manager.GroupTagService.ConfigureTargetGroupsSelection(groups, mode, resolvedTagId, randomCount);
+
+        if (modifiedGroups.Count > 0)
+        {
+            await _manager.AccountStore.UpsertTargetGroupsBatchAsync(modifiedGroups, ct).ConfigureAwait(false);
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            "Target Groups Selection",
+            $"MCP configured target groups selection (mode='{mode}', enabled={enabledCount}, disabled={disabledCount}).",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            mode = mode.Trim().ToLowerInvariant(),
+            resolved_tag_id = resolvedTagId,
+            total_groups = groups.Count,
+            enabled_count = enabledCount,
+            disabled_count = disabledCount,
+            modified_count = modifiedGroups.Count
+        });
+    }
+
+    [McpServerTool(Name = "fb_list_group_tags")]
+    [Description("List all color-coded group tags stored in local SQLite along with the total and enabled target group counts for each tag.")]
+    public async Task<string> ListGroupTagsAsync(CancellationToken ct = default)
+    {
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        IReadOnlyList<GroupTag> allTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<SavedTargetGroup> groups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
+
+        var items = allTags.Select(t =>
+        {
+            int totalWithTag = 0;
+            int enabledWithTag = 0;
+            for (int i = 0; i < groups.Count; i++)
+            {
+                if (groups[i].HasTag(t.Id))
+                {
+                    totalWithTag++;
+                    if (groups[i].IsEnabled)
+                    {
+                        enabledWithTag++;
+                    }
+                }
+            }
+
+            return new
+            {
+                id = t.Id,
+                name = t.Name,
+                color_hex = t.ColorHex,
+                total_groups_count = totalWithTag,
+                enabled_groups_count = enabledWithTag
+            };
+        });
+
+        return JsonSerializer.Serialize(new
+        {
+            total_tags = allTags.Count,
+            total_target_groups = groups.Count,
+            group_tags = items
+        });
+    }
+
     [McpServerTool(Name = "fb_create_group_tag")]
     [Description("Create a new color-coded tag for organizing campaign target groups.")]
     public async Task<string> CreateGroupTagAsync(
@@ -256,18 +503,6 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             color_hex = tag.ColorHex
         });
     }
-
-    private static readonly string[] s_defaultTagColors =
-    [
-        "#F6821F",
-        "#3B82F6",
-        "#10B981",
-        "#8B5CF6",
-        "#F43F5E",
-        "#06B6D4",
-        "#EAB308",
-        "#EC4899"
-    ];
 
     [McpServerTool(Name = "fb_assign_group_tag")]
     [Description("Assign or remove a color tag ID across one or more saved target groups.")]
@@ -595,99 +830,21 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
     {
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
-        (string Id, string Name, string ColorHex, string[] NormKeywords)[] rules =
-        [
-            ("tag_bds", "Bất động sản", "#3B82F6", ["bat dong san", "bds", "nha dat", "chung cu", "can ho", "phong tro", "nha tro", "mat bang", "dat nen", "thue nha", "mua ban nha"]),
-            ("tag_job", "Việc làm & Tuyển dụng", "#10B981", ["viec lam", "tuyen dung", "tim viec", "intern", "fresher", "job", "freelance", "hr", "career", "cv"]),
-            ("tag_tech", "Công nghệ & Lập trình", "#06B6D4", [".net", "c#", "csharp", "lap trinh", "developer", "code", "coding", "it ", "cntt", "software", "arduino", "raspberry", "esp32", "iot", "ai ", "claude", "gpt", "antigravity", "microservices", "leetcode", "dsa", "web", "app", "linux", "windows", "pc", "mini pc", "ban phim", "ssd", "hdd", "phan cung", "devops", "frontend", "backend", "react", "python", "java", "golang"]),
-            ("tag_market", "Mua bán & Chợ", "#F6821F", ["mua ban", "cho ", "thanh ly", "pass ", "sang nhuong", "trao doi", "gia re", "sỉ", "buon", "kinh doanh", "ban hang", "shop", "deal"]),
-            ("tag_community", "Cộng đồng & Giao lưu", "#8B5CF6", ["cong dong", "giao luu", "hoi ", "group", "clb", "voz", "hay day", "ngoc rong", "dragon city", "afk", "game", "me bau", "me don than", "chia se", "ho tro", "giup do"])
-        ];
-
-        for (int r = 0; r < rules.Length; r++)
-        {
-            await _manager.AccountStore.UpsertGroupTagAsync(
-                new GroupTag(rules[r].Id, rules[r].Name, rules[r].ColorHex),
-                ct).ConfigureAwait(false);
-        }
-
         IReadOnlyList<GroupTag> allTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
         HashSet<string> validTagIds = new(allTags.Select(t => t.Id), StringComparer.OrdinalIgnoreCase);
-
         IReadOnlyList<SavedTargetGroup> groups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
-        List<SavedTargetGroup> updatedBatch = [];
-        Dictionary<string, int> categoryCounts = new(StringComparer.OrdinalIgnoreCase);
 
-        for (int i = 0; i < groups.Count; i++)
+        (IReadOnlyList<GroupTag> requiredTags, IReadOnlyList<SavedTargetGroup> modifiedGroups, IReadOnlyDictionary<string, int> categoryCounts) =
+            _manager.GroupTagService.ClassifyAndCleanGroups(groups, validTagIds, resetExistingTagsFirst);
+
+        for (int i = 0; i < requiredTags.Count; i++)
         {
-            SavedTargetGroup g = groups[i];
-            string normName = $" {_manager.LeadScoring.RemoveVietnameseDiacritics(g.GroupName).ToLowerInvariant()} ";
-
-            List<string> assigned = [];
-            if (!resetExistingTagsFirst)
-            {
-                IReadOnlyList<string> currentIds = g.GetTagIds();
-                for (int c = 0; c < currentIds.Count; c++)
-                {
-                    string mappedId = currentIds[c] switch
-                    {
-                        "tag_jobs" => "tag_job",
-                        "tag_sales" => "tag_market",
-                        _ => currentIds[c]
-                    };
-                    if (validTagIds.Contains(mappedId) && !assigned.Contains(mappedId, StringComparer.OrdinalIgnoreCase))
-                    {
-                        assigned.Add(mappedId);
-                    }
-                }
-            }
-
-            for (int r = 0; r < rules.Length; r++)
-            {
-                string[] kws = rules[r].NormKeywords;
-                bool matchedRule = false;
-                for (int k = 0; k < kws.Length; k++)
-                {
-                    if (normName.Contains(kws[k], StringComparison.OrdinalIgnoreCase))
-                    {
-                        matchedRule = true;
-                        break;
-                    }
-                }
-
-                if (matchedRule)
-                {
-                    if (!assigned.Contains(rules[r].Id, StringComparer.OrdinalIgnoreCase))
-                    {
-                        assigned.Add(rules[r].Id);
-                    }
-                }
-                else if (string.Equals(rules[r].Id, "tag_bds", StringComparison.OrdinalIgnoreCase))
-                {
-                    _ = assigned.RemoveAll(id => string.Equals(id, "tag_bds", StringComparison.OrdinalIgnoreCase));
-                }
-            }
-
-            if (assigned.Count == 0)
-            {
-                assigned.Add("tag_community");
-            }
-
-            for (int a = 0; a < assigned.Count; a++)
-            {
-                categoryCounts[assigned[a]] = categoryCounts.TryGetValue(assigned[a], out int cnt) ? cnt + 1 : 1;
-            }
-
-            string newCsv = string.Join(',', assigned);
-            if (!string.Equals(g.TagsCsv ?? string.Empty, newCsv, StringComparison.Ordinal))
-            {
-                updatedBatch.Add(g with { TagsCsv = newCsv });
-            }
+            await _manager.AccountStore.UpsertGroupTagAsync(requiredTags[i], ct).ConfigureAwait(false);
         }
 
-        if (updatedBatch.Count > 0)
+        if (modifiedGroups.Count > 0)
         {
-            await _manager.AccountStore.UpsertTargetGroupsBatchAsync(updatedBatch, ct).ConfigureAwait(false);
+            await _manager.AccountStore.UpsertTargetGroupsBatchAsync(modifiedGroups, ct).ConfigureAwait(false);
         }
 
         _ = await _manager.LogAuditAsync(
@@ -695,14 +852,14 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             AuditSeverity.Success,
             account: null,
             "Smart Group Classification",
-            $"MCP cleaned and classified {groups.Count} groups ({updatedBatch.Count} updated).",
+            $"MCP cleaned and classified {groups.Count} groups ({modifiedGroups.Count} updated).",
             ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
             status = "success",
             total_groups = groups.Count,
-            updated_groups_count = updatedBatch.Count,
+            updated_groups_count = modifiedGroups.Count,
             category_counts = categoryCounts
         });
     }

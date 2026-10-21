@@ -13,7 +13,7 @@ using ModelContextProtocol.Server;
 namespace Facebook.Net.Mcp.Tools;
 
 /// <summary>
-/// MCP Tools for Publishing Posts, Commenting, Reacting, and Managing Spintax Campaign Templates.
+/// MCP Tools for Publishing Posts, Batch Group Campaigns, Timeline Synchronization, Reposting, Commenting, Reacting, Up-Top Bumping, and Managing Spintax Campaign Templates.
 /// </summary>
 [McpServerToolType]
 public sealed class PublisherTools(FacebookMcpSessionManager manager)
@@ -35,31 +35,8 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
             .ConfigureAwait(false);
 
-        List<string>? photoIds = null;
         string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePath) ? null : mediaFilePath.Trim();
-        if (!string.IsNullOrWhiteSpace(trimmedMedia))
-        {
-            string[] candidatePaths = trimmedMedia.Split([';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            List<string> uploadedIds = [];
-            for (int i = 0; i < candidatePaths.Length; i++)
-            {
-                if (File.Exists(candidatePaths[i]))
-                {
-                    string? uploadedFbid = await _manager.CometClient
-                        .UploadUfiPhotoAsync(session, candidatePaths[i], ct)
-                        .ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(uploadedFbid))
-                    {
-                        uploadedIds.Add(uploadedFbid);
-                    }
-                }
-            }
-
-            if (uploadedIds.Count > 0)
-            {
-                photoIds = uploadedIds;
-            }
-        }
+        List<string>? photoIds = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
 
         bool isGroup = !string.IsNullOrWhiteSpace(targetGroupId);
         ComposerTarget composerTarget = isGroup ? ComposerTarget.Group : ComposerTarget.Feed;
@@ -68,7 +45,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             ? targetGroupName.Trim()
             : (isGroup ? $"Group {cleanGroupId}" : "Trang cá nhân");
 
-        string resolvedMessage = ResolveDynamicTokens(messageText, account.DisplayName, groupLabel);
+        string resolvedMessage = _manager.CampaignPublisher.ResolveDynamicVariables(messageText, account.DisplayName, groupLabel);
 
         string? postId = await _manager.CometClient
             .PublishPostAsync(session, resolvedMessage, composerTarget, cleanGroupId, photoIds, ct: ct)
@@ -130,6 +107,332 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         });
     }
 
+    [McpServerTool(Name = "fb_publish_campaign_batch")]
+    [Description("Execute a multi-group publishing campaign with Spintax and dynamic variables ('{group_name}', '{date}', '{time}', '{random_id}'), single/multi-photo upload reuse, optional Group Tag filter, anti-checkpoint delay, and optional auto-reaction.")]
+    public async Task<string> PublishCampaignBatchAsync(
+        [Description("Spintax post template to publish across target groups")] string messageSpintax,
+        [Description("Optional single or semicolon-separated local image file paths to upload once and attach to all posts")] string? mediaFilePaths = null,
+        [Description("Optional group color tag ID or tag name to filter target groups (if omitted, publishes to enabled target groups)")] string? filterByTagIdOrName = null,
+        [Description("Maximum number of target groups to publish to (1..100, default 20)")] int maxGroups = 20,
+        [Description("Anti-checkpoint delay in seconds between posts (2..120, default 5)")] int delaySeconds = 5,
+        [Description("Whether to also publish the post to the account's personal timeline before posting to groups (default false)")] bool alsoPublishToPersonalFeed = false,
+        [Description("Whether to automatically react ('Love') to each newly published post for initial engagement (default true)")] bool autoReactAfterPost = true,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageSpintax);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        List<SavedTargetGroup> targetGroups = await this.ResolveCampaignTargetGroupsAsync(filterByTagIdOrName, Math.Clamp(maxGroups, 1, 100), ct)
+            .ConfigureAwait(false);
+
+        string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePaths) ? null : mediaFilePaths.Trim();
+        List<string>? photoIds = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
+
+        int delaySec = Math.Clamp(delaySeconds, 2, 120);
+        List<object> publishedResults = [];
+
+        if (alsoPublishToPersonalFeed)
+        {
+            string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, "Trang cá nhân");
+            string? feedPostId = await _manager.CometClient
+                .PublishPostAsync(session, feedMsg, ComposerTarget.Feed, null, photoIds, ct: ct)
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(feedPostId))
+            {
+                if (autoReactAfterPost)
+                {
+                    _ = await _manager.CometClient.ReactToPostAsync(session, feedPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                }
+
+                string feedPermalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/{feedPostId}";
+                await _manager.AccountStore.UpsertPublishedPostAsync(
+                    new PublishedPostRecord(
+                        PostId: feedPostId,
+                        AccountUid: session.AccountUid,
+                        AuthorName: account.DisplayName,
+                        AuthorAvatarUrl: account.AvatarUrl,
+                        MessageText: PayloadBuilder.SpinText(feedMsg),
+                        MediaPreviewUrl: null,
+                        LocalMediaFilePath: trimmedMedia,
+                        TargetGroupId: null,
+                        TargetGroupName: "Trang cá nhân",
+                        TargetGroupAvatarUrl: null,
+                        PermalinkUrl: feedPermalink,
+                        CreatedAt: DateTimeOffset.UtcNow,
+                        IsPersonalProfilePost: true),
+                    ct).ConfigureAwait(false);
+
+                publishedResults.Add(new
+                {
+                    target = "Feed",
+                    group_id = (string?)null,
+                    group_name = "Trang cá nhân",
+                    post_id = feedPostId,
+                    permalink_url = feedPermalink
+                });
+            }
+        }
+
+        for (int i = 0; i < targetGroups.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (i > 0 || alsoPublishToPersonalFeed)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySec), ct).ConfigureAwait(false);
+            }
+
+            SavedTargetGroup grp = targetGroups[i];
+            string personalized = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, grp.GroupName);
+            string? postId = await _manager.CometClient
+                .PublishPostAsync(session, personalized, ComposerTarget.Group, grp.GroupId, photoIds, ct: ct)
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(postId))
+            {
+                if (autoReactAfterPost)
+                {
+                    _ = await _manager.CometClient.ReactToPostAsync(session, postId, ReactionKind.Love, ct).ConfigureAwait(false);
+                }
+
+                string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{postId}/";
+                await _manager.AccountStore.RecordActionAsync(
+                    new ActionHistoryEntry(session.AccountUid, "POST", grp.GroupId, postId, DateTimeOffset.UtcNow),
+                    ct).ConfigureAwait(false);
+
+                await _manager.AccountStore.UpsertPublishedPostAsync(
+                    new PublishedPostRecord(
+                        PostId: postId,
+                        AccountUid: session.AccountUid,
+                        AuthorName: account.DisplayName,
+                        AuthorAvatarUrl: account.AvatarUrl,
+                        MessageText: PayloadBuilder.SpinText(personalized),
+                        MediaPreviewUrl: null,
+                        LocalMediaFilePath: trimmedMedia,
+                        TargetGroupId: grp.GroupId,
+                        TargetGroupName: grp.GroupName,
+                        TargetGroupAvatarUrl: grp.AvatarUrl,
+                        PermalinkUrl: permalink,
+                        CreatedAt: DateTimeOffset.UtcNow,
+                        IsPersonalProfilePost: false),
+                    ct).ConfigureAwait(false);
+
+                publishedResults.Add(new
+                {
+                    target = "Group",
+                    group_id = grp.GroupId,
+                    group_name = grp.GroupName,
+                    post_id = postId,
+                    permalink_url = permalink
+                });
+            }
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Post,
+            AuditSeverity.Success,
+            account,
+            "Campaign Batch",
+            $"MCP published campaign batch ({publishedResults.Count} posts across {targetGroups.Count} target groups).",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            target_groups_selected = targetGroups.Count,
+            published_count = publishedResults.Count,
+            attached_photos_count = photoIds?.Count ?? 0,
+            posts = publishedResults
+        });
+    }
+
+    [McpServerTool(Name = "fb_sync_personal_timeline_posts")]
+    [Description("Synchronize recent posts from the active account's personal Facebook timeline via Comet GraphQL into local SQLite so they can be inspected or reposted to community groups.")]
+    public async Task<string> SyncPersonalTimelinePostsAsync(
+        [Description("Number of recent personal timeline posts to fetch (1..50, default 25)")] int count = 25,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        PagedResult<PostSummary> timeline = await _manager.CometClient
+            .GetTimelinePostsAsync(session, count: Math.Clamp(count, 1, 50), ct: ct)
+            .ConfigureAwait(false);
+
+        List<PublishedPostRecord> records = new(timeline.Items.Count);
+        for (int i = 0; i < timeline.Items.Count; i++)
+        {
+            PostSummary p = timeline.Items[i];
+            if (string.IsNullOrWhiteSpace(p.PostId))
+            {
+                continue;
+            }
+
+            records.Add(new PublishedPostRecord(
+                PostId: p.PostId,
+                AccountUid: account.Uid,
+                AuthorName: !string.IsNullOrWhiteSpace(p.AuthorName) ? p.AuthorName : account.DisplayName,
+                AuthorAvatarUrl: p.AuthorAvatarUrl ?? account.AvatarUrl,
+                MessageText: p.MessageText ?? string.Empty,
+                MediaPreviewUrl: p.MediaPreviewUrl,
+                LocalMediaFilePath: null,
+                TargetGroupId: null,
+                TargetGroupName: "Trang cá nhân",
+                TargetGroupAvatarUrl: null,
+                PermalinkUrl: p.PermalinkUrl ?? $"{ProtocolConstants.Endpoints.BaseOrigin}/{p.PostId}",
+                CreatedAt: p.CreatedAt ?? DateTimeOffset.UtcNow,
+                IsPersonalProfilePost: true));
+        }
+
+        if (records.Count > 0)
+        {
+            await _manager.AccountStore.UpsertPublishedPostsBatchAsync(records, ct).ConfigureAwait(false);
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account,
+            "Personal Timeline",
+            $"MCP synced {records.Count} personal timeline posts.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            synced_count = records.Count,
+            posts = records.Select(r => new
+            {
+                post_id = r.PostId,
+                message_text = r.MessageText,
+                media_preview_url = r.MediaPreviewUrl,
+                permalink_url = r.PermalinkUrl,
+                created_at = r.CreatedAt.ToString("o")
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_repost_to_groups")]
+    [Description("Repost or share an existing published/personal post across enabled Target Groups (or groups matching filterByTagIdOrName) with Spintax caption personalization and anti-checkpoint delay.")]
+    public async Task<string> RepostToGroupsAsync(
+        [Description("Source Post ID from published_posts to share/repost to groups")] string sourcePostId,
+        [Description("Optional custom Spintax caption (if omitted, reuses the source post's message text)")] string? customCaptionSpintax = null,
+        [Description("Optional group color tag ID or tag name to filter target groups")] string? filterByTagIdOrName = null,
+        [Description("Maximum number of target groups to repost to (1..50, default 15)")] int maxGroups = 15,
+        [Description("Anti-checkpoint delay in seconds between reposts (2..120, default 5)")] int delaySeconds = 5,
+        [Description("Whether to automatically react ('Love') to each reposted group post (default true)")] bool autoReactAfterPost = true,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePostId);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanSourceId = sourcePostId.Trim();
+        IReadOnlyList<PublishedPostRecord> savedPosts = await _manager.AccountStore
+            .GetPublishedPostsAsync(null, 200, ct)
+            .ConfigureAwait(false);
+        PublishedPostRecord? sourceRecord = savedPosts.FirstOrDefault(p => string.Equals(p.PostId, cleanSourceId, StringComparison.Ordinal));
+
+        string baseTemplate = !string.IsNullOrWhiteSpace(customCaptionSpintax)
+            ? customCaptionSpintax.Trim()
+            : (sourceRecord?.MessageText ?? string.Empty);
+
+        List<SavedTargetGroup> targetGroups = await this.ResolveCampaignTargetGroupsAsync(filterByTagIdOrName, Math.Clamp(maxGroups, 1, 50), ct)
+            .ConfigureAwait(false);
+
+        List<string>? fallbackPhotoIds = null;
+        if (!string.IsNullOrWhiteSpace(sourceRecord?.LocalMediaFilePath))
+        {
+            fallbackPhotoIds = await this.UploadMediaFilesOnceAsync(session, sourceRecord.LocalMediaFilePath, ct).ConfigureAwait(false);
+        }
+
+        int delaySec = Math.Clamp(delaySeconds, 2, 120);
+        List<object> reposted = [];
+
+        for (int i = 0; i < targetGroups.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (i > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySec), ct).ConfigureAwait(false);
+            }
+
+            SavedTargetGroup grp = targetGroups[i];
+            string caption = _manager.CampaignPublisher.ResolveDynamicVariables(baseTemplate, account.DisplayName, grp.GroupName);
+
+            string? newPostId = await _manager.CometClient
+                .SharePostAsync(session, cleanSourceId, caption, grp.GroupId, ct)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(newPostId) && !string.IsNullOrWhiteSpace(caption))
+            {
+                newPostId = await _manager.CometClient
+                    .PublishPostAsync(session, caption, ComposerTarget.Group, grp.GroupId, fallbackPhotoIds, ct: ct)
+                    .ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(newPostId))
+            {
+                if (autoReactAfterPost)
+                {
+                    _ = await _manager.CometClient.ReactToPostAsync(session, newPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                }
+
+                string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{newPostId}/";
+                await _manager.AccountStore.UpsertPublishedPostAsync(
+                    new PublishedPostRecord(
+                        PostId: newPostId,
+                        AccountUid: session.AccountUid,
+                        AuthorName: account.DisplayName,
+                        AuthorAvatarUrl: account.AvatarUrl,
+                        MessageText: PayloadBuilder.SpinText(caption),
+                        MediaPreviewUrl: sourceRecord?.MediaPreviewUrl,
+                        LocalMediaFilePath: sourceRecord?.LocalMediaFilePath,
+                        TargetGroupId: grp.GroupId,
+                        TargetGroupName: grp.GroupName,
+                        TargetGroupAvatarUrl: grp.AvatarUrl,
+                        PermalinkUrl: permalink,
+                        CreatedAt: DateTimeOffset.UtcNow,
+                        IsPersonalProfilePost: false),
+                    ct).ConfigureAwait(false);
+
+                reposted.Add(new
+                {
+                    group_id = grp.GroupId,
+                    group_name = grp.GroupName,
+                    post_id = newPostId,
+                    permalink_url = permalink
+                });
+            }
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Post,
+            AuditSeverity.Success,
+            account,
+            "Repost to Groups",
+            $"MCP reposted '{cleanSourceId}' to {reposted.Count}/{targetGroups.Count} groups.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            source_post_id = cleanSourceId,
+            target_groups_selected = targetGroups.Count,
+            reposted_count = reposted.Count,
+            reposted_posts = reposted
+        });
+    }
+
     [McpServerTool(Name = "fb_create_comment")]
     [Description("Post a comment (supporting Spintax '{a|b}', dynamic variables '{author_name}', '{group_name}', '{date}', '{time}', '{random_id}', and optional image attachment) on a Facebook post, with duplicate-comment protection.")]
     public async Task<string> CreateCommentAsync(
@@ -184,7 +487,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 500, ct: ct)
             .ConfigureAwait(false);
         PostSummary? matchedPost = cachedPosts.FirstOrDefault(p => string.Equals(p.PostId, cleanPostId, StringComparison.Ordinal));
-        string resolvedComment = ResolveDynamicTokens(commentText, matchedPost?.AuthorName, matchedPost?.GroupName);
+        string resolvedComment = _manager.CampaignPublisher.ResolveDynamicVariables(commentText, matchedPost?.AuthorName, matchedPost?.GroupName);
 
         string? commentId = await _manager.CometClient
             .CreateCommentAsync(session, cleanPostId, resolvedComment, attachmentFbid, ct)
@@ -279,6 +582,23 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         });
     }
 
+    [McpServerTool(Name = "fb_delete_published_post")]
+    [Description("Delete a published post record from the local SQLite history table by Post ID.")]
+    public async Task<string> DeletePublishedPostAsync(
+        [Description("Published Post ID to delete from local SQLite")] string postId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        bool deleted = await _manager.AccountStore.DeletePublishedPostAsync(postId.Trim(), ct).ConfigureAwait(false);
+        return JsonSerializer.Serialize(new
+        {
+            status = deleted ? "deleted" : "not_found",
+            post_id = postId.Trim()
+        });
+    }
+
     [McpServerTool(Name = "fb_list_templates")]
     [Description("List all saved Spintax post and comment campaign templates from local SQLite.")]
     public async Task<string> ListTemplatesAsync(CancellationToken ct = default)
@@ -315,12 +635,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         ArgumentException.ThrowIfNullOrWhiteSpace(spintaxContent);
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
-        CampaignTemplate tpl = new(
-            Id: $"tpl_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-            Title: title.Trim(),
-            SpintaxContent: spintaxContent.Trim(),
-            MediaFilePath: string.IsNullOrWhiteSpace(mediaFilePath) ? null : mediaFilePath.Trim(),
-            IsCommentTemplate: isCommentTemplate);
+        CampaignTemplate tpl = _manager.CampaignPublisher.CreateTemplate(title, spintaxContent, mediaFilePath, isCommentTemplate);
 
         await _manager.AccountStore.UpsertCampaignTemplateAsync(tpl, ct).ConfigureAwait(false);
         _ = await _manager.LogAuditAsync(
@@ -337,6 +652,32 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             id = tpl.Id,
             title = tpl.Title,
             is_comment_template = tpl.IsCommentTemplate
+        });
+    }
+
+    [McpServerTool(Name = "fb_delete_template")]
+    [Description("Delete a saved Spintax post or comment template from local SQLite by its template ID or title.")]
+    public async Task<string> DeleteTemplateAsync(
+        [Description("Template ID or template title to delete")] string templateIdOrTitle,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(templateIdOrTitle);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string cleanTarget = templateIdOrTitle.Trim();
+        IReadOnlyList<CampaignTemplate> allTemplates = await _manager.AccountStore.GetAllCampaignTemplatesAsync(ct).ConfigureAwait(false);
+        CampaignTemplate? matched = allTemplates.FirstOrDefault(t =>
+            string.Equals(t.Id, cleanTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(t.Title, cleanTarget, StringComparison.OrdinalIgnoreCase));
+
+        string targetId = matched?.Id ?? cleanTarget;
+        bool deleted = await _manager.AccountStore.DeleteCampaignTemplateAsync(targetId, ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = deleted ? "deleted" : "not_found",
+            template_id = targetId,
+            title = matched?.Title
         });
     }
 
@@ -360,29 +701,16 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .GetPublishedPostsAsync(account.Uid, 50, ct)
             .ConfigureAwait(false);
 
-        int cap = Math.Clamp(maxPosts, 1, 30);
-        List<PublishedPostRecord> eligible = recentPosts
-            .Where(p => !p.IsPersonalProfilePost &&
-                        !string.IsNullOrWhiteSpace(p.PostId) &&
-                        !p.PostId.StartsWith("grp_", StringComparison.OrdinalIgnoreCase) &&
-                        !p.PostId.StartsWith("feed_", StringComparison.OrdinalIgnoreCase))
-            .Take(cap)
-            .ToList();
+        List<PublishedPostRecord> eligible = _manager.CampaignPublisher
+            .SelectEligibleBumpPosts(recentPosts, account.Uid, Math.Clamp(maxPosts, 1, 30));
 
         List<object> bumpedPosts = [];
         for (int i = 0; i < eligible.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
             PublishedPostRecord post = eligible[i];
-            DateTimeOffset nowLocal = DateTimeOffset.Now;
             string groupLabel = !string.IsNullOrWhiteSpace(post.TargetGroupName) ? post.TargetGroupName : "Cộng đồng";
-            string randomToken = Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-            string resolvedText = effectiveSpintax
-                .Replace("{group_name}", groupLabel, StringComparison.OrdinalIgnoreCase)
-                .Replace("{date}", nowLocal.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-                .Replace("{time}", nowLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-                .Replace("{random_id}", randomToken, StringComparison.OrdinalIgnoreCase);
+            string resolvedText = _manager.CampaignPublisher.ResolveDynamicVariables(effectiveSpintax, account.DisplayName, groupLabel);
 
             string? commentId = await _manager.CometClient
                 .CreateCommentAsync(session, post.PostId, resolvedText, null, ct)
@@ -428,23 +756,69 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         });
     }
 
-    private static string ResolveDynamicTokens(string rawText, string? authorName, string? groupName)
+    private async Task<List<string>?> UploadMediaFilesOnceAsync(
+        IBrowserSession session,
+        string? rawPaths,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(rawText))
+        List<string> existingPaths = _manager.CampaignPublisher.ParseExistingMediaFilePaths(rawPaths);
+        if (existingPaths.Count == 0)
         {
-            return string.Empty;
+            return null;
         }
 
-        DateTimeOffset nowLocal = DateTimeOffset.Now;
-        string authorLabel = !string.IsNullOrWhiteSpace(authorName) ? authorName.Trim() : "bạn";
-        string groupLabel = !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : "cộng đồng";
-        string randomToken = Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        List<string> uploadedIds = new(existingPaths.Count);
+        for (int i = 0; i < existingPaths.Count; i++)
+        {
+            string? uploadedFbid = await _manager.CometClient
+                .UploadUfiPhotoAsync(session, existingPaths[i], ct)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(uploadedFbid))
+            {
+                uploadedIds.Add(uploadedFbid);
+            }
+        }
 
-        return rawText
-            .Replace("{author_name}", authorLabel, StringComparison.OrdinalIgnoreCase)
-            .Replace("{group_name}", groupLabel, StringComparison.OrdinalIgnoreCase)
-            .Replace("{date}", nowLocal.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{time}", nowLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{random_id}", randomToken, StringComparison.OrdinalIgnoreCase);
+        return uploadedIds.Count > 0 ? uploadedIds : null;
+    }
+
+    private async Task<List<SavedTargetGroup>> ResolveCampaignTargetGroupsAsync(
+        string? filterByTagIdOrName,
+        int maxGroups,
+        CancellationToken ct)
+    {
+        IReadOnlyList<SavedTargetGroup> allGroups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
+        string? effectiveTagId = null;
+
+        if (!string.IsNullOrWhiteSpace(filterByTagIdOrName))
+        {
+            string cleanTag = filterByTagIdOrName.Trim();
+            string normTag = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTag);
+            IReadOnlyList<GroupTag> groupTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+            GroupTag? matchedTag = groupTags.FirstOrDefault(t =>
+                string.Equals(t.Id, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t.Name, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTag, StringComparison.OrdinalIgnoreCase));
+            effectiveTagId = matchedTag?.Id ?? cleanTag;
+        }
+
+        List<SavedTargetGroup> filtered = [];
+        for (int i = 0; i < allGroups.Count && filtered.Count < maxGroups; i++)
+        {
+            SavedTargetGroup g = allGroups[i];
+            if (!string.IsNullOrWhiteSpace(effectiveTagId))
+            {
+                if (g.HasTag(effectiveTagId))
+                {
+                    filtered.Add(g);
+                }
+            }
+            else if (g.IsEnabled)
+            {
+                filtered.Add(g);
+            }
+        }
+
+        return filtered;
     }
 }

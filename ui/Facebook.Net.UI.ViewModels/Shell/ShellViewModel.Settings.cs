@@ -4,10 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Models;
@@ -680,43 +678,14 @@ public sealed partial class ShellViewModel
         return folderName;
     }
 
-    private static string GetCurrentAppVersionString()
-    {
-        Version? asmVersion = typeof(ShellViewModel).Assembly.GetName().Version;
-        if (asmVersion is null)
-        {
-            return "v1.0.0";
-        }
-
-        int build = asmVersion.Build >= 0 ? asmVersion.Build : 0;
-        return $"v{asmVersion.Major}.{asmVersion.Minor}.{build}";
-    }
+    private static string GetCurrentAppVersionString() =>
+        GitHubAppReleaseService.Instance.GetCurrentAppVersionString();
 
     /// <summary>
     /// Normalizes a release tag or version string (such as <c>v1.2.3-beta.1</c>) into a comparable 3-part <see cref="Version"/>.
     /// </summary>
-    public static Version TryParseReleaseVersion(string? rawVersion)
-    {
-        if (string.IsNullOrWhiteSpace(rawVersion))
-        {
-            return new Version(1, 0, 0);
-        }
-
-        string cleaned = rawVersion.Trim().TrimStart('v', 'V');
-        int dashIdx = cleaned.IndexOfAny(['-', '+']);
-        if (dashIdx > 0)
-        {
-            cleaned = cleaned[..dashIdx];
-        }
-
-        if (Version.TryParse(cleaned, out Version? parsed) && parsed is not null)
-        {
-            int build = parsed.Build >= 0 ? parsed.Build : 0;
-            return new Version(parsed.Major, parsed.Minor, build);
-        }
-
-        return new Version(1, 0, 0);
-    }
+    public static Version TryParseReleaseVersion(string? rawVersion) =>
+        GitHubAppReleaseService.Instance.TryParseReleaseVersion(rawVersion);
 
     /// <summary>
     /// Queries GitHub Releases (<c>ppn-systems/Facebook.Net</c>) to check if a newer application version is available.
@@ -733,121 +702,21 @@ public sealed partial class ShellViewModel
 
         try
         {
-            using HttpClient http = new()
-            {
-                Timeout = TimeSpan.FromSeconds(15)
-            };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            AppReleaseCheckResult result = await _context.AppRelease.CheckForUpdatesAsync().ConfigureAwait(true);
+            this.IsUpdateAvailable = result.IsUpdateAvailable;
+            this.LatestReleaseTag = result.LatestTag;
+            this.LatestReleaseDownloadUrl = result.DownloadUrl;
 
-            const string ReleasesPageFallback = "https://github.com/ppn-systems/Facebook.Net/releases";
-            string json = await http
-                .GetStringAsync(new Uri("https://api.github.com/repos/ppn-systems/Facebook.Net/releases?per_page=20"))
-                .ConfigureAwait(true);
-
-            using JsonDocument doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                this.IsUpdateAvailable = false;
-                this.LatestReleaseTag = this.CurrentAppVersion;
-                this.LatestReleaseDownloadUrl = ReleasesPageFallback;
-                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
-                return;
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusFailed", result.ErrorMessage);
             }
-
-            // Pick the highest semantic version among all non-draft releases (tie-breaking by published_at timestamp)
-            JsonElement? chosenRelease = null;
-            Version? highestVersion = null;
-            DateTimeOffset highestPublishedAt = DateTimeOffset.MinValue;
-
-            foreach (JsonElement item in doc.RootElement.EnumerateArray())
+            else if (result.IsUpdateAvailable)
             {
-                bool isDraft = item.TryGetProperty("draft", out JsonElement draftProp) && draftProp.ValueKind == JsonValueKind.True;
-                if (isDraft || !item.TryGetProperty("tag_name", out JsonElement tagCheck))
-                {
-                    continue;
-                }
-
-                string? rawTag = tagCheck.GetString();
-                if (string.IsNullOrWhiteSpace(rawTag))
-                {
-                    continue;
-                }
-
-                Version candidateVer = TryParseReleaseVersion(rawTag);
-                DateTimeOffset candidateDate = DateTimeOffset.MinValue;
-                if (item.TryGetProperty("published_at", out JsonElement pubProp) &&
-                    DateTimeOffset.TryParse(pubProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsedPub))
-                {
-                    candidateDate = parsedPub;
-                }
-
-                if (highestVersion is null ||
-                    candidateVer > highestVersion ||
-                    (candidateVer == highestVersion && candidateDate > highestPublishedAt))
-                {
-                    highestVersion = candidateVer;
-                    highestPublishedAt = candidateDate;
-                    chosenRelease = item;
-                }
-            }
-
-            chosenRelease ??= doc.RootElement[0];
-            JsonElement rel = chosenRelease.Value;
-
-            string tagName = rel.TryGetProperty("tag_name", out JsonElement tagEl) && !string.IsNullOrWhiteSpace(tagEl.GetString())
-                ? tagEl.GetString()!.Trim()
-                : this.CurrentAppVersion;
-
-            string htmlUrl = rel.TryGetProperty("html_url", out JsonElement htmlEl) && !string.IsNullOrWhiteSpace(htmlEl.GetString())
-                ? htmlEl.GetString()!.Trim()
-                : ReleasesPageFallback;
-
-            string rawDate = string.Empty;
-            if (rel.TryGetProperty("published_at", out JsonElement pubEl) && !string.IsNullOrWhiteSpace(pubEl.GetString()))
-            {
-                rawDate = pubEl.GetString()!;
-            }
-            else if (rel.TryGetProperty("created_at", out JsonElement createdEl) && !string.IsNullOrWhiteSpace(createdEl.GetString()))
-            {
-                rawDate = createdEl.GetString()!;
-            }
-
-            string dateText = DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset dto)
-                ? dto.ToLocalTime().ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-                : "—";
-
-            string preferredExt = OperatingSystem.IsMacOS() ? ".dmg" : ".msi";
-            string? assetUrl = null;
-            if (rel.TryGetProperty("assets", out JsonElement assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement asset in assetsEl.EnumerateArray())
-                {
-                    string assetName = asset.TryGetProperty("name", out JsonElement nameEl) ? (nameEl.GetString() ?? string.Empty) : string.Empty;
-                    string dlUrl = asset.TryGetProperty("browser_download_url", out JsonElement dlEl) ? (dlEl.GetString() ?? string.Empty) : string.Empty;
-                    if (!string.IsNullOrWhiteSpace(dlUrl) && assetName.EndsWith(preferredExt, StringComparison.OrdinalIgnoreCase))
-                    {
-                        assetUrl = dlUrl;
-                        break;
-                    }
-                }
-            }
-
-            Version remoteVersion = TryParseReleaseVersion(tagName);
-            Version currentVersion = TryParseReleaseVersion(this.CurrentAppVersion);
-
-            if (remoteVersion > currentVersion)
-            {
-                this.IsUpdateAvailable = true;
-                this.LatestReleaseTag = tagName;
-                this.LatestReleaseDownloadUrl = assetUrl ?? htmlUrl;
-                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusAvailable", tagName, dateText);
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusAvailable", result.LatestTag, result.PublishedDateText);
             }
             else
             {
-                this.IsUpdateAvailable = false;
-                this.LatestReleaseTag = tagName;
-                this.LatestReleaseDownloadUrl = htmlUrl;
                 this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
             }
         }

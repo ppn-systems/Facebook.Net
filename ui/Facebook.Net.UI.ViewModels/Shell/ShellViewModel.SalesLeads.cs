@@ -14,6 +14,7 @@ using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Leads;
+using Facebook.Net.UI.Core.Publisher;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
 
@@ -416,26 +417,9 @@ public sealed partial class ShellViewModel
         PostSummary current = this.GetLatestCachedPost(post);
         string trimmedTagId = tagId.Trim();
         IReadOnlyList<string> existingIds = current.GetTagIds();
-        List<string> nextIds = new(existingIds.Count + 1);
-        bool removed = false;
-        for (int i = 0; i < existingIds.Count; i++)
-        {
-            if (string.Equals(existingIds[i], trimmedTagId, StringComparison.OrdinalIgnoreCase))
-            {
-                removed = true;
-            }
-            else
-            {
-                nextIds.Add(existingIds[i]);
-            }
-        }
-
-        if (!removed)
-        {
-            nextIds.Add(trimmedTagId);
-        }
-
-        string updatedTagsCsv = nextIds.Count > 0 ? string.Join(",", nextIds) : string.Empty;
+        bool removed = current.HasTag(trimmedTagId);
+        (string? nextCsv, _) = _context.LeadScoring.ApplyLeadTagChange(existingIds, trimmedTagId, assign: !removed);
+        string updatedTagsCsv = nextCsv ?? string.Empty;
         await _context.AccountStore
             .UpdateScrapedPostTagsAndNotesAsync(current.PostId, updatedTagsCsv, current.Notes, ct)
             .ConfigureAwait(true);
@@ -1424,23 +1408,8 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Resolves dynamic personalization variables (<c>{author_name}</c>, <c>{group_name}</c>, <c>{date}</c>, <c>{time}</c>, <c>{random_id}</c>) in a sales comment or post template.
     /// </summary>
-    public static string ResolveDynamicCommentVariables(string? rawTemplate, string? authorName, string? groupName)
-    {
-        if (string.IsNullOrWhiteSpace(rawTemplate))
-        {
-            return string.Empty;
-        }
-
-        string safeAuthor = !string.IsNullOrWhiteSpace(authorName) ? authorName.Trim() : "bạn";
-        string safeGroup = !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : "nhóm";
-        DateTime now = DateTime.Now;
-        return rawTemplate
-            .Replace("{author_name}", safeAuthor, StringComparison.OrdinalIgnoreCase)
-            .Replace("{group_name}", safeGroup, StringComparison.OrdinalIgnoreCase)
-            .Replace("{date}", now.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{time}", now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
-    }
+    public static string ResolveDynamicCommentVariables(string? rawTemplate, string? authorName, string? groupName) =>
+        CampaignPublisherDomainService.Instance.ResolveDynamicVariables(rawTemplate, authorName, groupName);
 
     /// <summary>
     /// Computes a buyer-intent score (0..100) for a scraped group post based on matched keywords and question/inquiry signals.

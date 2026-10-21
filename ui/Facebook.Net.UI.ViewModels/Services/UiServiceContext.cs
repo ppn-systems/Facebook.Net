@@ -17,6 +17,7 @@ using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Groups;
 using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Localization;
+using Facebook.Net.UI.Core.Publisher;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.Core.Threading;
 
@@ -87,6 +88,8 @@ public sealed class UiServiceContext : IDisposable
     /// <param name="groupTagService"></param>
     /// <param name="aiMemoryStore">Optional custom AI Memory SQLite store implementation (for testing).</param>
     /// <param name="agyCliService">Optional custom Google Antigravity CLI service implementation (for testing).</param>
+    /// <param name="campaignPublisher">Optional custom campaign publisher domain service (for testing).</param>
+    /// <param name="appRelease">Optional custom application release service (for testing).</param>
     public UiServiceContext(
         IBrowserAdapter platformBrowserAdapter,
         string? customDataDir = null,
@@ -100,7 +103,9 @@ public sealed class UiServiceContext : IDisposable
         IAccountVaultDomainService? accountVault = null,
         IGroupTagDomainService? groupTagService = null,
         IAiMemoryStore? aiMemoryStore = null,
-        IAgyCliService? agyCliService = null)
+        IAgyCliService? agyCliService = null,
+        ICampaignPublisherDomainService? campaignPublisher = null,
+        IAppReleaseService? appRelease = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
 
@@ -139,6 +144,8 @@ public sealed class UiServiceContext : IDisposable
         this.LeadScoring = leadScoring ?? LeadScoringService.Instance;
         this.AccountVault = accountVault ?? AccountVaultDomainService.Instance;
         this.GroupTagService = groupTagService ?? GroupTagDomainService.Instance;
+        this.CampaignPublisher = campaignPublisher ?? CampaignPublisherDomainService.Instance;
+        this.AppRelease = appRelease ?? GitHubAppReleaseService.Instance;
 
         this.BrowserAdapter = new ConfigurableBrowserAdapter(platformBrowserAdapter, this.Settings);
         this.SessionManager = sessionManager ?? new BrowserSessionManager(this.BrowserAdapter);
@@ -156,6 +163,9 @@ public sealed class UiServiceContext : IDisposable
 
     /// <summary>Gets the application settings service.</summary>
     public AppSettingsService Settings { get; }
+
+    /// <summary>Gets the application settings service contract.</summary>
+    public IAppSettingsService SettingsService => this.Settings;
 
     /// <summary>Gets the Dark/Light theme service.</summary>
     public ThemeService Theme { get; }
@@ -186,6 +196,12 @@ public sealed class UiServiceContext : IDisposable
 
     /// <summary>Gets the group color tag and anti-spam group selection domain service.</summary>
     public IGroupTagDomainService GroupTagService { get; }
+
+    /// <summary>Gets the campaign publisher domain service.</summary>
+    public ICampaignPublisherDomainService CampaignPublisher { get; }
+
+    /// <summary>Gets the application release and update check service.</summary>
+    public IAppReleaseService AppRelease { get; }
 
     /// <summary>Gets the configurable browser adapter.</summary>
     public IBrowserAdapter BrowserAdapter { get; }

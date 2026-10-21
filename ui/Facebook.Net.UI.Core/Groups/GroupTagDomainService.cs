@@ -28,6 +28,22 @@ public interface IGroupTagDomainService
 
     /// <summary>Selects a random subset of <paramref name="randomCount"/> indices out of <paramref name="totalCount"/> using Fisher-Yates shuffle.</summary>
     HashSet<int> SelectRandomIndices(int totalCount, int randomCount);
+
+    /// <summary>Returns <see langword="true"/> when at least 10 groups exist and at least 80% carry <c>tag_bds</c> (indicating accidental mass-tag pollution).</summary>
+    bool IsMassTagBdsPolluted(IReadOnlyList<SavedTargetGroup> groups);
+
+    /// <summary>Classifies target groups by Vietnamese topic keywords, cleans polluted or legacy tags, and returns the required tag definitions, modified groups, and per-tag counts.</summary>
+    (IReadOnlyList<GroupTag> RequiredTags, IReadOnlyList<SavedTargetGroup> ModifiedGroups, IReadOnlyDictionary<string, int> CategoryCounts) ClassifyAndCleanGroups(
+        IReadOnlyList<SavedTargetGroup> groups,
+        IReadOnlySet<string> validTagIds,
+        bool resetExistingTagsFirst = true);
+
+    /// <summary>Configures the <see cref="SavedTargetGroup.IsEnabled"/> state across <paramref name="groups"/> by mode (<c>enable_all</c>, <c>disable_all</c>, <c>only_tag</c>, <c>enable_tag</c>, <c>disable_tag</c>, <c>random</c>).</summary>
+    (IReadOnlyList<SavedTargetGroup> ModifiedGroups, int EnabledCount, int DisabledCount) ConfigureTargetGroupsSelection(
+        IReadOnlyList<SavedTargetGroup> groups,
+        string mode,
+        string? tagId = null,
+        int randomCount = 20);
 }
 
 /// <summary>
@@ -35,6 +51,42 @@ public interface IGroupTagDomainService
 /// </summary>
 public sealed class GroupTagDomainService : IGroupTagDomainService
 {
+    private static readonly GroupTag[] s_standardTopicTags =
+    [
+        new("tag_bds", "Bất động sản", "#3B82F6"),
+        new("tag_job", "Việc làm & Tuyển dụng", "#10B981"),
+        new("tag_tech", "Công nghệ & Lập trình", "#06B6D4"),
+        new("tag_market", "Mua bán & Chợ", "#F6821F"),
+        new("tag_community", "Cộng đồng & Giao lưu", "#8B5CF6")
+    ];
+
+    private static readonly string[] s_bdsKeywords =
+    [
+        "bất động sản", "bds", "bđs", "nhà đất", "căn hộ", "chung cư", "phòng trọ",
+        "nhà trọ", "mặt bằng", "cho thuê nhà", "mua bán nhà", "vinhomes", "đất nền", "real estate"
+    ];
+
+    private static readonly string[] s_jobKeywords =
+    [
+        "việc làm", "tuyển dụng", "tìm việc", "freelance", "nhân sự", "job",
+        "hr ", "hiring", "intern", "thực tập", "part time", "full time"
+    ];
+
+    private static readonly string[] s_techKeywords =
+    [
+        "lập trình", "code", "developer", "dev", ".net", "c#", "dotnet", "javascript",
+        "python", "react", "vue", "angular", "ai ", "claude", "chatgpt", "gpt", "cursor",
+        "antigravity", "vibe coding", "cntt", "it ", "phần mềm", "software", "tech",
+        "công nghệ", "linux", "docker", "aws", "cloud", "data", "sql", "mobile",
+        "android", "ios", "flutter", "java", "golang", "rust", "php", "wordpress", "オープン", "voz"
+    ];
+
+    private static readonly string[] s_marketKeywords =
+    [
+        "mua bán", "chợ", "thanh lý", "pass ", "sỉ", "lẻ", "kinh doanh", "buôn bán",
+        "thương mại", "shop", "order", "nguồn hàng", "đồ cũ", "rao vặt", "sàn ", "trao đổi"
+    ];
+
     /// <summary>Gets the shared stateless singleton instance of <see cref="GroupTagDomainService"/>.</summary>
     public static GroupTagDomainService Instance { get; } = new();
 
@@ -165,5 +217,220 @@ public sealed class GroupTagDomainService : IGroupTagDomainService
         }
 
         return chosen;
+    }
+
+    /// <inheritdoc />
+    public bool IsMassTagBdsPolluted(IReadOnlyList<SavedTargetGroup> groups)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        if (groups.Count < 10)
+        {
+            return false;
+        }
+
+        int bdsCount = 0;
+        for (int i = 0; i < groups.Count; i++)
+        {
+            if (groups[i].HasTag("tag_bds"))
+            {
+                bdsCount++;
+            }
+        }
+
+        return (bdsCount * 100 / groups.Count) >= 80;
+    }
+
+    /// <inheritdoc />
+    public (IReadOnlyList<GroupTag> RequiredTags, IReadOnlyList<SavedTargetGroup> ModifiedGroups, IReadOnlyDictionary<string, int> CategoryCounts) ClassifyAndCleanGroups(
+        IReadOnlyList<SavedTargetGroup> groups,
+        IReadOnlySet<string> validTagIds,
+        bool resetExistingTagsFirst = true)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        ArgumentNullException.ThrowIfNull(validTagIds);
+
+        List<SavedTargetGroup> modified = new();
+        Dictionary<string, int> counts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tag_bds"] = 0,
+            ["tag_job"] = 0,
+            ["tag_tech"] = 0,
+            ["tag_market"] = 0,
+            ["tag_community"] = 0
+        };
+
+        for (int i = 0; i < groups.Count; i++)
+        {
+            SavedTargetGroup g = groups[i];
+            string lower = (g.GroupName ?? string.Empty).ToLowerInvariant();
+            bool isBds = ContainsAny(lower, s_bdsKeywords);
+            bool isJob = ContainsAny(lower, s_jobKeywords);
+            bool isTech = ContainsAny(lower, s_techKeywords);
+            bool isMarket = ContainsAny(lower, s_marketKeywords);
+
+            List<string> newTags = new(4);
+            if (!resetExistingTagsFirst)
+            {
+                IReadOnlyList<string> existing = g.GetTagIds();
+                for (int t = 0; t < existing.Count; t++)
+                {
+                    string part = NormalizeLegacyTagId(existing[t]);
+                    if (string.Equals(part, "tag_bds", StringComparison.OrdinalIgnoreCase) && !isBds)
+                    {
+                        continue;
+                    }
+
+                    if (validTagIds.Count > 0 && !validTagIds.Contains(part) && !IsStandardTopicTag(part))
+                    {
+                        continue;
+                    }
+
+                    if (!ContainsTagIgnoreCase(newTags, part))
+                    {
+                        newTags.Add(part);
+                    }
+                }
+            }
+
+            if (isBds && !ContainsTagIgnoreCase(newTags, "tag_bds"))
+            {
+                newTags.Add("tag_bds");
+            }
+
+            if (isJob && !ContainsTagIgnoreCase(newTags, "tag_job"))
+            {
+                newTags.Add("tag_job");
+            }
+
+            if (isTech && !ContainsTagIgnoreCase(newTags, "tag_tech"))
+            {
+                newTags.Add("tag_tech");
+            }
+
+            if (isMarket && !ContainsTagIgnoreCase(newTags, "tag_market"))
+            {
+                newTags.Add("tag_market");
+            }
+
+            if (newTags.Count == 0)
+            {
+                newTags.Add("tag_community");
+            }
+
+            for (int t = 0; t < newTags.Count; t++)
+            {
+                string tagKey = newTags[t];
+                counts[tagKey] = counts.TryGetValue(tagKey, out int prev) ? prev + 1 : 1;
+            }
+
+            string updatedCsv = string.Join(",", newTags);
+            if (!string.Equals(updatedCsv, g.TagsCsv ?? string.Empty, StringComparison.Ordinal))
+            {
+                modified.Add(g with { TagsCsv = updatedCsv });
+            }
+        }
+
+        return (s_standardTopicTags, modified, counts);
+    }
+
+    /// <inheritdoc />
+    public (IReadOnlyList<SavedTargetGroup> ModifiedGroups, int EnabledCount, int DisabledCount) ConfigureTargetGroupsSelection(
+        IReadOnlyList<SavedTargetGroup> groups,
+        string mode,
+        string? tagId = null,
+        int randomCount = 20)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        string normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
+        string? trimmedTag = string.IsNullOrWhiteSpace(tagId) ? null : tagId.Trim();
+
+        HashSet<int>? randomChosen = string.Equals(normalizedMode, "random", StringComparison.Ordinal)
+            ? this.SelectRandomIndices(groups.Count, randomCount)
+            : null;
+
+        List<SavedTargetGroup> modified = new();
+        int enabledCount = 0;
+        int disabledCount = 0;
+
+        for (int i = 0; i < groups.Count; i++)
+        {
+            SavedTargetGroup g = groups[i];
+            bool hasTag = !string.IsNullOrEmpty(trimmedTag) && g.HasTag(trimmedTag);
+            bool shouldEnable = normalizedMode switch
+            {
+                "enable_all" => true,
+                "disable_all" => false,
+                "only_tag" => hasTag,
+                "enable_tag" => hasTag || g.IsEnabled,
+                "disable_tag" => !hasTag && g.IsEnabled,
+                "random" => randomChosen is not null && randomChosen.Contains(i),
+                _ => g.IsEnabled
+            };
+
+            if (shouldEnable)
+            {
+                enabledCount++;
+            }
+            else
+            {
+                disabledCount++;
+            }
+
+            if (g.IsEnabled != shouldEnable)
+            {
+                modified.Add(g with { IsEnabled = shouldEnable });
+            }
+        }
+
+        return (modified, enabledCount, disabledCount);
+    }
+
+    private static string NormalizeLegacyTagId(string rawTagId)
+    {
+        if (string.Equals(rawTagId, "tag_jobs", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tag_job";
+        }
+
+        if (string.Equals(rawTagId, "tag_sales", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tag_market";
+        }
+
+        return rawTagId;
+    }
+
+    private static bool IsStandardTopicTag(string tagId) =>
+        string.Equals(tagId, "tag_bds", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tagId, "tag_job", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tagId, "tag_tech", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tagId, "tag_market", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tagId, "tag_community", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tagId, "tag_vip", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsTagIgnoreCase(List<string> tags, string candidate)
+    {
+        for (int i = 0; i < tags.Count; i++)
+        {
+            if (string.Equals(tags[i], candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsAny(string text, ReadOnlySpan<string> keywords)
+    {
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            if (text.Contains(keywords[i], StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -51,6 +51,7 @@ internal static class Program
             .WithTools<GroupTools>()
             .WithTools<PublisherTools>()
             .WithTools<SalesLeadsTools>()
+            .WithTools<SystemSettingsTools>()
             .WithTools<AiMemoryTools>()
             .WithStdioServerTransport();
 

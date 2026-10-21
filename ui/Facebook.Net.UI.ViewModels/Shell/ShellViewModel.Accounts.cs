@@ -223,6 +223,26 @@ public sealed partial class ShellViewModel
         }
 
         IReadOnlyList<SavedTargetGroup> storedGroups = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+        if (_context.GroupTagService.IsMassTagBdsPolluted(storedGroups))
+        {
+            (IReadOnlyList<GroupTag> requiredTags, IReadOnlyList<SavedTargetGroup> modifiedGroups, _) =
+                _context.GroupTagService.ClassifyAndCleanGroups(
+                    storedGroups,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                    resetExistingTagsFirst: false);
+
+            for (int i = 0; i < requiredTags.Count; i++)
+            {
+                await _context.AccountStore.UpsertGroupTagAsync(requiredTags[i]).ConfigureAwait(true);
+            }
+
+            if (modifiedGroups.Count > 0)
+            {
+                await _context.AccountStore.UpsertTargetGroupsBatchAsync(modifiedGroups).ConfigureAwait(true);
+                storedGroups = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+            }
+        }
+
         this.TargetGroups.ReplaceAll(storedGroups);
         this.RebuildTargetGroupIndex();
         if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)

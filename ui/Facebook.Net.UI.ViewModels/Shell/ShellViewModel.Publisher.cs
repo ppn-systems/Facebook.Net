@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,6 +11,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Publisher;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
 
@@ -70,45 +70,14 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Splits a single or semicolon/pipe-delimited multi-photo path string into trimmed, deduplicated file path entries.
     /// </summary>
-    public static List<string> SplitMediaFilePaths(string? rawPaths)
-    {
-        List<string> results = new();
-        if (string.IsNullOrWhiteSpace(rawPaths))
-        {
-            return results;
-        }
-
-        string[] parts = rawPaths.Split([';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < parts.Length; i++)
-        {
-            string candidate = parts[i].Trim('"', '\'');
-            if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
-            {
-                results.Add(candidate);
-            }
-        }
-
-        return results;
-    }
+    public static List<string> SplitMediaFilePaths(string? rawPaths) =>
+        CampaignPublisherDomainService.Instance.SplitMediaFilePaths(rawPaths);
 
     /// <summary>
     /// Parses a single or semicolon-delimited multi-photo path string into existing local file paths.
     /// </summary>
-    public static List<string> ParseExistingMediaFilePaths(string? rawPaths)
-    {
-        List<string> candidates = SplitMediaFilePaths(rawPaths);
-        List<string> existing = new(candidates.Count);
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            if (File.Exists(candidates[i]))
-            {
-                existing.Add(candidates[i]);
-            }
-        }
-
-        return existing;
-    }
+    public static List<string> ParseExistingMediaFilePaths(string? rawPaths) =>
+        CampaignPublisherDomainService.Instance.ParseExistingMediaFilePaths(rawPaths);
 
     /// <summary>Gets or sets the currently selected template in the saved content library.</summary>
     [ObservableProperty]
@@ -205,16 +174,11 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string title = this.PostSpintaxText.Length > 36
-            ? string.Concat(this.PostSpintaxText[..36], "...")
-            : this.PostSpintaxText;
-
-        CampaignTemplate tpl = new(
-            Id: $"tpl_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
-            Title: title,
-            SpintaxContent: this.PostSpintaxText,
-            MediaFilePath: string.IsNullOrWhiteSpace(this.PostMediaFilePath) ? null : this.PostMediaFilePath.Trim(),
-            IsCommentTemplate: false);
+        CampaignTemplate tpl = _context.CampaignPublisher.CreateTemplate(
+            title: null,
+            spintaxContent: this.PostSpintaxText,
+            mediaFilePath: this.PostMediaFilePath,
+            isCommentTemplate: false);
 
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
@@ -228,7 +192,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Success,
             _context.Localization["Publisher.TemplatesTitle"],
-            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TemplateSaved", tpl.Title)).ConfigureAwait(true);
     }
 
     private async Task SaveBumpTemplateAsync()
@@ -239,16 +203,11 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string title = raw.Length > 36
-            ? string.Concat(raw[..36], "...")
-            : raw;
-
-        CampaignTemplate tpl = new(
-            Id: $"tpl_bump_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-            Title: title,
-            SpintaxContent: raw,
-            MediaFilePath: null,
-            IsCommentTemplate: true);
+        CampaignTemplate tpl = _context.CampaignPublisher.CreateTemplate(
+            title: null,
+            spintaxContent: raw,
+            mediaFilePath: null,
+            isCommentTemplate: true);
 
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
@@ -262,7 +221,7 @@ public sealed partial class ShellViewModel
             AuditCategory.Personal,
             AuditSeverity.Success,
             _context.Localization["Publisher.TemplatesTitle"],
-            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TemplateSaved", tpl.Title)).ConfigureAwait(true);
     }
 
     private async Task DeleteSelectedTemplateAsync()
@@ -945,22 +904,13 @@ public sealed partial class ShellViewModel
         }
         else
         {
-            for (int i = 0; i < this.PublishedPosts.Count && bumpTargets.Count < 25; i++)
+            List<PublishedPostRecord> eligible = _context.CampaignPublisher.SelectEligibleBumpPosts(
+                this.PublishedPosts,
+                this.SelectedAccount?.Uid,
+                maxPosts: 25);
+            for (int i = 0; i < eligible.Count; i++)
             {
-                PublishedPostRecord rec = this.PublishedPosts[i];
-                if (rec.IsPersonalProfilePost ||
-                    string.IsNullOrWhiteSpace(rec.PostId) ||
-                    rec.PostId.StartsWith("grp_", StringComparison.Ordinal) ||
-                    rec.PostId.StartsWith("feed_", StringComparison.Ordinal) ||
-                    (this.SelectedAccount is not null && !string.Equals(rec.AccountUid, this.SelectedAccount.Uid, StringComparison.Ordinal)))
-                {
-                    continue;
-                }
-
-                if (seenPostIds.Add(rec.PostId))
-                {
-                    bumpTargets.Add((rec.PostId, rec.TargetGroupName));
-                }
+                bumpTargets.Add((eligible[i].PostId, eligible[i].TargetGroupName));
             }
         }
 

@@ -833,17 +833,22 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
         CollectTools<GroupTools>(registeredMcpTools);
         CollectTools<PublisherTools>(registeredMcpTools);
         CollectTools<SalesLeadsTools>(registeredMcpTools);
+        CollectTools<SystemSettingsTools>(registeredMcpTools);
         CollectTools<AiMemoryTools>(registeredMcpTools);
 
-        // Verify all 40 MCP tools are registered
-        Assert.Equal(40, registeredMcpTools.Count);
+        // Verify all 63 MCP tools across 6 Bounded Contexts are registered
+        Assert.Equal(63, registeredMcpTools.Count);
         Assert.Contains("fb_analyze_workspace_data", registeredMcpTools);
         Assert.Contains("fb_auto_tag_groups_by_keywords", registeredMcpTools);
         Assert.Contains("fb_clean_and_classify_all_groups", registeredMcpTools);
-        Assert.Contains("fb_delete_group_tag", registeredMcpTools);
-        Assert.Contains("fb_delete_lead_tag", registeredMcpTools);
-        Assert.Contains("fb_search_leads_advanced", registeredMcpTools);
-        Assert.Contains("fb_create_lead_tags_batch", registeredMcpTools);
+        Assert.Contains("fb_configure_target_groups_selection", registeredMcpTools);
+        Assert.Contains("fb_publish_campaign_batch", registeredMcpTools);
+        Assert.Contains("fb_repost_to_groups", registeredMcpTools);
+        Assert.Contains("fb_scrape_target_groups_batch", registeredMcpTools);
+        Assert.Contains("fb_auto_comment_leads_batch", registeredMcpTools);
+        Assert.Contains("fb_update_app_settings", registeredMcpTools);
+        Assert.Contains("fb_clean_browser_cache", registeredMcpTools);
+        Assert.Contains("fb_check_app_updates", registeredMcpTools);
 
         // Verify every fb_* tool mentioned in System Prompts, Resources, and Prompts exists in the MCP Server
         string analyzePromptText = ((TextContentBlock)Prompts.AnalyzeGroupLeads("test").Messages[0].Content).Text;
@@ -866,6 +871,15 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
                 string mentionedTool = match.Value;
                 Assert.Contains(mentionedTool, registeredMcpTools);
             }
+        }
+
+        // Bidirectional parity: every registered MCP tool must be documented in DefaultAiSystemPrompt and Resources.Overview()
+        string defaultPrompt = AppConfig.DefaultAiSystemPrompt;
+        string overviewDoc = Resources.Overview();
+        foreach (string registeredTool in registeredMcpTools)
+        {
+            Assert.Contains(registeredTool, defaultPrompt, StringComparison.Ordinal);
+            Assert.Contains(registeredTool, overviewDoc, StringComparison.Ordinal);
         }
     }
 
@@ -935,8 +949,10 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
                 TagsCsv: "tag_bds,tag_jobs,tag_sales"));
         }
 
-        // Re-run InitializeAsync to trigger NormalizeAndCleanGroupTagsAsync
+        // Re-run InitializeAsync (legacy tag normalization) + ShellViewModel.InitializeAsync (DDD GroupTagDomainService pollution repair)
         await context.AccountStore.InitializeAsync();
+        using ShellViewModel vm = new(context);
+        await vm.InitializeAsync();
 
         IReadOnlyList<SavedTargetGroup> cleaned = await context.AccountStore.GetAllTargetGroupsAsync();
         Assert.Equal(12, cleaned.Count);
@@ -963,6 +979,13 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
 
         Assert.NotNull(bdsGroup);
         Assert.True(bdsGroup.HasTag("tag_bds"));
+
+        // Verify GroupTagDomainService.ConfigureTargetGroupsSelection (random & only_tag)
+        (IReadOnlyList<SavedTargetGroup> randomModified, int enabledCnt, int disabledCnt) =
+            context.GroupTagService.ConfigureTargetGroupsSelection(cleaned, "random", randomCount: 5);
+        Assert.Equal(5, enabledCnt);
+        Assert.Equal(7, disabledCnt);
+        Assert.NotEmpty(randomModified);
     }
 
     public void Dispose()

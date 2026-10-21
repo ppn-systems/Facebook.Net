@@ -193,6 +193,10 @@ public sealed partial class SqliteAccountStore : IAccountStore
             SELECT 'tag_vip', 'Nhóm Ưu tiên VIP', '#F43F5E'
             WHERE (SELECT COUNT(1) FROM group_tags) < 5;
 
+            INSERT OR IGNORE INTO group_tags (id, name, color_hex)
+            SELECT 'tag_tech', 'Công nghệ & Lập trình', '#06B6D4'
+            WHERE (SELECT COUNT(1) FROM group_tags) < 6;
+
             INSERT OR IGNORE INTO lead_tags (id, name, color_hex)
             SELECT 'lead_vip', 'Khách VIP / Nóng', '#F43F5E'
             WHERE NOT EXISTS (SELECT 1 FROM lead_tags);
@@ -230,150 +234,13 @@ public sealed partial class SqliteAccountStore : IAccountStore
     private static async Task NormalizeAndCleanGroupTagsAsync(SqliteConnection conn, CancellationToken ct)
     {
         // Normalize legacy tag IDs (tag_jobs -> tag_job, tag_sales -> tag_market)
-        using (SqliteCommand normCmd = conn.CreateCommand())
-        {
-            normCmd.CommandText = """
-                UPDATE target_groups
-                SET tags_csv = REPLACE(REPLACE(tags_csv, 'tag_jobs', 'tag_job'), 'tag_sales', 'tag_market')
-                WHERE tags_csv LIKE '%tag_jobs%' OR tags_csv LIKE '%tag_sales%';
-                """;
-            _ = await normCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-
-        long totalGroups = 0;
-        long bdsTaggedGroups = 0;
-        using (SqliteCommand countCmd = conn.CreateCommand())
-        {
-            countCmd.CommandText = """
-                SELECT COUNT(1),
-                       SUM(CASE WHEN tags_csv LIKE '%tag_bds%' THEN 1 ELSE 0 END)
-                FROM target_groups;
-                """;
-            using SqliteDataReader reader = await countCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            if (await reader.ReadAsync(ct).ConfigureAwait(false))
-            {
-                totalGroups = await reader.IsDBNullAsync(0, ct).ConfigureAwait(false) ? 0 : reader.GetInt64(0);
-                bdsTaggedGroups = await reader.IsDBNullAsync(1, ct).ConfigureAwait(false) ? 0 : reader.GetInt64(1);
-            }
-        }
-
-        // If >= 10 groups exist and >= 80% of all groups have tag_bds, repair accidental mass-tag pollution
-        if (totalGroups < 10 || (bdsTaggedGroups * 100 / totalGroups) < 80)
-        {
-            return;
-        }
-
-        using (SqliteCommand ensureTechTagCmd = conn.CreateCommand())
-        {
-            ensureTechTagCmd.CommandText = """
-                INSERT OR IGNORE INTO group_tags (id, name, color_hex)
-                VALUES ('tag_tech', 'Công nghệ & Lập trình', '#06B6D4');
-                """;
-            _ = await ensureTechTagCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-
-        List<(string GroupId, string GroupName, string TagsCsv)> rows = [];
-        using (SqliteCommand selectCmd = conn.CreateCommand())
-        {
-            selectCmd.CommandText = "SELECT group_id, group_name, COALESCE(tags_csv, '') FROM target_groups;";
-            using SqliteDataReader reader = await selectCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            while (await reader.ReadAsync(ct).ConfigureAwait(false))
-            {
-                rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
-            }
-        }
-
-        await using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
-        using SqliteCommand updateCmd = conn.CreateCommand();
-        updateCmd.Transaction = (SqliteTransaction)tx;
-        updateCmd.CommandText = "UPDATE target_groups SET tags_csv = $tags WHERE group_id = $id;";
-        SqliteParameter pTags = updateCmd.Parameters.Add("$tags", SqliteType.Text);
-        SqliteParameter pId = updateCmd.Parameters.Add("$id", SqliteType.Text);
-
-        foreach ((string groupId, string groupName, string rawCsv) in rows)
-        {
-            string lower = groupName.ToLowerInvariant();
-            bool isBds = ContainsAny(lower, ["bất động sản", "bds", "bđs", "nhà đất", "căn hộ", "chung cư", "phòng trọ", "nhà trọ", "mặt bằng", "cho thuê nhà", "mua bán nhà", "vinhomes", "đất nền", "real estate"]);
-            bool isJob = ContainsAny(lower, ["việc làm", "tuyển dụng", "tìm việc", "freelance", "nhân sự", "job", "hr ", "hiring", "intern", "thực tập", "part time", "full time"]);
-            bool isTech = ContainsAny(lower, ["lập trình", "code", "developer", "dev", ".net", "c#", "dotnet", "javascript", "python", "react", "vue", "angular", "ai ", "claude", "chatgpt", "gpt", "cursor", "antigravity", "vibe coding", "cntt", "it ", "phần mềm", "software", "tech", "công nghệ", "linux", "docker", "aws", "cloud", "data", "sql", "mobile", "android", "ios", "flutter", "java", "golang", "rust", "php", "wordpress", "オープン", "voz"]);
-            bool isMarket = ContainsAny(lower, ["mua bán", "chợ", "thanh lý", "pass ", "sỉ", "lẻ", "kinh doanh", "buôn bán", "thương mại", "shop", "order", "nguồn hàng", "đồ cũ", "rao vặt", "sàn ", "trao đổi"]);
-
-            List<string> newTags = [];
-            string[] existingParts = rawCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            foreach (string part in existingParts)
-            {
-                if (string.Equals(part, "tag_bds", StringComparison.OrdinalIgnoreCase) && !isBds)
-                {
-                    continue;
-                }
-
-                if (!ContainsTagIgnoreCase(newTags, part))
-                {
-                    newTags.Add(part);
-                }
-            }
-
-            if (isBds && !ContainsTagIgnoreCase(newTags, "tag_bds"))
-            {
-                newTags.Add("tag_bds");
-            }
-
-            if (isJob && !ContainsTagIgnoreCase(newTags, "tag_job"))
-            {
-                newTags.Add("tag_job");
-            }
-
-            if (isTech && !ContainsTagIgnoreCase(newTags, "tag_tech"))
-            {
-                newTags.Add("tag_tech");
-            }
-
-            if (isMarket && !ContainsTagIgnoreCase(newTags, "tag_market"))
-            {
-                newTags.Add("tag_market");
-            }
-
-            if (newTags.Count == 0)
-            {
-                newTags.Add("tag_community");
-            }
-
-            string updatedCsv = string.Join(",", newTags);
-            if (!string.Equals(updatedCsv, rawCsv, StringComparison.Ordinal))
-            {
-                pTags.Value = updatedCsv;
-                pId.Value = groupId;
-                _ = await updateCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-        }
-
-        await tx.CommitAsync(ct).ConfigureAwait(false);
-    }
-
-    private static bool ContainsTagIgnoreCase(List<string> tags, string candidate)
-    {
-        for (int i = 0; i < tags.Count; i++)
-        {
-            if (string.Equals(tags[i], candidate, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool ContainsAny(string text, ReadOnlySpan<string> keywords)
-    {
-        for (int i = 0; i < keywords.Length; i++)
-        {
-            if (text.Contains(keywords[i], StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        using SqliteCommand normCmd = conn.CreateCommand();
+        normCmd.CommandText = """
+            UPDATE target_groups
+            SET tags_csv = REPLACE(REPLACE(tags_csv, 'tag_jobs', 'tag_job'), 'tag_sales', 'tag_market')
+            WHERE tags_csv LIKE '%tag_jobs%' OR tags_csv LIKE '%tag_sales%';
+            """;
+        _ = await normCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task EnsureColumnExistsAsync(
