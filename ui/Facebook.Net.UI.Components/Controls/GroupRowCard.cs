@@ -163,13 +163,9 @@ public static class GroupRowCard
         ArgumentNullException.ThrowIfNull(i18n);
         ArgumentNullException.ThrowIfNull(grp);
 
-        bool hasRowActions = onAddToTarget is not null || onJoinGroup is not null;
-
         Grid row = new()
         {
-            ColumnDefinitions = hasRowActions
-                ? new ColumnDefinitions("Auto,*,Auto,116,104,90")
-                : new ColumnDefinitions("Auto,*,Auto,116"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             ColumnSpacing = 8,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
@@ -210,20 +206,27 @@ public static class GroupRowCard
 
         Grid.SetColumn(nameAndTagsStack, 1);
 
+        StackPanel rightActionsStack = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         if (allTags is not null && onToggleTag is not null)
         {
             Button tagMenuBtn = BuildTagAssignFlyoutButton(theme, assignedTags, allTags, onToggleTag, addTagLabel ?? "+ Nhãn");
-            Grid.SetColumn(tagMenuBtn, 2);
-            row.Children.Add(tagMenuBtn);
+            rightActionsStack.Children.Add(tagMenuBtn);
         }
 
         Border statePill = StatusPill.Create(
             theme,
             i18n.FormatGroupMembership(grp.MembershipState),
             grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
-        statePill.HorizontalAlignment = HorizontalAlignment.Stretch;
-        statePill.Height = 28;
-        Grid.SetColumn(statePill, 3);
+        statePill.Padding = new Thickness(10, 3);
+        statePill.MinHeight = 25;
+        rightActionsStack.Children.Add(statePill);
 
         if (!isAlreadyInTargets && onAddToTarget is not null)
         {
@@ -242,17 +245,15 @@ public static class GroupRowCard
                 BorderBrush = theme.Palette.InteractiveBorder,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Height = 28,
-                Padding = new Thickness(8, 0),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Height = 25,
+                Padding = new Thickness(10, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = new Cursor(StandardCursorType.Hand)
             };
             addTargetBtn.Click += (_, _) => onAddToTarget();
-            Grid.SetColumn(addTargetBtn, 4);
-            row.Children.Add(addTargetBtn);
+            rightActionsStack.Children.Add(addTargetBtn);
         }
 
         if ((grp.MembershipState == GroupMembershipState.CanJoin ||
@@ -274,25 +275,24 @@ public static class GroupRowCard
                 BorderBrush = theme.Palette.BrandPrimary,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Height = 28,
-                Padding = new Thickness(8, 0),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Height = 25,
+                Padding = new Thickness(10, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = new Cursor(StandardCursorType.Hand)
             };
             joinBtn.Click += (_, _) => onJoinGroup();
-            Grid.SetColumn(joinBtn, 5);
-            row.Children.Add(joinBtn);
+            rightActionsStack.Children.Add(joinBtn);
         }
 
         i18n.LanguageChanged += (_, _) =>
             StatusPill.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
 
+        Grid.SetColumn(rightActionsStack, 2);
         row.Children.Add(badge);
         row.Children.Add(nameAndTagsStack);
-        row.Children.Add(statePill);
+        row.Children.Add(rightActionsStack);
         return row;
     }
 
