@@ -618,6 +618,8 @@
   "Settings.UpdateStatusIdle": "Click Check for Updates to check for the latest release.",
   "Settings.UpdateStatusChecking": "Checking for updates...",
   "Settings.UpdateStatusUpToDate": "You are running the latest version {0}.",
-  "Settings.UpdateStatusAvailable": "New version {0} is available — released on {1}. Click below to download the update.",
+  "Settings.UpdateStatusAvailable": "New version {0} is available — released on {1}. Click below to automatically download and install.",
+  "Settings.UpdateStatusDownloading": "Downloading update {0}: {1}%...",
+  "Settings.UpdateStatusInstalling": "Installing update {0} and automatically restarting the application...",
   "Settings.UpdateStatusFailed": "Could not check for updates right now: {0}"
 }
