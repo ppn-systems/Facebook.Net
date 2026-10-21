@@ -676,8 +676,24 @@ public sealed partial class GroupsPage
             out TextBlock emptyAssignTb);
         emptyAssignBanner.IsVisible = filteredAssignGroups.Count == 0;
 
-        this._vm.TargetGroups.CollectionChanged += (_, _) =>
+        this._vm.TargetGroups.CollectionChanged += (_, e) =>
         {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace &&
+                string.IsNullOrEmpty(assignFilterMode) &&
+                e.NewItems is { Count: > 0 } &&
+                e.NewItems[0] is SavedTargetGroup updatedTg)
+            {
+                for (int i = 0; i < filteredAssignGroups.Count; i++)
+                {
+                    if (string.Equals(filteredAssignGroups[i].GroupId, updatedTg.GroupId, StringComparison.Ordinal))
+                    {
+                        filteredAssignGroups[i] = updatedTg;
+                        rebuildLeftTagList();
+                        return;
+                    }
+                }
+            }
+
             rebuildLeftTagList();
             RefreshAssignGroups();
             bool isEmpty = filteredAssignGroups.Count == 0;

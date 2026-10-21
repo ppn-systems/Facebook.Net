@@ -1388,7 +1388,9 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             }
         }
 
-        return (activeUid, activeName, enabledCount, cfg.MinDelaySeconds, cfg.MaxDelaySeconds, sb.ToString());
+        int minDelayInt = Math.Max(0, (int)Math.Round(cfg.MinDelaySeconds));
+        int maxDelayInt = Math.Max(minDelayInt, (int)Math.Round(cfg.MaxDelaySeconds));
+        return (activeUid, activeName, enabledCount, minDelayInt, maxDelayInt, sb.ToString());
     }
 
     private static AgyProposedAction? DetectFallbackProposedAction(

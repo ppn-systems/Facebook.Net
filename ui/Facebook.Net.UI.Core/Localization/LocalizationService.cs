@@ -40,6 +40,12 @@ public interface ILocalizationService : INotifyPropertyChanged
     /// <summary>Gets the current active UI language.</summary>
     AppLanguage CurrentLanguage { get; }
 
+    /// <summary>Gets the <see cref="CultureInfo"/> matching the current active UI language (<c>vi-VN</c> or <c>en-US</c>).</summary>
+    CultureInfo CurrentCulture { get; }
+
+    /// <summary>Gets the <see cref="NumberFormatInfo"/> matching the current active UI language (<c>0,2</c> in Vietnamese, <c>0.2</c> in English).</summary>
+    NumberFormatInfo CurrentNumberFormat { get; }
+
     /// <summary>Gets the localized string for the specified key.</summary>
     string this[string key] { get; }
 
@@ -77,6 +83,9 @@ public interface ILocalizationService : INotifyPropertyChanged
 /// </summary>
 public sealed class LocalizationService : ILocalizationService
 {
+    private static readonly CultureInfo s_viCulture = CultureInfo.GetCultureInfo("vi-VN");
+    private static readonly CultureInfo s_enCulture = CultureInfo.GetCultureInfo("en-US");
+
     private static readonly Dictionary<AppLanguage, Dictionary<string, string>> s_catalogs = new()
     {
         [AppLanguage.ViVn] = LoadEmbeddedLocale("Assets.Locales.vi-VN.json"),
@@ -97,6 +106,14 @@ public sealed class LocalizationService : ILocalizationService
     /// Gets the current active UI language.
     /// </summary>
     public AppLanguage CurrentLanguage => _currentLanguage;
+
+    /// <inheritdoc />
+    public CultureInfo CurrentCulture =>
+        _currentLanguage == AppLanguage.ViVn ? s_viCulture : s_enCulture;
+
+    /// <inheritdoc />
+    public NumberFormatInfo CurrentNumberFormat =>
+        this.CurrentCulture.NumberFormat;
 
     /// <summary>
     /// Gets the localized string for the specified key.
@@ -149,7 +166,7 @@ public sealed class LocalizationService : ILocalizationService
             return template;
         }
 
-        return string.Format(CultureInfo.InvariantCulture, template, args);
+        return string.Format(this.CurrentCulture, template, args);
     }
 
     /// <summary>
@@ -165,6 +182,8 @@ public sealed class LocalizationService : ILocalizationService
 
         _currentLanguage = language;
         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentLanguage)));
+        this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentCulture)));
+        this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentNumberFormat)));
         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
         this.LanguageChanged?.Invoke(this, language);
     }

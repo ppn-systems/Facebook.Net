@@ -19,6 +19,9 @@ public interface ILeadScoringService
     /// <summary>Computes a buyer-intent score (0..100) for a scraped group post based on matched keywords and inquiry signals.</summary>
     int CalculateBuyerIntentScore(string? messageText, string? rawKeywords);
 
+    /// <summary>Returns whether a scraped post message contains buyer inquiry or question signals.</summary>
+    bool HasBuyerInquirySignal(string? messageText);
+
     /// <summary>Returns whether a message matches any of the specified buyer keywords (case-insensitive and diacritic-insensitive).</summary>
     bool MatchesBuyerKeywords(string? messageText, IReadOnlyList<string> keywords);
 
@@ -91,6 +94,10 @@ public sealed class LeadScoringService : ILeadScoringService
 
         return Math.Clamp(score, 0, 100);
     }
+
+    /// <inheritdoc />
+    public bool HasBuyerInquirySignal(string? messageText) =>
+        this.GetOrAnalyzeText(messageText).HasInquirySignal;
 
     /// <inheritdoc />
     public bool MatchesBuyerKeywords(string? messageText, IReadOnlyList<string> keywords)

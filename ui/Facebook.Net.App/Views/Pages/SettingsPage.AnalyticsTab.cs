@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Configuration;
@@ -28,7 +30,7 @@ public sealed partial class SettingsPage
         "#F59E0B"
     ];
 
-    private Control BuildStorageMonitorTab(out Action refreshI18n)
+    private Control BuildStorageMonitorTab(out Action refreshI18n, out Action refreshStorageStats)
     {
         Grid storageGrid = new()
         {
@@ -162,42 +164,50 @@ public sealed partial class SettingsPage
         static string FormatKbSlice(int kb) =>
             ShellViewModel.FormatByteSize(kb * 1024L);
 
+        bool hasLoadedStorageOnce = false;
+
         void RefreshStorageStats()
         {
-            StorageUsageSnapshot snap = this._vm.CalculateStorageUsageSnapshot();
-
-            kpiTotalValTb.Text = ShellViewModel.FormatByteSize(snap.TotalUsedBytes);
-            kpiDbValTb.Text = ShellViewModel.FormatByteSize(snap.MainDatabaseBytes + snap.AuditDatabaseBytes);
-            kpiProfilesValTb.Text = ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes);
-            kpiMemoryValTb.Text = $"{ShellViewModel.FormatByteSize(snap.ProcessRamBytes)} / {ShellViewModel.FormatByteSize(snap.DriveFreeBytes)}";
-
-            componentsChart.SetSlices(
-                [
-                    new SvgDonutSlice(this._i18n["Storage.SliceProfiles"], ToKilobytesSliceValue(snap.BrowserProfilesBytes), "#3B82F6"),
-                    new SvgDonutSlice(this._i18n["Storage.SliceMainDb"], ToKilobytesSliceValue(snap.MainDatabaseBytes), "#10B981"),
-                    new SvgDonutSlice(this._i18n["Storage.SliceAuditDb"], ToKilobytesSliceValue(snap.AuditDatabaseBytes), "#F6821F"),
-                    new SvgDonutSlice(this._i18n["Storage.SliceConfig"], ToKilobytesSliceValue(snap.ConfigAndOtherBytes), "#8B5CF6")
-                ],
-                customTotalText: ShellViewModel.FormatByteSize(snap.TotalUsedBytes),
-                valueFormatter: FormatKbSlice);
-
-            List<SvgDonutSlice> profileSlices = new();
-            for (int i = 0; i < snap.ProfileBreakdown.Count; i++)
+            hasLoadedStorageOnce = true;
+            _ = Task.Run(() =>
             {
-                (string profileName, long sizeBytes) = snap.ProfileBreakdown[i];
-                string colorHex = s_profileSlicePalette[i % s_profileSlicePalette.Length];
-                profileSlices.Add(new SvgDonutSlice(profileName, ToKilobytesSliceValue(sizeBytes), colorHex));
-            }
+                StorageUsageSnapshot snap = this._vm.CalculateStorageUsageSnapshot();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    kpiTotalValTb.Text = ShellViewModel.FormatByteSize(snap.TotalUsedBytes);
+                    kpiDbValTb.Text = ShellViewModel.FormatByteSize(snap.MainDatabaseBytes + snap.AuditDatabaseBytes);
+                    kpiProfilesValTb.Text = ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes);
+                    kpiMemoryValTb.Text = $"{ShellViewModel.FormatByteSize(snap.ProcessRamBytes)} / {ShellViewModel.FormatByteSize(snap.DriveFreeBytes)}";
 
-            if (profileSlices.Count == 0)
-            {
-                profileSlices.Add(new SvgDonutSlice(this._i18n["Storage.SliceNoProfiles"], 0, "#64748B"));
-            }
+                    componentsChart.SetSlices(
+                        [
+                            new SvgDonutSlice(this._i18n["Storage.SliceProfiles"], ToKilobytesSliceValue(snap.BrowserProfilesBytes), "#3B82F6"),
+                            new SvgDonutSlice(this._i18n["Storage.SliceMainDb"], ToKilobytesSliceValue(snap.MainDatabaseBytes), "#10B981"),
+                            new SvgDonutSlice(this._i18n["Storage.SliceAuditDb"], ToKilobytesSliceValue(snap.AuditDatabaseBytes), "#F6821F"),
+                            new SvgDonutSlice(this._i18n["Storage.SliceConfig"], ToKilobytesSliceValue(snap.ConfigAndOtherBytes), "#8B5CF6")
+                        ],
+                        customTotalText: ShellViewModel.FormatByteSize(snap.TotalUsedBytes),
+                        valueFormatter: FormatKbSlice);
 
-            profilesChart.SetSlices(
-                profileSlices,
-                customTotalText: ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes),
-                valueFormatter: FormatKbSlice);
+                    List<SvgDonutSlice> profileSlices = new();
+                    for (int i = 0; i < snap.ProfileBreakdown.Count; i++)
+                    {
+                        (string profileName, long sizeBytes) = snap.ProfileBreakdown[i];
+                        string colorHex = s_profileSlicePalette[i % s_profileSlicePalette.Length];
+                        profileSlices.Add(new SvgDonutSlice(profileName, ToKilobytesSliceValue(sizeBytes), colorHex));
+                    }
+
+                    if (profileSlices.Count == 0)
+                    {
+                        profileSlices.Add(new SvgDonutSlice(this._i18n["Storage.SliceNoProfiles"], 0, "#64748B"));
+                    }
+
+                    profilesChart.SetSlices(
+                        profileSlices,
+                        customTotalText: ShellViewModel.FormatByteSize(snap.BrowserProfilesBytes),
+                        valueFormatter: FormatKbSlice);
+                });
+            });
         }
 
         rescanBtn.Click += (_, _) =>
@@ -221,10 +231,22 @@ public sealed partial class SettingsPage
                 });
         };
 
-        RefreshStorageStats();
-        this._theme.ThemeChanged += (_, _) => RefreshStorageStats();
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshStorageStats();
+        this._theme.ThemeChanged += (_, _) =>
+        {
+            if (hasLoadedStorageOnce)
+            {
+                RefreshStorageStats();
+            }
+        };
+        this._vm.Accounts.CollectionChanged += (_, _) =>
+        {
+            if (hasLoadedStorageOnce)
+            {
+                RefreshStorageStats();
+            }
+        };
 
+        refreshStorageStats = RefreshStorageStats;
         refreshI18n = () =>
         {
             headerTitleTb.Text = this._i18n["Storage.Header"];
@@ -237,7 +259,10 @@ public sealed partial class SettingsPage
             kpiMemoryTitleTb.Text = this._i18n["Storage.KpiMemoryDiskTitle"];
             componentsChart.UpdateLabels(this._i18n["Storage.ChartComponentsTitle"], this._i18n["Storage.TotalUsedLabel"]);
             profilesChart.UpdateLabels(this._i18n["Storage.ChartProfilesTitle"], this._i18n["Storage.TotalProfilesLabel"]);
-            RefreshStorageStats();
+            if (hasLoadedStorageOnce)
+            {
+                RefreshStorageStats();
+            }
         };
 
         return storageGrid;

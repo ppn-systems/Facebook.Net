@@ -159,6 +159,7 @@ public sealed partial class OverviewPage
                 if (rec.Severity is AuditSeverity.Warning or AuditSeverity.Error)
                 {
                     alertOps++;
+                    continue;
                 }
 
                 switch (rec.Category)

@@ -385,69 +385,84 @@ public sealed partial class MainWindow : Window
         };
         pulseTimer.Start();
 
+        Grid BuildAccountRowVisual(AccountProfile acc)
+        {
+            bool isConnected = acc.Status == AccountStatus.Active;
+            Grid itemRow = new()
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                ColumnSpacing = 8,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Border av = AvatarBadge.Create(_theme, acc.DisplayName, 20, acc.AvatarUrl);
+            TextBlock tb = SectionHeader.CreateLabel(
+                _theme,
+                acc.DisplayName,
+                12.5,
+                FontWeight.SemiBold);
+            tb.MaxLines = 1;
+            tb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+            Color dotColor = isConnected
+                ? Color.Parse("#10B981")
+                : Color.Parse("#EF4444");
+            Color haloColor = isConnected
+                ? Color.FromArgb(55, 16, 185, 129)
+                : Color.FromArgb(65, 239, 68, 68);
+
+            Border innerDot = new()
+            {
+                Width = 8,
+                Height = 8,
+                CornerRadius = new CornerRadius(999),
+                Background = new SolidColorBrush(dotColor),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            Border statusDotHalo = new()
+            {
+                Width = 14,
+                Height = 14,
+                CornerRadius = new CornerRadius(999),
+                Background = new SolidColorBrush(haloColor),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 2, 0),
+                Child = innerDot
+            };
+            ToolTip.SetTip(statusDotHalo, _i18n.FormatAccountStatus(acc.Status));
+
+            if (!isConnected)
+            {
+                disconnectedStatusDots.Add(statusDotHalo);
+            }
+
+            Grid.SetColumn(av, 0);
+            Grid.SetColumn(tb, 1);
+            Grid.SetColumn(statusDotHalo, 2);
+            itemRow.Children.Add(av);
+            itemRow.Children.Add(tb);
+            itemRow.Children.Add(statusDotHalo);
+            return itemRow;
+        }
+
+        Border singleAccBadge = new()
+        {
+            Height = 32,
+            MinWidth = 165,
+            MaxWidth = 245,
+            Padding = new Thickness(10, 0),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        AutomationProperties.SetName(singleAccBadge, _i18n["TopBar.ActiveAccount"]);
+        ToolTip.SetTip(singleAccBadge, _i18n["TopBar.ActiveAccount"]);
+
         ComboBox activeAccCombo = FormField.CreateComboBox<AccountProfile>(
             _theme,
             _vm.Accounts,
-            acc =>
-            {
-                bool isConnected = acc.Status == AccountStatus.Active;
-                Grid itemRow = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    ColumnSpacing = 8,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                Border av = AvatarBadge.Create(_theme, acc.DisplayName, 20, acc.AvatarUrl);
-                TextBlock tb = SectionHeader.CreateLabel(
-                    _theme,
-                    acc.DisplayName,
-                    12.5,
-                    FontWeight.SemiBold);
-                tb.MaxLines = 1;
-                tb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                Color dotColor = isConnected
-                    ? Color.Parse("#10B981")
-                    : Color.Parse("#EF4444");
-                Color haloColor = isConnected
-                    ? Color.FromArgb(55, 16, 185, 129)
-                    : Color.FromArgb(65, 239, 68, 68);
-
-                Border innerDot = new()
-                {
-                    Width = 8,
-                    Height = 8,
-                    CornerRadius = new CornerRadius(999),
-                    Background = new SolidColorBrush(dotColor),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                Border statusDotHalo = new()
-                {
-                    Width = 14,
-                    Height = 14,
-                    CornerRadius = new CornerRadius(999),
-                    Background = new SolidColorBrush(haloColor),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(4, 0, 2, 0),
-                    Child = innerDot
-                };
-                ToolTip.SetTip(statusDotHalo, _i18n.FormatAccountStatus(acc.Status));
-
-                if (!isConnected)
-                {
-                    disconnectedStatusDots.Add(statusDotHalo);
-                }
-
-                Grid.SetColumn(av, 0);
-                Grid.SetColumn(tb, 1);
-                Grid.SetColumn(statusDotHalo, 2);
-                itemRow.Children.Add(av);
-                itemRow.Children.Add(tb);
-                itemRow.Children.Add(statusDotHalo);
-                return itemRow;
-            },
+            BuildAccountRowVisual,
             selectedItem: _vm.SelectedAccount,
             placeholderText: _i18n["TopBar.NoAccount"]);
         activeAccCombo.MinWidth = 195;
@@ -464,7 +479,46 @@ public sealed partial class MainWindow : Window
             }
         };
 
+        void RefreshAccountSwitcherVisibility()
+        {
+            ThemePalette p = _theme.Palette;
+            singleAccBadge.Background = p.ElevatedSurface;
+            singleAccBadge.BorderBrush = p.SubtleBorder;
+            ToolTip.SetTip(singleAccBadge, _i18n["TopBar.ActiveAccount"]);
+            AutomationProperties.SetName(singleAccBadge, _i18n["TopBar.ActiveAccount"]);
+
+            bool hasMultipleAccounts = _vm.Accounts.Count > 1;
+            activeAccCombo.IsVisible = hasMultipleAccounts;
+            singleAccBadge.IsVisible = !hasMultipleAccounts;
+
+            if (!hasMultipleAccounts)
+            {
+                AccountProfile? singleAcc = _vm.SelectedAccount ?? (_vm.Accounts.Count == 1 ? _vm.Accounts[0] : null);
+                if (singleAcc is not null)
+                {
+                    singleAccBadge.Child = BuildAccountRowVisual(singleAcc);
+                }
+                else
+                {
+                    TextBlock noAccTb = SectionHeader.CreateLabel(
+                        _theme,
+                        _i18n["TopBar.NoAccount"],
+                        12,
+                        FontWeight.Medium,
+                        isSecondary: true);
+                    noAccTb.VerticalAlignment = VerticalAlignment.Center;
+                    noAccTb.MaxLines = 1;
+                    noAccTb.TextTrimming = TextTrimming.CharacterEllipsis;
+                    singleAccBadge.Child = noAccTb;
+                }
+            }
+        }
+
+        RefreshAccountSwitcherVisibility();
+        _vm.Accounts.CollectionChanged += (_, _) => RefreshAccountSwitcherVisibility();
+
         topContextStrip.Children.Add(stopTaskBtn);
+        topContextStrip.Children.Add(singleAccBadge);
         topContextStrip.Children.Add(activeAccCombo);
 
         Button aiToggleBtn = new()
@@ -492,7 +546,11 @@ public sealed partial class MainWindow : Window
         }
 
         UpdateAiToggleButtonVisuals();
-        _theme.ThemeChanged += (_, _) => UpdateAiToggleButtonVisuals();
+        _theme.ThemeChanged += (_, _) =>
+        {
+            UpdateAiToggleButtonVisuals();
+            RefreshAccountSwitcherVisibility();
+        };
         _vm.AiAssistant.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.IsPanelOpen), StringComparison.Ordinal))
@@ -511,6 +569,7 @@ public sealed partial class MainWindow : Window
             ToolTip.SetTip(aiToggleBtn, _i18n["Ai.BtnToggleTip"]);
             AutomationProperties.SetName(aiToggleBtn, _i18n["Ai.PanelTitle"]);
             UpdateAiToggleButtonVisuals();
+            RefreshAccountSwitcherVisibility();
         };
 
         _vm.PropertyChanged += (_, e) =>
@@ -521,6 +580,8 @@ public sealed partial class MainWindow : Window
                 {
                     activeAccCombo.SelectedItem = _vm.SelectedAccount;
                 }
+
+                RefreshAccountSwitcherVisibility();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.IsBusy), StringComparison.Ordinal))
             {

@@ -195,56 +195,87 @@ public sealed class SvgDonutChart : Border
 
         if (total > 0)
         {
-            int nonZeroCount = 0;
+            List<int> activeIndices = new(slices.Count);
             for (int i = 0; i < slices.Count; i++)
             {
                 if (slices[i].Value > 0)
                 {
-                    nonZeroCount++;
+                    activeIndices.Add(i);
                 }
             }
 
-            double startAngle = -90.0;
-            double gapDegrees = nonZeroCount > 1 ? 2.4 : 0.0;
-
-            for (int i = 0; i < slices.Count; i++)
+            int nonZeroCount = activeIndices.Count;
+            if (nonZeroCount == 1)
             {
-                SvgDonutSlice slice = slices[i];
-                if (slice.Value <= 0)
+                SvgDonutSlice onlySlice = slices[activeIndices[0]];
+                Ellipse fullRing = new()
                 {
-                    continue;
-                }
+                    Width = radius * 2.0,
+                    Height = radius * 2.0,
+                    Stroke = new SolidColorBrush(Color.Parse(onlySlice.ColorHex)),
+                    StrokeThickness = this._strokeThickness,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                this._arcCanvas.Children.Add(fullRing);
+            }
+            else if (nonZeroCount > 1)
+            {
+                double gapDegrees = 1.6;
+                double totalGapDegrees = nonZeroCount * gapDegrees;
+                double availableDegrees = Math.Max(36.0, 360.0 - totalGapDegrees);
+                double minSliceDegrees = Math.Min(4.0, availableDegrees / nonZeroCount);
 
-                IBrush brush = new SolidColorBrush(Color.Parse(slice.ColorHex));
-                double sweep = (double)slice.Value / total * 360.0;
+                double[] sweeps = new double[nonZeroCount];
+                double deficit = 0.0;
+                double surplusPool = 0.0;
 
-                if (nonZeroCount == 1 || sweep >= 359.5)
+                for (int k = 0; k < nonZeroCount; k++)
                 {
-                    Ellipse fullRing = new()
+                    SvgDonutSlice slice = slices[activeIndices[k]];
+                    double rawSweep = (double)slice.Value / total * availableDegrees;
+                    if (rawSweep < minSliceDegrees)
                     {
-                        Width = radius * 2.0,
-                        Height = radius * 2.0,
-                        Stroke = brush,
-                        StrokeThickness = this._strokeThickness,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
-                    this._arcCanvas.Children.Add(fullRing);
+                        sweeps[k] = minSliceDegrees;
+                        deficit += minSliceDegrees - rawSweep;
+                    }
+                    else
+                    {
+                        sweeps[k] = rawSweep;
+                        surplusPool += rawSweep - minSliceDegrees;
+                    }
                 }
-                else
+
+                if (deficit > 0.0 && surplusPool > 0.0)
                 {
-                    double effectiveSweep = Math.Max(3.0, sweep - gapDegrees);
+                    for (int k = 0; k < nonZeroCount; k++)
+                    {
+                        if (sweeps[k] > minSliceDegrees)
+                        {
+                            double share = (sweeps[k] - minSliceDegrees) / surplusPool;
+                            sweeps[k] -= deficit * share;
+                        }
+                    }
+                }
+
+                double startAngle = -90.0 + (gapDegrees / 2.0);
+                for (int k = 0; k < nonZeroCount; k++)
+                {
+                    SvgDonutSlice slice = slices[activeIndices[k]];
+                    double effectiveSweep = Math.Max(1.0, sweeps[k]);
+                    IBrush brush = new SolidColorBrush(Color.Parse(slice.ColorHex));
+
                     Path arcPath = new()
                     {
                         Data = CreateArcGeometry(cx, cy, radius, startAngle, effectiveSweep),
                         Stroke = brush,
                         StrokeThickness = this._strokeThickness,
-                        StrokeLineCap = PenLineCap.Round
+                        StrokeLineCap = PenLineCap.Flat
                     };
                     this._arcCanvas.Children.Add(arcPath);
-                }
 
-                startAngle += sweep;
+                    startAngle += effectiveSweep + gapDegrees;
+                }
             }
         }
 

@@ -14,11 +14,11 @@ public static class HumanJitter
     /// <summary>
     /// Samples a truncated Gaussian delay bounded within <c>[minSeconds, maxSeconds]</c> with millisecond resolution.
     /// </summary>
-    public static TimeSpan NextGaussianDelay(int minSeconds, int maxSeconds)
+    public static TimeSpan NextGaussianDelay(double minSeconds, double maxSeconds)
     {
-        int clampedMin = Math.Max(0, minSeconds);
-        int clampedMax = Math.Max(clampedMin, maxSeconds);
-        if (clampedMax <= 0)
+        double clampedMin = Math.Max(0.0, minSeconds);
+        double clampedMax = Math.Max(clampedMin, maxSeconds);
+        if (clampedMax <= 0.0)
         {
             return TimeSpan.Zero;
         }
@@ -27,11 +27,11 @@ public static class HumanJitter
         double maxMs = clampedMax * 1000.0;
         if (Math.Abs(maxMs - minMs) < 1.0)
         {
-            return TimeSpan.FromMilliseconds(minMs);
+            return TimeSpan.FromMilliseconds(Math.Round(minMs));
         }
 
         double mean = (minMs + maxMs) / 2.0;
-        double stdDev = Math.Max(150.0, (maxMs - minMs) / 4.0);
+        double stdDev = Math.Max(50.0, (maxMs - minMs) / 4.0);
 
         // Box-Muller transform for standard normal Z ~ N(0, 1)
         double u1 = 1.0 - Random.Shared.NextDouble();

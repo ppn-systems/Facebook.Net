@@ -69,7 +69,7 @@ public sealed partial class SettingsPage : UserControl
         Control tabAiView = this.BuildAiContextTab(out Action refreshTabAi);
         Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
         AuditLogsPage tab3View = new(_vm);
-        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4);
+        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4, out Action refreshStorageStats);
 
         SubTabBar subTabBar = new(
             _theme,
@@ -80,6 +80,14 @@ public sealed partial class SettingsPage : UserControl
                 new SubTabItem(_i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
                 new SubTabItem(_i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
             ]);
+
+        subTabBar.SelectedIndexChanged += (_, idx) =>
+        {
+            if (idx == 4)
+            {
+                refreshStorageStats();
+            }
+        };
 
         _i18n.LanguageChanged += (_, _) =>
         {
@@ -208,6 +216,15 @@ public sealed partial class SettingsPage : UserControl
         browserSelectorRow.Children.Add(browserCombo);
         browserSelectorRow.Children.Add(rescanBrowsersBtn);
 
+        TextBlock smartBrowserReasonTb = SectionHeader.CreateLabel(
+            _theme,
+            string.Empty,
+            11.5,
+            FontWeight.SemiBold);
+        smartBrowserReasonTb.Foreground = _theme.Palette.BrandPrimary;
+        smartBrowserReasonTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        smartBrowserReasonTb.MaxLines = 1;
+
         TextBlock detectedBrowserInfoTb = SectionHeader.CreateLabel(
             _theme,
             string.Empty,
@@ -223,6 +240,34 @@ public sealed partial class SettingsPage : UserControl
             detectedBrowserInfoTb.Text = !string.IsNullOrWhiteSpace(resolvedExe)
                 ? $"{_i18n["Settings.BrowserDetectedPrefix"]}: {resolvedExe}"
                 : _i18n["Settings.BrowserNotDetectedWarning"];
+
+            if (_vm.SelectedBrowserKind == PreferredBrowserKind.AutoDetect &&
+                string.IsNullOrWhiteSpace(_vm.CustomBrowserExecutablePath))
+            {
+                SmartBrowserDetectionResult smart = AppSettingsService.DetectBestBrowser();
+                string browserName = _i18n.FormatBrowserKind(smart.BrowserKind);
+                System.Text.StringBuilder details = new();
+                if (smart.IsOsDefaultBrowser)
+                {
+                    _ = details.Append(_i18n["Settings.BrowserReasonOsDefault"]);
+                }
+
+                if (smart.IsCurrentlyRunning && smart.ActiveUptime.TotalMinutes >= 1.0)
+                {
+                    int totalHours = (int)smart.ActiveUptime.TotalHours;
+                    int mins = smart.ActiveUptime.Minutes;
+                    _ = details.Append(totalHours > 0
+                        ? _i18n.Format("Settings.BrowserReasonRunningHours", totalHours, mins)
+                        : _i18n.Format("Settings.BrowserReasonRunningMinutes", Math.Max(1, mins)));
+                }
+
+                smartBrowserReasonTb.Text = _i18n.Format("Settings.BrowserAutoSelectedReason", browserName, details.ToString());
+                smartBrowserReasonTb.IsVisible = true;
+            }
+            else
+            {
+                smartBrowserReasonTb.IsVisible = false;
+            }
         }
 
         void RefreshInstalledBrowsersList()
@@ -245,8 +290,9 @@ public sealed partial class SettingsPage : UserControl
         rescanBrowsersBtn.Click += (_, _) => RefreshInstalledBrowsersList();
         UpdateDetectedBrowserStatus();
 
-        StackPanel browserStack = new() { Spacing = 5 };
+        StackPanel browserStack = new() { Spacing = 4 };
         browserStack.Children.Add(browserSelectorRow);
+        browserStack.Children.Add(smartBrowserReasonTb);
         browserStack.Children.Add(detectedBrowserInfoTb);
 
         StackPanel browserField = FormField.CreateLabeled(
@@ -327,12 +373,13 @@ public sealed partial class SettingsPage : UserControl
             out TextBlock minDelayPrefix,
             out NumericUpDown minDelayBox,
             out TextBlock maxDelayPrefix,
-            out NumericUpDown maxDelayBox);
+            out NumericUpDown maxDelayBox,
+            _i18n);
 
         minDelayBox.ValueChanged += (_, _) =>
         {
-            int next = Math.Clamp((int)(minDelayBox.Value ?? 2), 0, 600);
-            if (_vm.MinDelaySeconds != next)
+            double next = Math.Round(Math.Clamp((double)(minDelayBox.Value ?? 2m), 0.0, 600.0), 2);
+            if (Math.Abs(_vm.MinDelaySeconds - next) > 0.001)
             {
                 _vm.MinDelaySeconds = next;
             }
@@ -340,8 +387,8 @@ public sealed partial class SettingsPage : UserControl
 
         maxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = Math.Clamp((int)(maxDelayBox.Value ?? 5), 0, 1200);
-            if (_vm.MaxDelaySeconds != next)
+            double next = Math.Round(Math.Clamp((double)(maxDelayBox.Value ?? 5m), 0.0, 1200.0), 2);
+            if (Math.Abs(_vm.MaxDelaySeconds - next) > 0.001)
             {
                 _vm.MaxDelaySeconds = next;
             }
@@ -364,12 +411,13 @@ public sealed partial class SettingsPage : UserControl
             out TextBlock scrapeMinDelayPrefix,
             out NumericUpDown scrapeMinDelayBox,
             out TextBlock scrapeMaxDelayPrefix,
-            out NumericUpDown scrapeMaxDelayBox);
+            out NumericUpDown scrapeMaxDelayBox,
+            _i18n);
 
         scrapeMinDelayBox.ValueChanged += (_, _) =>
         {
-            int next = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 1), 0, 600);
-            if (_vm.ScrapeDelayMinSeconds != next)
+            double next = Math.Round(Math.Clamp((double)(scrapeMinDelayBox.Value ?? 1m), 0.0, 600.0), 2);
+            if (Math.Abs(_vm.ScrapeDelayMinSeconds - next) > 0.001)
             {
                 _vm.ScrapeDelayMinSeconds = next;
             }
@@ -377,8 +425,8 @@ public sealed partial class SettingsPage : UserControl
 
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
         {
-            int next = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 2), 0, 1200);
-            if (_vm.ScrapeDelayMaxSeconds != next)
+            double next = Math.Round(Math.Clamp((double)(scrapeMaxDelayBox.Value ?? 2m), 0.0, 1200.0), 2);
+            if (Math.Abs(_vm.ScrapeDelayMaxSeconds - next) > 0.001)
             {
                 _vm.ScrapeDelayMaxSeconds = next;
             }
@@ -513,19 +561,19 @@ public sealed partial class SettingsPage : UserControl
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MinDelaySeconds), StringComparison.Ordinal))
             {
-                minDelayBox.Value = _vm.MinDelaySeconds;
+                minDelayBox.Value = (decimal)_vm.MinDelaySeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.MaxDelaySeconds), StringComparison.Ordinal))
             {
-                maxDelayBox.Value = _vm.MaxDelaySeconds;
+                maxDelayBox.Value = (decimal)_vm.MaxDelaySeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMinSeconds), StringComparison.Ordinal))
             {
-                scrapeMinDelayBox.Value = _vm.ScrapeDelayMinSeconds;
+                scrapeMinDelayBox.Value = (decimal)_vm.ScrapeDelayMinSeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.ScrapeDelayMaxSeconds), StringComparison.Ordinal))
             {
-                scrapeMaxDelayBox.Value = _vm.ScrapeDelayMaxSeconds;
+                scrapeMaxDelayBox.Value = (decimal)_vm.ScrapeDelayMaxSeconds;
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.UpdateStatusMessage), StringComparison.Ordinal) ||
                      string.Equals(e.PropertyName, nameof(ShellViewModel.IsUpdateAvailable), StringComparison.Ordinal) ||

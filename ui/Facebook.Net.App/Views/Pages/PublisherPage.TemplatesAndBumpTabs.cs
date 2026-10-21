@@ -369,8 +369,7 @@ public sealed partial class PublisherPage
             this._i18n["Publisher.RepostPanelTitle"],
             13.5,
             FontWeight.Bold);
-        Grid.SetRow(repostHeaderTb, 0);
-        repostCardGrid.Children.Add(repostHeaderTb);
+        repostHeaderTb.VerticalAlignment = VerticalAlignment.Center;
 
         TextBox repostCaptionBox = FormField.CreateTextBox(
             this._theme,
@@ -380,7 +379,24 @@ public sealed partial class PublisherPage
             height: 82);
         repostCaptionBox.TextChanged += (_, _) =>
             this._vm.RepostCustomSpintaxText = repostCaptionBox.Text ?? string.Empty;
+
+        Button insertRepostVarBtn = this.CreateVariableInsertFlyoutButton(repostCaptionBox, out Action rebuildRepostVars);
+        insertRepostVarBtn.Padding = new Thickness(8, 4);
+
+        Grid repostHeaderRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(repostHeaderTb, 0);
+        Grid.SetColumn(insertRepostVarBtn, 1);
+        repostHeaderRow.Children.Add(repostHeaderTb);
+        repostHeaderRow.Children.Add(insertRepostVarBtn);
+
+        Grid.SetRow(repostHeaderRow, 0);
         Grid.SetRow(repostCaptionBox, 1);
+        repostCardGrid.Children.Add(repostHeaderRow);
         repostCardGrid.Children.Add(repostCaptionBox);
 
         Button repostNowBtn = null!;
@@ -463,6 +479,7 @@ public sealed partial class PublisherPage
             emptyPostsTb.Text = this._i18n["Empty.PublishedPosts"];
             repostHeaderTb.Text = this._i18n["Publisher.RepostPanelTitle"];
             repostCaptionBox.PlaceholderText = this._i18n["Publisher.RepostCaptionPlaceholder"];
+            rebuildRepostVars();
             refreshRepostPicker();
             RefreshFilteredPosts();
             UpdateRepostButtonLabel();
@@ -471,7 +488,11 @@ public sealed partial class PublisherPage
         return tabGrid;
     }
 
-    private Control BuildTemplatesAndBumpCombinedTab(TextBox contentBox, TextBox photoBox, out Action refreshI18n)
+    private Control BuildTemplatesAndBumpCombinedTab(
+        TextBox contentBox,
+        TextBox photoBox,
+        Action onSelectComposeTab,
+        out Action refreshI18n)
     {
         Grid combinedGrid = new()
         {
@@ -479,11 +500,11 @@ public sealed partial class PublisherPage
             ColumnSpacing = 14
         };
 
+        Control bumpCard = this.BuildBumpTab(out TextBox bumpBox, out Action refreshBump);
         Control tplCard = SurfaceCard.Create(
             this._theme,
-            this.BuildTemplatesTab(contentBox, photoBox, out Action refreshTpl),
+            this.BuildTemplatesTab(contentBox, photoBox, bumpBox, onSelectComposeTab, out Action refreshTpl),
             new Thickness(16));
-        Control bumpCard = this.BuildBumpTab(out Action refreshBump);
 
         Grid.SetColumn(tplCard, 0);
         Grid.SetColumn(bumpCard, 1);
@@ -499,7 +520,12 @@ public sealed partial class PublisherPage
         return combinedGrid;
     }
 
-    private Control BuildTemplatesTab(TextBox contentBox, TextBox photoBox, out Action refreshI18n)
+    private Control BuildTemplatesTab(
+        TextBox contentBox,
+        TextBox photoBox,
+        TextBox bumpBox,
+        Action onSelectComposeTab,
+        out Action refreshI18n)
     {
         Grid tplGrid = new()
         {
@@ -646,10 +672,15 @@ public sealed partial class PublisherPage
                         string mediaPath = tpl.MediaFilePath ?? string.Empty;
                         photoBox.Text = mediaPath;
                         this._vm.PostMediaFilePath = mediaPath;
+
+                        onSelectComposeTab?.Invoke();
+                        _ = contentBox.Focus();
                     }
                     else
                     {
                         this._vm.BumpCommentSpintaxText = tpl.SpintaxContent;
+                        this._vm.SalesCommentSpintaxText = tpl.SpintaxContent;
+                        _ = bumpBox.Focus();
                     }
                 };
 
@@ -718,6 +749,7 @@ public sealed partial class PublisherPage
                 else
                 {
                     this._vm.BumpCommentSpintaxText = selectedTpl.SpintaxContent;
+                    this._vm.SalesCommentSpintaxText = selectedTpl.SpintaxContent;
                 }
             }
         };
@@ -764,7 +796,7 @@ public sealed partial class PublisherPage
         return tplGrid;
     }
 
-    private Control BuildBumpTab(out Action refreshI18n)
+    private Control BuildBumpTab(out TextBox bumpBox, out Action refreshI18n)
     {
         Grid bumpGrid = new()
         {
@@ -781,22 +813,25 @@ public sealed partial class PublisherPage
         Grid.SetRow(header, 0);
         bumpGrid.Children.Add(header);
 
-        TextBox bumpBox = FormField.CreateTextBox(
+        TextBox localBumpBox = FormField.CreateTextBox(
             this._theme,
             this._i18n["Publisher.BumpPlaceholder"],
             this._vm.BumpCommentSpintaxText,
             multiline: true,
             height: 160);
-        bumpBox.VerticalAlignment = VerticalAlignment.Stretch;
-        bumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = bumpBox.Text ?? string.Empty;
-        Grid.SetRow(bumpBox, 1);
-        bumpGrid.Children.Add(bumpBox);
+        localBumpBox.VerticalAlignment = VerticalAlignment.Stretch;
+        localBumpBox.TextChanged += (_, _) => this._vm.BumpCommentSpintaxText = localBumpBox.Text ?? string.Empty;
+        Grid.SetRow(localBumpBox, 1);
+        bumpGrid.Children.Add(localBumpBox);
+        bumpBox = localBumpBox;
 
         Grid bumpActionsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
             ColumnSpacing = 10
         };
+
+        Button insertBumpVarBtn = this.CreateVariableInsertFlyoutButton(localBumpBox, out Action rebuildBumpVars);
 
         Button saveBumpTplBtn = AppButton.CreateSecondary(
             this._theme,
@@ -811,8 +846,10 @@ public sealed partial class PublisherPage
             VectorIcons.SalesComment);
         bumpBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        Grid.SetColumn(saveBumpTplBtn, 0);
-        Grid.SetColumn(bumpBtn, 1);
+        Grid.SetColumn(insertBumpVarBtn, 0);
+        Grid.SetColumn(saveBumpTplBtn, 1);
+        Grid.SetColumn(bumpBtn, 2);
+        bumpActionsRow.Children.Add(insertBumpVarBtn);
         bumpActionsRow.Children.Add(saveBumpTplBtn);
         bumpActionsRow.Children.Add(bumpBtn);
         Grid.SetRow(bumpActionsRow, 2);
@@ -821,9 +858,9 @@ public sealed partial class PublisherPage
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.BumpCommentSpintaxText), StringComparison.Ordinal) &&
-                !string.Equals(bumpBox.Text, this._vm.BumpCommentSpintaxText, StringComparison.Ordinal))
+                !string.Equals(localBumpBox.Text, this._vm.BumpCommentSpintaxText, StringComparison.Ordinal))
             {
-                bumpBox.Text = this._vm.BumpCommentSpintaxText;
+                localBumpBox.Text = this._vm.BumpCommentSpintaxText;
             }
         };
 
@@ -831,7 +868,8 @@ public sealed partial class PublisherPage
         {
             titleTb.Text = this._i18n["Publisher.BumpTitle"];
             descTb.Text = this._i18n["Publisher.Desc"];
-            bumpBox.PlaceholderText = this._i18n["Publisher.BumpPlaceholder"];
+            localBumpBox.PlaceholderText = this._i18n["Publisher.BumpPlaceholder"];
+            rebuildBumpVars();
             AppButton.SetText(saveBumpTplBtn, this._i18n["Publisher.BtnSaveBumpTemplate"]);
             AppButton.SetText(bumpBtn, this._i18n["Publisher.BtnBumpRecentPosts"]);
         };

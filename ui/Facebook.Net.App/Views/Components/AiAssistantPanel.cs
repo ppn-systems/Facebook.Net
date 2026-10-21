@@ -18,6 +18,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.AiAssistant;
@@ -40,6 +41,7 @@ namespace Facebook.Net.App.Views.Components;
 [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Localized via LocalizationService with symbol prefixes.")]
 public sealed class AiAssistantPanel : Border
 {
+    private readonly ShellViewModel _vm;
     private readonly AiAssistantViewModel _aiVm;
     private readonly ThemeService _theme;
     private readonly LocalizationService _i18n;
@@ -51,6 +53,7 @@ public sealed class AiAssistantPanel : Border
     public AiAssistantPanel(ShellViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
+        _vm = viewModel;
         _aiVm = viewModel.AiAssistant;
         _theme = viewModel.Context.Theme;
         _i18n = viewModel.Context.Localization;
@@ -1063,6 +1066,7 @@ public sealed class AiAssistantPanel : Border
         chatGrid.Children.Add(inputBarBorder);
 
         Dictionary<AiChatBubbleItem, PropertyChangedEventHandler> bubbleSubscriptions = new();
+        List<Action> bubbleRefreshers = new();
 
         void AppendBubbleItem(AiChatBubbleItem item)
         {
@@ -1072,6 +1076,7 @@ public sealed class AiAssistantPanel : Border
             }
 
             Control bubbleControl = this.CreateChatBubbleCard(item, out SelectableTextBlock contentTb, out Action refreshBubble);
+            bubbleRefreshers.Add(refreshBubble);
             messagesStack.Children.Add(bubbleControl);
 
             bool contentUpdatePending = false;
@@ -1116,6 +1121,7 @@ public sealed class AiAssistantPanel : Border
             }
 
             bubbleSubscriptions.Clear();
+            bubbleRefreshers.Clear();
             messagesStack.Children.Clear();
 
             for (int i = 0; i < _aiVm.Messages.Count; i++)
@@ -1125,6 +1131,24 @@ public sealed class AiAssistantPanel : Border
 
             Dispatcher.UIThread.Post(chatScrollViewer.ScrollToEnd, DispatcherPriority.Background);
         }
+
+        void RefreshExistingBubbles()
+        {
+            for (int i = 0; i < bubbleRefreshers.Count; i++)
+            {
+                bubbleRefreshers[i]();
+            }
+        }
+
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
+            {
+                RefreshExistingBubbles();
+            }
+        };
+
+        _vm.Accounts.CollectionChanged += (_, _) => RefreshExistingBubbles();
 
         _aiVm.Messages.CollectionChanged += (_, e) =>
         {
@@ -1285,7 +1309,6 @@ public sealed class AiAssistantPanel : Border
         out Action refreshBubble)
     {
         bool isUser = item.IsUser;
-        ThemePalette initialPalette = _theme.Palette;
 
         StackPanel bubbleStack = new()
         {
@@ -1299,9 +1322,12 @@ public sealed class AiAssistantPanel : Border
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Control roleIcon = isUser
-            ? VectorIcons.Create(VectorIcons.Accounts, 13, initialPalette.BrandPrimary)
-            : VectorIcons.CreateAiAssistantIcon(16);
+        ContentControl userAvatarHost = new()
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Control roleIcon = VectorIcons.CreateAiAssistantIcon(16);
 
         Border roleBadge = new()
         {
@@ -1314,6 +1340,15 @@ public sealed class AiAssistantPanel : Border
             Child = roleIcon
         };
 
+        TextBlock roleNameTb = new()
+        {
+            FontSize = 11.5,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxLines = 1,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
         TextBlock timeTb = new()
         {
             Text = item.TimestampText,
@@ -1321,9 +1356,12 @@ public sealed class AiAssistantPanel : Border
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Grid.SetColumn(roleBadge, 0);
+        Control leftRoleControl = isUser ? userAvatarHost : roleBadge;
+        Grid.SetColumn(leftRoleControl, 0);
+        Grid.SetColumn(roleNameTb, 1);
         Grid.SetColumn(timeTb, 2);
-        metaRow.Children.Add(roleBadge);
+        metaRow.Children.Add(leftRoleControl);
+        metaRow.Children.Add(roleNameTb);
         metaRow.Children.Add(timeTb);
 
         SelectableTextBlock innerContentTb = new()
@@ -1409,9 +1447,41 @@ public sealed class AiAssistantPanel : Border
             ThemePalette p = _theme.Palette;
             bubbleBorder.Background = isUser ? p.BrandSubtleFill : p.SecondarySurface;
             bubbleBorder.BorderBrush = isUser ? p.BrandSubtleBorder : p.SubtleBorder;
-            roleBadge.Background = isUser ? p.ElevatedSurface : p.BrandSubtleFill;
-            roleBadge.BorderBrush = isUser ? p.BrandSubtleBorder : p.SubtleBorder;
-            VectorIcons.SetForeground(roleIcon, isUser ? p.BrandPrimary : p.TextSecondary);
+            if (isUser)
+            {
+                AccountProfile? acc = _vm.SelectedAccount ?? (_vm.Accounts.Count > 0 ? _vm.Accounts[0] : null);
+                string userDisplayName = acc?.DisplayName ?? "FB";
+                string? userAvatarUrl = acc?.AvatarUrl;
+                if (string.IsNullOrWhiteSpace(userAvatarUrl) && acc is not null && !string.IsNullOrWhiteSpace(acc.Uid))
+                {
+                    bool isNumericUid = true;
+                    for (int i = 0; i < acc.Uid.Length; i++)
+                    {
+                        if (!char.IsDigit(acc.Uid[i]))
+                        {
+                            isNumericUid = false;
+                            break;
+                        }
+                    }
+
+                    if (isNumericUid)
+                    {
+                        userAvatarUrl = $"https://graph.facebook.com/{acc.Uid}/picture?type=normal";
+                    }
+                }
+
+                userAvatarHost.Content = AvatarBadge.Create(_theme, userDisplayName, 24, userAvatarUrl);
+                roleNameTb.Text = acc?.DisplayName ?? string.Empty;
+                roleNameTb.Foreground = p.TextPrimary;
+            }
+            else
+            {
+                roleBadge.Background = p.BrandSubtleFill;
+                roleBadge.BorderBrush = p.SubtleBorder;
+                VectorIcons.SetForeground(roleIcon, p.TextSecondary);
+                roleNameTb.Text = string.Empty;
+            }
+
             timeTb.Foreground = p.TextMuted;
             innerContentTb.Foreground = p.TextPrimary;
             RenderMarkdownIntoControl(innerContentTb, item.Content, p);

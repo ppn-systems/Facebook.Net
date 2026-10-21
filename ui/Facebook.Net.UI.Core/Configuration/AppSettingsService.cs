@@ -3,12 +3,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Facebook.Net.UI.Core.Accounts;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 
@@ -20,10 +23,31 @@ namespace Facebook.Net.UI.Core.Configuration;
 /// <param name="DisplayName">Human-readable label for the profile.</param>
 /// <param name="DirectoryPath">Full directory path on disk.</param>
 /// <param name="IsManagedByApp">Whether the profile lives inside the application's isolated <c>Profiles</c> root.</param>
+/// <param name="HasFacebookSession">Whether an authenticated Facebook session (<c>c_user</c> + <c>xs</c>) was detected in this profile's cookie store.</param>
 public sealed record BrowserProfileOption(
     string DisplayName,
     string DirectoryPath,
-    bool IsManagedByApp);
+    bool IsManagedByApp,
+    bool HasFacebookSession = false);
+
+/// <summary>
+/// Telemetry snapshot explaining how <see cref="PreferredBrowserKind.AutoDetect"/> selected the best Chromium browser on the user's machine.
+/// </summary>
+/// <param name="BrowserKind">Resolved browser family (<see cref="PreferredBrowserKind.Edge"/>, <see cref="PreferredBrowserKind.Chrome"/>, or <see cref="PreferredBrowserKind.Brave"/>).</param>
+/// <param name="ExecutablePath">Full path to the browser executable on disk.</param>
+/// <param name="IsOsDefaultBrowser">Whether this browser is registered as the OS default HTTPS handler.</param>
+/// <param name="IsCurrentlyRunning">Whether processes for this browser are currently running.</param>
+/// <param name="ActiveUptime">How long the earliest running process of this browser has been open.</param>
+/// <param name="RunningProcessCount">Number of running OS processes for this browser.</param>
+/// <param name="LastProfileActivityUtc">Most recent write timestamp of the browser's user profile data.</param>
+public sealed record SmartBrowserDetectionResult(
+    PreferredBrowserKind BrowserKind,
+    string? ExecutablePath,
+    bool IsOsDefaultBrowser,
+    bool IsCurrentlyRunning,
+    TimeSpan ActiveUptime,
+    int RunningProcessCount,
+    DateTimeOffset LastProfileActivityUtc);
 
 /// <summary>
 /// Preferred Chromium browser family for launching isolated account sessions.
@@ -51,9 +75,9 @@ public sealed record AppConfig(
     AppLanguage Language = AppLanguage.ViVn,
     PreferredBrowserKind PreferredBrowser = PreferredBrowserKind.AutoDetect,
     string? CustomBrowserExecutablePath = null,
-    bool RunBrowserHeadless = false,
-    int MinDelaySeconds = 2,
-    int MaxDelaySeconds = 5,
+    bool RunBrowserHeadless = true,
+    double MinDelaySeconds = 2.0,
+    double MaxDelaySeconds = 5.0,
     bool IsAuditDrawerExpanded = false,
     bool IsSidebarCollapsed = false,
     string? LastSelectedAccountUid = null,
@@ -62,12 +86,13 @@ public sealed record AppConfig(
     bool AutoBackgroundScrapeEnabled = false,
     int AutoScrapeIntervalMinutes = 5,
     bool ScrapeAllEnabledTargetGroups = true,
-    int ScrapeDelayMinSeconds = 1,
-    int ScrapeDelayMaxSeconds = 2,
+    double ScrapeDelayMinSeconds = 1.0,
+    double ScrapeDelayMaxSeconds = 2.0,
     int ScrapeMaxGroupsPerCycle = 30,
     string AiSystemPrompt = "",
     string AiModel = AppConfig.DefaultAiModel,
-    string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort)
+    string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort,
+    bool HasExplicitHeadlessPreference = false)
 {
     /// <summary>
     /// Built-in immutable English system prompt always pre-loaded before every AI Assistant conversation.
@@ -97,13 +122,14 @@ public sealed record AppConfig(
     /// </summary>
     public AppConfig Normalize()
     {
-        int clampedMin = Math.Clamp(this.MinDelaySeconds, 0, 3600);
-        int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
+        double clampedMin = Math.Round(Math.Clamp(this.MinDelaySeconds, 0.0, 3600.0), 2);
+        double clampedMax = Math.Round(Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600.0), 2);
         int clampedPerGroup = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
         int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 5 : this.AutoScrapeIntervalMinutes, 1, 120);
-        int clampedScrapeMin = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
-        int clampedScrapeMax = Math.Clamp(this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600);
+        double clampedScrapeMin = Math.Round(Math.Clamp(this.ScrapeDelayMinSeconds, 0.0, 600.0), 2);
+        double clampedScrapeMax = Math.Round(Math.Clamp(this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600.0), 2);
         int clampedMaxGroups = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 30 : this.ScrapeMaxGroupsPerCycle, 1, 500);
+        bool resolvedHeadless = !this.HasExplicitHeadlessPreference || this.RunBrowserHeadless;
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
@@ -123,6 +149,8 @@ public sealed record AppConfig(
 
         return this with
         {
+            RunBrowserHeadless = resolvedHeadless,
+            HasExplicitHeadlessPreference = true,
             MinDelaySeconds = clampedMin,
             MaxDelaySeconds = clampedMax,
             CustomBrowserExecutablePath = cleanedPath,
@@ -246,7 +274,7 @@ public sealed class AppSettingsService : IAppSettingsService
 
     /// <summary>
     /// Resolves the browser executable path based on the user's <see cref="PreferredBrowserKind"/> or custom path.
-    /// Returns <see langword="null"/> to fall back to the default OS adapter discovery.
+    /// When <see cref="PreferredBrowserKind.AutoDetect"/> is selected, resolves the executable of the smart-detected default/most-active browser.
     /// </summary>
     public string? ResolvePreferredBrowserExecutable()
     {
@@ -256,7 +284,105 @@ public sealed class AppSettingsService : IAppSettingsService
             return this.Current.CustomBrowserExecutablePath;
         }
 
-        return ResolveExecutableForKind(this.Current.PreferredBrowser);
+        PreferredBrowserKind effectiveKind = this.ResolveEffectiveBrowserKind();
+        return ResolveExecutableForKind(effectiveKind);
+    }
+
+    /// <summary>
+    /// Evaluates installed Chromium browsers using OS Default Browser registration, currently running process uptime/window activity,
+    /// and recent user profile write timestamps to select the user's true primary browser.
+    /// </summary>
+    public static SmartBrowserDetectionResult DetectBestBrowser()
+    {
+        PreferredBrowserKind? osDefault = TryGetOsDefaultBrowserKind();
+        PreferredBrowserKind[] candidates =
+        [
+            PreferredBrowserKind.Edge,
+            PreferredBrowserKind.Chrome,
+            PreferredBrowserKind.Brave
+        ];
+
+        SmartBrowserDetectionResult? best = null;
+        double bestScore = double.MinValue;
+        DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
+
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            PreferredBrowserKind kind = candidates[i];
+            string? exePath = ResolveExecutableForKind(kind);
+            if (string.IsNullOrWhiteSpace(exePath))
+            {
+                continue;
+            }
+
+            bool isOsDefault = osDefault == kind;
+            (int procCount, bool hasVisibleWindow, TimeSpan uptime) = GetBrowserProcessMetrics(kind);
+            DateTimeOffset lastProfileWrite = GetLastProfileActivityUtc(kind);
+
+            double score = 0.0;
+            if (isOsDefault)
+            {
+                score += 55.0;
+            }
+
+            if (procCount > 0)
+            {
+                score += 25.0;
+                if (hasVisibleWindow)
+                {
+                    score += 25.0;
+                }
+
+                // Reward the browser that has been running the longest (up to +45 points) and has active tabs/processes (up to +15 points)
+                score += Math.Min(45.0, uptime.TotalMinutes / 8.0);
+                score += Math.Min(15.0, procCount * 0.8);
+            }
+
+            if (lastProfileWrite > DateTimeOffset.MinValue)
+            {
+                double minutesSinceActive = Math.Max(0.0, (nowUtc - lastProfileWrite).TotalMinutes);
+                if (minutesSinceActive <= 30.0)
+                {
+                    score += 45.0;
+                }
+                else if (minutesSinceActive <= 360.0)
+                {
+                    score += 35.0;
+                }
+                else if (minutesSinceActive <= 1440.0)
+                {
+                    score += 25.0;
+                }
+                else if (minutesSinceActive <= 10080.0)
+                {
+                    score += 12.0;
+                }
+            }
+
+            SmartBrowserDetectionResult current = new(
+                BrowserKind: kind,
+                ExecutablePath: exePath,
+                IsOsDefaultBrowser: isOsDefault,
+                IsCurrentlyRunning: procCount > 0,
+                ActiveUptime: uptime,
+                RunningProcessCount: procCount,
+                LastProfileActivityUtc: lastProfileWrite);
+
+            if (best is null || score > bestScore)
+            {
+                best = current;
+                bestScore = score;
+            }
+        }
+
+        return best ?? new SmartBrowserDetectionResult(
+            PreferredBrowserKind.Edge,
+            ResolveExecutableForKind(PreferredBrowserKind.Edge),
+            IsOsDefaultBrowser: false,
+            IsCurrentlyRunning: false,
+            ActiveUptime: TimeSpan.Zero,
+            RunningProcessCount: 0,
+            LastProfileActivityUtc: DateTimeOffset.MinValue);
     }
 
     /// <summary>
@@ -398,27 +524,13 @@ public sealed class AppSettingsService : IAppSettingsService
             return this.Current.PreferredBrowser;
         }
 
-        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Edge)))
-        {
-            return PreferredBrowserKind.Edge;
-        }
-
-        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Chrome)))
-        {
-            return PreferredBrowserKind.Chrome;
-        }
-
-        if (!string.IsNullOrWhiteSpace(ResolveExecutableForKind(PreferredBrowserKind.Brave)))
-        {
-            return PreferredBrowserKind.Brave;
-        }
-
-        return PreferredBrowserKind.Edge;
+        return DetectBestBrowser().BrowserKind;
     }
 
     /// <summary>
     /// Discovers all isolated browser profiles inside <paramref name="appProfilesRootDir"/> as well as
-    /// existing local user profile folders strictly matching <paramref name="effectiveBrowserKind"/>.
+    /// existing local user profile folders strictly matching <paramref name="effectiveBrowserKind"/>,
+    /// enriching system profiles with their real human-readable names from Chromium's <c>Local State</c>.
     /// </summary>
     public static List<BrowserProfileOption> DiscoverBrowserProfiles(
         string appProfilesRootDir,
@@ -439,7 +551,8 @@ public sealed class AppSettingsService : IAppSettingsService
                     string folderName = Path.GetFileName(dir);
                     if (!string.IsNullOrWhiteSpace(folderName) && seenPaths.Add(dir))
                     {
-                        results.Add(new BrowserProfileOption($"One Client — {folderName}", dir, IsManagedByApp: true));
+                        bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(dir);
+                        results.Add(new BrowserProfileOption($"One Client — {folderName}", dir, IsManagedByApp: true, HasFacebookSession: hasFb));
                     }
                 }
             }
@@ -449,58 +562,330 @@ public sealed class AppSettingsService : IAppSettingsService
             }
         }
 
+        (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] systemRoots = GetSystemUserDataRoots();
+
+        for (int r = 0; r < systemRoots.Length; r++)
+        {
+            if (effectiveBrowserKind != PreferredBrowserKind.AutoDetect &&
+                systemRoots[r].Kind != effectiveBrowserKind)
+            {
+                continue;
+            }
+
+            string rootPath = systemRoots[r].UserDataRoot;
+            if (!Directory.Exists(rootPath))
+            {
+                continue;
+            }
+
+            Dictionary<string, string> localStateNames = ReadChromiumProfileFriendlyNames(rootPath);
+
+            string defaultProfileDir = Path.Combine(rootPath, "Default");
+            if (Directory.Exists(defaultProfileDir) && seenPaths.Add(defaultProfileDir))
+            {
+                bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(defaultProfileDir);
+                string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, "Default", localStateNames);
+                results.Add(new BrowserProfileOption(friendlyLabel, defaultProfileDir, IsManagedByApp: false, HasFacebookSession: hasFb));
+            }
+
+            try
+            {
+                string[] profileDirs = Directory.GetDirectories(rootPath, "Profile *");
+                Array.Sort(profileDirs, StringComparer.OrdinalIgnoreCase);
+                for (int p = 0; p < profileDirs.Length; p++)
+                {
+                    string pDir = profileDirs[p];
+                    string pName = Path.GetFileName(pDir);
+                    if (!string.IsNullOrWhiteSpace(pName) && seenPaths.Add(pDir))
+                    {
+                        bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(pDir);
+                        string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, pName, localStateNames);
+                        results.Add(new BrowserProfileOption(friendlyLabel, pDir, IsManagedByApp: false, HasFacebookSession: hasFb));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Ignore inaccessible system profile folders
+            }
+        }
+
+        return results;
+    }
+
+    private static (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] GetSystemUserDataRoots()
+    {
         if (OperatingSystem.IsWindows())
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] systemRoots =
+            return
             [
                 (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
                 (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
                 (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
             ];
+        }
 
-            for (int r = 0; r < systemRoots.Length; r++)
+        if (OperatingSystem.IsMacOS())
+        {
+            string appSupport = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
+            return
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(appSupport, "Microsoft Edge")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(appSupport, "Google", "Chrome")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(appSupport, "BraveSoftware", "Brave-Browser"))
+            ];
+        }
+
+        return [];
+    }
+
+    private static string FormatSystemProfileDisplayName(
+        string browserLabel,
+        string folderKey,
+        Dictionary<string, string> localStateNames)
+    {
+        if (localStateNames.TryGetValue(folderKey, out string? friendly) &&
+            !string.IsNullOrWhiteSpace(friendly) &&
+            !string.Equals(friendly, folderKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{browserLabel} — {friendly} · {folderKey}";
+        }
+
+        return $"{browserLabel} — {folderKey}";
+    }
+
+    private static Dictionary<string, string> ReadChromiumProfileFriendlyNames(string userDataRoot)
+    {
+        Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase);
+        string localStatePath = Path.Combine(userDataRoot, "Local State");
+        if (!File.Exists(localStatePath))
+        {
+            return map;
+        }
+
+        try
+        {
+            using FileStream fs = new(localStatePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using JsonDocument doc = JsonDocument.Parse(fs);
+            if (!doc.RootElement.TryGetProperty("profile", out JsonElement profileEl) ||
+                !profileEl.TryGetProperty("info_cache", out JsonElement cacheEl) ||
+                cacheEl.ValueKind != JsonValueKind.Object)
             {
-                if (effectiveBrowserKind != PreferredBrowserKind.AutoDetect &&
-                    systemRoots[r].Kind != effectiveBrowserKind)
+                return map;
+            }
+
+            foreach (JsonProperty prop in cacheEl.EnumerateObject())
+            {
+                JsonElement val = prop.Value;
+                if (val.ValueKind != JsonValueKind.Object)
                 {
                     continue;
                 }
 
-                string rootPath = systemRoots[r].UserDataRoot;
-                if (!Directory.Exists(rootPath))
+                string? shortcutName = val.TryGetProperty("shortcut_name", out JsonElement snEl) ? snEl.GetString() : null;
+                string? name = val.TryGetProperty("name", out JsonElement nameEl) ? nameEl.GetString() : null;
+                string? userName = val.TryGetProperty("user_name", out JsonElement unEl) ? unEl.GetString() : null;
+
+                string chosen = !string.IsNullOrWhiteSpace(shortcutName) &&
+                                !string.Equals(shortcutName, "Person 1", StringComparison.OrdinalIgnoreCase)
+                    ? shortcutName.Trim()
+                    : (!string.IsNullOrWhiteSpace(name) ? name.Trim() : string.Empty);
+
+                // Strip any parentheses to keep UI labels clean
+                chosen = chosen.Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal).Trim();
+
+                if (!string.IsNullOrWhiteSpace(userName))
                 {
-                    continue;
+                    string cleanUser = userName.Trim().Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal);
+                    chosen = !string.IsNullOrWhiteSpace(chosen) &&
+                             !string.Equals(chosen, "Person 1", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(chosen, cleanUser, StringComparison.OrdinalIgnoreCase)
+                        ? $"{chosen} · {cleanUser}"
+                        : cleanUser;
                 }
 
-                string defaultProfileDir = Path.Combine(rootPath, "Default");
-                if (Directory.Exists(defaultProfileDir) && seenPaths.Add(defaultProfileDir))
+                if (!string.IsNullOrWhiteSpace(chosen))
                 {
-                    results.Add(new BrowserProfileOption($"{systemRoots[r].BrowserLabel} — Default", defaultProfileDir, IsManagedByApp: false));
-                }
-
-                try
-                {
-                    string[] profileDirs = Directory.GetDirectories(rootPath, "Profile *");
-                    Array.Sort(profileDirs, StringComparer.OrdinalIgnoreCase);
-                    for (int p = 0; p < profileDirs.Length; p++)
-                    {
-                        string pDir = profileDirs[p];
-                        string pName = Path.GetFileName(pDir);
-                        if (!string.IsNullOrWhiteSpace(pName) && seenPaths.Add(pDir))
-                        {
-                            results.Add(new BrowserProfileOption($"{systemRoots[r].BrowserLabel} — {pName}", pDir, IsManagedByApp: false));
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    // Ignore inaccessible system profile folders
+                    map[prop.Name] = chosen;
                 }
             }
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Ignore unreadable Local State
+        }
 
-        return results;
+        return map;
+    }
+
+    private static PreferredBrowserKind? TryGetOsDefaultBrowserKind()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return TryGetWindowsDefaultBrowserKind();
+        }
+
+        return null;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static PreferredBrowserKind? TryGetWindowsDefaultBrowserKind()
+    {
+        string[] subKeys =
+        [
+            @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+            @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice"
+        ];
+
+        for (int i = 0; i < subKeys.Length; i++)
+        {
+            try
+            {
+                using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(subKeys[i]);
+                if (key?.GetValue("ProgId") is string progId && !string.IsNullOrWhiteSpace(progId))
+                {
+                    if (progId.Contains("MSEdge", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return PreferredBrowserKind.Edge;
+                    }
+
+                    if (progId.Contains("Chrome", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return PreferredBrowserKind.Chrome;
+                    }
+
+                    if (progId.Contains("Brave", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return PreferredBrowserKind.Brave;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore registry access error
+            }
+        }
+
+        return null;
+    }
+
+    private static (int ProcessCount, bool HasVisibleWindow, TimeSpan LongestUptime) GetBrowserProcessMetrics(PreferredBrowserKind kind)
+    {
+        string processName = kind switch
+        {
+            PreferredBrowserKind.Edge => "msedge",
+            PreferredBrowserKind.Chrome => "chrome",
+            PreferredBrowserKind.Brave => "brave",
+            PreferredBrowserKind.AutoDetect or _ => string.Empty
+        };
+
+        if (string.IsNullOrEmpty(processName))
+        {
+            return (0, false, TimeSpan.Zero);
+        }
+
+        Process[]? processes = null;
+        try
+        {
+            processes = Process.GetProcessesByName(processName);
+            if (processes.Length == 0)
+            {
+                return (0, false, TimeSpan.Zero);
+            }
+
+            bool hasWindow = false;
+            DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
+            TimeSpan maxUptime = TimeSpan.Zero;
+
+            for (int i = 0; i < processes.Length; i++)
+            {
+                Process p = processes[i];
+                try
+                {
+                    if (p.MainWindowHandle != IntPtr.Zero)
+                    {
+                        hasWindow = true;
+                    }
+
+                    DateTime startUtc = p.StartTime.ToUniversalTime();
+                    TimeSpan uptime = nowUtc - startUtc;
+                    if (uptime > maxUptime && uptime < TimeSpan.FromDays(60))
+                    {
+                        maxUptime = uptime;
+                    }
+                }
+                catch
+                {
+                    // Ignore protected or exiting process handle
+                }
+            }
+
+            return (processes.Length, hasWindow, maxUptime);
+        }
+        catch
+        {
+            return (0, false, TimeSpan.Zero);
+        }
+        finally
+        {
+            if (processes is not null)
+            {
+                for (int i = 0; i < processes.Length; i++)
+                {
+                    processes[i].Dispose();
+                }
+            }
+        }
+    }
+
+    private static DateTimeOffset GetLastProfileActivityUtc(PreferredBrowserKind kind)
+    {
+        (PreferredBrowserKind Kind, string _, string UserDataRoot)[] roots = GetSystemUserDataRoots();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            if (roots[i].Kind != kind)
+            {
+                continue;
+            }
+
+            string root = roots[i].UserDataRoot;
+            if (!Directory.Exists(root))
+            {
+                return DateTimeOffset.MinValue;
+            }
+
+            string[] candidateFiles =
+            [
+                Path.Combine(root, "Local State"),
+                Path.Combine(root, "Default", "Preferences"),
+                Path.Combine(root, "Default", "Network", "Cookies")
+            ];
+
+            DateTimeOffset latest = DateTimeOffset.MinValue;
+            for (int f = 0; f < candidateFiles.Length; f++)
+            {
+                try
+                {
+                    if (File.Exists(candidateFiles[f]))
+                    {
+                        DateTimeOffset writeUtc = File.GetLastWriteTimeUtc(candidateFiles[f]);
+                        if (writeUtc > latest)
+                        {
+                            latest = writeUtc;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore inaccessible file
+                }
+            }
+
+            return latest;
+        }
+
+        return DateTimeOffset.MinValue;
     }
 
     private AppConfig LoadOrDefault()

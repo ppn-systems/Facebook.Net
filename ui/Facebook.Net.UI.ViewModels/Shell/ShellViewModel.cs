@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -59,6 +60,7 @@ public enum NavigationSection
 public sealed partial class ShellViewModel : ObservableObject, IDisposable
 {
     private readonly UiServiceContext _context;
+    private readonly HashSet<string> _headlessSessionUids = new(StringComparer.Ordinal);
     private CancellationTokenSource? _activeTaskCts;
 
     /// <summary>
@@ -477,18 +479,30 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             return null;
         }
 
+        bool needsInteractiveLogin =
+            forceVisible ||
+            (string.IsNullOrWhiteSpace(this.SelectedAccount.CookieHeader) &&
+             !this.HasProfileAuthenticatedCookieStore(this.SelectedAccount.ProfileDirectory));
+        bool isAutomatedHeadless = !needsInteractiveLogin && _context.Settings.Current.RunBrowserHeadless;
+
         IBrowserSession? existing = _context.SessionManager.TryGetSession(this.SelectedAccount.Uid);
-        if (existing is not null &&
-            existing.State == Contracts.Primitives.BrowserState.Running &&
-            (!forceVisible || existing.IsBrowserProcessAttached))
+        if (existing is not null && existing.State == Contracts.Primitives.BrowserState.Running)
         {
-            return existing;
+            if (needsInteractiveLogin && _headlessSessionUids.Contains(this.SelectedAccount.Uid))
+            {
+                await _context.SessionManager.CloseSessionAsync(this.SelectedAccount.Uid, ct).ConfigureAwait(true);
+                _ = _headlessSessionUids.Remove(this.SelectedAccount.Uid);
+            }
+            else if (!needsInteractiveLogin || existing.IsBrowserProcessAttached)
+            {
+                return existing;
+            }
         }
 
         ProxyConfig? resolvedProxy = null;
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.ProxyId))
         {
-            System.Collections.Generic.IReadOnlyList<ProxyConfig> proxies =
+            IReadOnlyList<ProxyConfig> proxies =
                 await _context.AccountStore.GetAllProxiesAsync(ct).ConfigureAwait(true);
             for (int i = 0; i < proxies.Count; i++)
             {
@@ -500,7 +514,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
-        bool isAutomatedHeadless = !forceVisible && _context.Settings.Current.RunBrowserHeadless;
         string? preferredExe = _context.Settings.ResolvePreferredBrowserExecutable();
         BrowserLaunchOptions options = new(
             AccountUid: this.SelectedAccount.Uid,
@@ -515,6 +528,15 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             CleanDiskCache: true);
 
         IBrowserSession session = await _context.SessionManager.AcquireSessionAsync(options, ct).ConfigureAwait(true);
+        if (isAutomatedHeadless)
+        {
+            _ = _headlessSessionUids.Add(this.SelectedAccount.Uid);
+        }
+        else
+        {
+            _ = _headlessSessionUids.Remove(this.SelectedAccount.Uid);
+        }
+
         if (!string.IsNullOrWhiteSpace(this.SelectedAccount.CookieHeader))
         {
             _ = await session.ImportCookiesAsync(this.SelectedAccount.CookieHeader, ct: ct).ConfigureAwait(true);
