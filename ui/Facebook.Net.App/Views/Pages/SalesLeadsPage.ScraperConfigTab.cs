@@ -299,12 +299,25 @@ public sealed partial class SalesLeadsPage
             out TextBlock scrapeMinDelayPrefix,
             out NumericUpDown scrapeMinDelayBox,
             out TextBlock scrapeMaxDelayPrefix,
-            out NumericUpDown scrapeMaxDelayBox);
+            out NumericUpDown scrapeMaxDelayBox,
+            this._i18n);
 
         scrapeMinDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMinSeconds = Math.Clamp((int)(scrapeMinDelayBox.Value ?? 1), 0, 600);
+        {
+            double next = Math.Round(Math.Clamp((double)(scrapeMinDelayBox.Value ?? 1m), 0.0, 600.0), 2);
+            if (Math.Abs(this._vm.ScrapeDelayMinSeconds - next) > 0.001)
+            {
+                this._vm.ScrapeDelayMinSeconds = next;
+            }
+        };
         scrapeMaxDelayBox.ValueChanged += (_, _) =>
-            this._vm.ScrapeDelayMaxSeconds = Math.Clamp((int)(scrapeMaxDelayBox.Value ?? 2), this._vm.ScrapeDelayMinSeconds, 600);
+        {
+            double next = Math.Round(Math.Clamp((double)(scrapeMaxDelayBox.Value ?? 2m), this._vm.ScrapeDelayMinSeconds, 600.0), 2);
+            if (Math.Abs(this._vm.ScrapeDelayMaxSeconds - next) > 0.001)
+            {
+                this._vm.ScrapeDelayMaxSeconds = next;
+            }
+        };
 
         StackPanel scrapeDelayField = FormField.CreateLabeled(
             this._theme,

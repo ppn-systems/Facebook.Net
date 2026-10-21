@@ -610,6 +610,16 @@ public sealed partial class ShellViewModel
 
             // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
             await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
+
+            if (this.RunBrowserHeadless && session.IsBrowserProcessAttached)
+            {
+                if (!string.Equals(account.Uid, updated.Uid, StringComparison.Ordinal))
+                {
+                    await _context.SessionManager.CloseSessionAsync(account.Uid, ct).ConfigureAwait(true);
+                }
+
+                await _context.SessionManager.CloseSessionAsync(updated.Uid, ct).ConfigureAwait(true);
+            }
         }
         catch (OperationCanceledException)
         {

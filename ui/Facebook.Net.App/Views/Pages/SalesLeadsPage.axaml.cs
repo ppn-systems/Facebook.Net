@@ -146,22 +146,93 @@ public sealed partial class SalesLeadsPage : UserControl
             () =>
             [
                 new FilterOptionItem("pending", this._i18n["Leads.FilterSegPending"]),
-                new FilterOptionItem("commented", this._i18n["Leads.FilterSegCommented"]),
-                new FilterOptionItem("has_phone", this._i18n["Leads.FilterHasPhone"])
+                new FilterOptionItem("commented", this._i18n["Leads.FilterSegCommented"])
             ],
             selectedIds =>
             {
                 string? sel = selectedIds.Count > 0 ? selectedIds[0] : null;
-                this._vm.FilterOnlyPostsWithPhone = string.Equals(sel, "has_phone", StringComparison.Ordinal);
                 this._vm.LeadCommentStatusFilter = sel switch
                 {
                     "pending" => 1,
                     "commented" => 2,
-                    "has_phone" => 3,
                     _ => 0
                 };
             },
             allowMultiple: false);
+
+        FilterCategoryDefinition intentCategory = new(
+            "intent",
+            this._i18n["Leads.FilterCatIntent"],
+            VectorIcons.Shield,
+            () =>
+            [
+                new FilterOptionItem("has_phone", this._i18n["Leads.FilterHasPhone"]),
+                new FilterOptionItem("no_phone", this._i18n["Leads.FilterNoPhone"]),
+                new FilterOptionItem("high_intent", this._i18n["Leads.FilterHighIntent"]),
+                new FilterOptionItem("inquiry", this._i18n["Leads.FilterInquiryQuestion"])
+            ],
+            this._vm.SetLeadIntentFilters,
+            allowMultiple: true);
+
+        FilterCategoryDefinition competitionCategory = new(
+            "competition",
+            this._i18n["Leads.FilterCatCompetition"],
+            VectorIcons.ThumbUp,
+            () =>
+            [
+                new FilterOptionItem("zero_comments", this._i18n["Leads.FilterZeroComments"]),
+                new FilterOptionItem("low_comments", this._i18n["Leads.FilterLowComments"]),
+                new FilterOptionItem("hot_engagement", this._i18n["Leads.FilterHotEngagement"])
+            ],
+            selectedIds => this._vm.SetLeadCompetitionFilter(selectedIds.Count > 0 ? selectedIds[0] : null),
+            allowMultiple: false);
+
+        FilterCategoryDefinition timeCategory = new(
+            "time_range",
+            this._i18n["Leads.FilterCatTimeRange"],
+            VectorIcons.History,
+            () =>
+            [
+                new FilterOptionItem("last_1h", this._i18n["Leads.FilterTime1h"]),
+                new FilterOptionItem("last_24h", this._i18n["Leads.FilterTime24h"]),
+                new FilterOptionItem("last_3d", this._i18n["Leads.FilterTime3d"]),
+                new FilterOptionItem("last_7d", this._i18n["Leads.FilterTime7d"])
+            ],
+            selectedIds => this._vm.SetLeadTimeRangeFilter(selectedIds.Count > 0 ? selectedIds[0] : null),
+            allowMultiple: false);
+
+        FilterCategoryDefinition mediaCategory = new(
+            "media_type",
+            this._i18n["Leads.FilterCatMediaType"],
+            VectorIcons.Publish,
+            () =>
+            [
+                new FilterOptionItem("has_media", this._i18n["Leads.FilterMediaAny"]),
+                new FilterOptionItem("has_photo", this._i18n["Leads.FilterMediaPhoto"]),
+                new FilterOptionItem("has_video", this._i18n["Leads.FilterMediaVideo"]),
+                new FilterOptionItem("text_only", this._i18n["Leads.FilterMediaTextOnly"])
+            ],
+            selectedIds => this._vm.SetLeadMediaFilter(selectedIds.Count > 0 ? selectedIds[0] : null),
+            allowMultiple: false);
+
+        FilterCategoryDefinition groupTagCategory = new(
+            "group_tag",
+            this._i18n["Groups.FilterCatColorTag"],
+            VectorIcons.Bookmark,
+            () =>
+            {
+                List<FilterOptionItem> options = new(this._vm.GroupTags.Count + 1);
+                for (int i = 0; i < this._vm.GroupTags.Count; i++)
+                {
+                    GroupTag tag = this._vm.GroupTags[i];
+                    options.Add(new FilterOptionItem(tag.Id, tag.Name, ColorHex: tag.ColorHex));
+                }
+
+                options.Add(new FilterOptionItem("__untagged__", this._i18n["Groups.FilterUntagged"]));
+                return options;
+            },
+            this._vm.SetLeadGroupTagFilters,
+            allowMultiple: true);
 
         FilterCategoryDefinition groupCategory = new(
             "group",
@@ -169,27 +240,34 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Groups,
             () =>
             {
-                List<FilterOptionItem> options = new(this._vm.TargetGroups.Count);
-                for (int i = 0; i < this._vm.TargetGroups.Count; i++)
+                List<(string GroupId, string GroupName)> availableGroups = this._vm.GetAvailableScrapedGroupsForFilter();
+                List<FilterOptionItem> options = new(availableGroups.Count);
+                for (int i = 0; i < availableGroups.Count; i++)
                 {
-                    SavedTargetGroup g = this._vm.TargetGroups[i];
-                    options.Add(new FilterOptionItem(g.GroupId, g.GroupName));
+                    (string gId, string gName) = availableGroups[i];
+                    options.Add(new FilterOptionItem(gId, gName));
                 }
 
                 return options;
             },
-            selectedIds =>
-            {
-                this._vm.FilterScrapedGroupId = selectedIds.Count > 0 ? selectedIds[0] : null;
-            },
-            allowMultiple: false);
+            this._vm.SetLeadGroupFilters,
+            allowMultiple: true);
 
         searchFilterBar.SetFilterCategories(
-            [statusCategory, groupCategory],
+            [
+                statusCategory,
+                intentCategory,
+                competitionCategory,
+                timeCategory,
+                mediaCategory,
+                groupTagCategory,
+                groupCategory
+            ],
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
 
         this._vm.TargetGroups.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
+        this._vm.GroupTags.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
 
         searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
             this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
@@ -558,6 +636,11 @@ public sealed partial class SalesLeadsPage : UserControl
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
             statusCategory.Title = this._i18n["Leads.ColStatus"];
+            intentCategory.Title = this._i18n["Leads.FilterCatIntent"];
+            competitionCategory.Title = this._i18n["Leads.FilterCatCompetition"];
+            timeCategory.Title = this._i18n["Leads.FilterCatTimeRange"];
+            mediaCategory.Title = this._i18n["Leads.FilterCatMediaType"];
+            groupTagCategory.Title = this._i18n["Groups.FilterCatColorTag"];
             groupCategory.Title = this._i18n["Leads.FilterGroupLabel"];
             searchFilterBar.UpdateLocalization(
                 this._i18n["Common.FilterButton"],

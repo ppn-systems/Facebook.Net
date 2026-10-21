@@ -52,11 +52,11 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets the minimum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMinSeconds { get; set; } = 1;
+    public partial double ScrapeDelayMinSeconds { get; set; } = 1.0;
 
     /// <summary>Gets or sets the maximum anti-ban rate-limit delay in seconds between scraping two groups (0..600).</summary>
     [ObservableProperty]
-    public partial int ScrapeDelayMaxSeconds { get; set; } = 2;
+    public partial double ScrapeDelayMaxSeconds { get; set; } = 2.0;
 
     /// <summary>Gets or sets the maximum number of groups scraped in a single cycle using round-robin rotation (1..500).</summary>
     [ObservableProperty]
@@ -88,6 +88,12 @@ public sealed partial class ShellViewModel
 
     private readonly List<PostSummary> _allScrapedPosts = new();
     private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _leadIntentFilters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _leadGroupTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _leadGroupFilterIds = new(StringComparer.Ordinal);
+    private string? _leadCompetitionFilter;
+    private string? _leadTimeRangeFilter;
+    private string? _leadMediaFilter;
     private CancellationTokenSource? _backgroundScrapeCts;
     private int _nextScrapeGroupOffset;
 
@@ -115,7 +121,7 @@ public sealed partial class ShellViewModel
         }
     }
 
-    partial void OnScrapeDelayMinSecondsChanged(int value)
+    partial void OnScrapeDelayMinSecondsChanged(double value)
     {
         if (!this._isLoadingSettings)
         {
@@ -123,7 +129,7 @@ public sealed partial class ShellViewModel
         }
     }
 
-    partial void OnScrapeDelayMaxSecondsChanged(int value)
+    partial void OnScrapeDelayMaxSecondsChanged(double value)
     {
         if (!this._isLoadingSettings)
         {
@@ -222,12 +228,133 @@ public sealed partial class ShellViewModel
         this.FilterCachedPostsFromDb();
     }
 
+    /// <summary>
+    /// Updates the multi-select buyer intent and contact filters (<c>has_phone</c>, <c>no_phone</c>, <c>high_intent</c>, <c>inquiry</c>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadIntentFilters(IReadOnlyList<string> selectedIds)
+    {
+        _leadIntentFilters.Clear();
+        if (selectedIds is not null)
+        {
+            for (int i = 0; i < selectedIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(selectedIds[i]))
+                {
+                    _ = _leadIntentFilters.Add(selectedIds[i]);
+                }
+            }
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the competition and engagement filter (<c>zero_comments</c>, <c>low_comments</c>, <c>hot_engagement</c>, or <see langword="null"/>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadCompetitionFilter(string? filterId)
+    {
+        _leadCompetitionFilter = string.IsNullOrWhiteSpace(filterId) ? null : filterId.Trim();
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the post time range filter (<c>last_1h</c>, <c>last_24h</c>, <c>last_3d</c>, <c>last_7d</c>, or <see langword="null"/>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadTimeRangeFilter(string? filterId)
+    {
+        _leadTimeRangeFilter = string.IsNullOrWhiteSpace(filterId) ? null : filterId.Trim();
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the post attachment/media filter (<c>has_media</c>, <c>has_photo</c>, <c>has_video</c>, <c>text_only</c>, or <see langword="null"/>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadMediaFilter(string? filterId)
+    {
+        _leadMediaFilter = string.IsNullOrWhiteSpace(filterId) ? null : filterId.Trim();
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the multi-select group color tag filters (including <c>__untagged__</c>) for scraped leads and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadGroupTagFilters(IReadOnlyList<string> tagIds)
+    {
+        _leadGroupTagFilterIds.Clear();
+        if (tagIds is not null)
+        {
+            for (int i = 0; i < tagIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(tagIds[i]))
+                {
+                    _ = _leadGroupTagFilterIds.Add(tagIds[i]);
+                }
+            }
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the multi-select group ID filters for scraped leads and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadGroupFilters(IReadOnlyList<string> groupIds)
+    {
+        _leadGroupFilterIds.Clear();
+        if (groupIds is not null)
+        {
+            for (int i = 0; i < groupIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(groupIds[i]))
+                {
+                    _ = _leadGroupFilterIds.Add(groupIds[i]);
+                }
+            }
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Returns all unique <c>(GroupId, GroupName)</c> pairs across both <see cref="TargetGroups"/> and stored <see cref="ScrapedPosts"/>
+    /// so every scraped group is always selectable in the Sales Leads filter bar.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1002:Do not expose generic lists", Justification = "Direct List return avoids interface dispatch overhead.")]
+    public List<(string GroupId, string GroupName)> GetAvailableScrapedGroupsForFilter()
+    {
+        List<(string GroupId, string GroupName)> list = new(this.TargetGroups.Count + 8);
+        HashSet<string> seen = new(StringComparer.Ordinal);
+
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (!string.IsNullOrWhiteSpace(tg.GroupId) && seen.Add(tg.GroupId))
+            {
+                string label = !string.IsNullOrWhiteSpace(tg.GroupName) ? tg.GroupName : tg.GroupId;
+                list.Add((tg.GroupId, label));
+            }
+        }
+
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        {
+            PostSummary p = _allScrapedPosts[i];
+            if (!string.IsNullOrWhiteSpace(p.GroupId) && seen.Add(p.GroupId))
+            {
+                string label = !string.IsNullOrWhiteSpace(p.GroupName) ? p.GroupName : p.GroupId;
+                list.Add((p.GroupId, label));
+            }
+        }
+
+        return list;
+    }
+
     private void FilterCachedPostsFromDb()
     {
         string[] keywords = string.IsNullOrWhiteSpace(this.BuyerIntentKeywords)
             ? Array.Empty<string>()
             : this.BuyerIntentKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
         List<PostSummary> matched = new(_allScrapedPosts.Count);
         for (int i = 0; i < _allScrapedPosts.Count; i++)
         {
@@ -236,6 +363,33 @@ public sealed partial class ShellViewModel
                 !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
             {
                 continue;
+            }
+
+            if (_leadGroupFilterIds.Count > 0 &&
+                (string.IsNullOrWhiteSpace(post.GroupId) || !_leadGroupFilterIds.Contains(post.GroupId)))
+            {
+                continue;
+            }
+
+            if (_leadGroupTagFilterIds.Count > 0)
+            {
+                SavedTargetGroup? tg = this.FindTargetGroupById(post.GroupId);
+                IReadOnlyList<string> tgTags = tg?.GetTagIds() ?? [];
+                bool matchesUntagged = _leadGroupTagFilterIds.Contains("__untagged__") && tgTags.Count == 0;
+                bool matchesTag = false;
+                for (int t = 0; t < tgTags.Count; t++)
+                {
+                    if (_leadGroupTagFilterIds.Contains(tgTags[t]))
+                    {
+                        matchesTag = true;
+                        break;
+                    }
+                }
+
+                if (!matchesUntagged && !matchesTag)
+                {
+                    continue;
+                }
             }
 
             bool isCommented = this.IsPostCommented(post.PostId);
@@ -249,10 +403,128 @@ public sealed partial class ShellViewModel
                 continue;
             }
 
-            if ((this.FilterOnlyPostsWithPhone || this.LeadCommentStatusFilter == 3) &&
-                string.IsNullOrWhiteSpace(this.ExtractPostPhoneNumber(post)))
+            string? extractedPhone = null;
+            bool phoneEvaluated = false;
+
+            if (this.FilterOnlyPostsWithPhone ||
+                this.LeadCommentStatusFilter == 3 ||
+                _leadIntentFilters.Contains("has_phone"))
+            {
+                extractedPhone = this.ExtractPostPhoneNumber(post);
+                phoneEvaluated = true;
+                if (string.IsNullOrWhiteSpace(extractedPhone))
+                {
+                    continue;
+                }
+            }
+
+            if (_leadIntentFilters.Contains("no_phone"))
+            {
+                if (!phoneEvaluated)
+                {
+                    extractedPhone = this.ExtractPostPhoneNumber(post);
+                }
+
+                if (!string.IsNullOrWhiteSpace(extractedPhone))
+                {
+                    continue;
+                }
+            }
+
+            if (_leadIntentFilters.Contains("high_intent") &&
+                _context.LeadScoring.CalculateBuyerIntentScore(post.MessageText, this.BuyerIntentKeywords) < 75)
             {
                 continue;
+            }
+
+            if (_leadIntentFilters.Contains("inquiry") &&
+                !_context.LeadScoring.HasBuyerInquirySignal(post.MessageText))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(_leadCompetitionFilter))
+            {
+                if (string.Equals(_leadCompetitionFilter, "zero_comments", StringComparison.OrdinalIgnoreCase) &&
+                    post.CommentCount != 0)
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadCompetitionFilter, "low_comments", StringComparison.OrdinalIgnoreCase) &&
+                    post.CommentCount > 2)
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadCompetitionFilter, "hot_engagement", StringComparison.OrdinalIgnoreCase) &&
+                    post.CommentCount < 5 &&
+                    post.ReactionCount < 5)
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_leadTimeRangeFilter))
+            {
+                if (!post.CreatedAt.HasValue)
+                {
+                    continue;
+                }
+
+                TimeSpan age = nowUtc - post.CreatedAt.Value;
+                if (string.Equals(_leadTimeRangeFilter, "last_1h", StringComparison.OrdinalIgnoreCase) &&
+                    age > TimeSpan.FromHours(1))
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadTimeRangeFilter, "last_24h", StringComparison.OrdinalIgnoreCase) &&
+                    age > TimeSpan.FromHours(24))
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadTimeRangeFilter, "last_3d", StringComparison.OrdinalIgnoreCase) &&
+                    age > TimeSpan.FromDays(3))
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadTimeRangeFilter, "last_7d", StringComparison.OrdinalIgnoreCase) &&
+                    age > TimeSpan.FromDays(7))
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_leadMediaFilter))
+            {
+                bool hasMediaPreview = !string.IsNullOrWhiteSpace(post.MediaPreviewUrl);
+                if (string.Equals(_leadMediaFilter, "has_media", StringComparison.OrdinalIgnoreCase) &&
+                    !hasMediaPreview &&
+                    !post.IsVideo)
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadMediaFilter, "has_photo", StringComparison.OrdinalIgnoreCase) &&
+                    (!hasMediaPreview || post.IsVideo))
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadMediaFilter, "has_video", StringComparison.OrdinalIgnoreCase) &&
+                    !post.IsVideo)
+                {
+                    continue;
+                }
+
+                if (string.Equals(_leadMediaFilter, "text_only", StringComparison.OrdinalIgnoreCase) &&
+                    (hasMediaPreview || post.IsVideo))
+                {
+                    continue;
+                }
             }
 
             if (_context.LeadScoring.MatchesPostOrAuthorKeywords(post, keywords))
@@ -418,7 +690,7 @@ public sealed partial class ShellViewModel
                 _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
             }
 
-            int parallelChunkSize = this.ScrapeDelayMinSeconds <= 1 ? 3 : 1;
+            int parallelChunkSize = this.ScrapeDelayMinSeconds <= 1.0 ? 3 : 1;
             for (int chunkStart = 0; chunkStart < targets.Count; chunkStart += parallelChunkSize)
             {
                 ct.ThrowIfCancellationRequested();
@@ -751,8 +1023,8 @@ public sealed partial class ShellViewModel
 
     private async Task WaitScraperRateLimitDelayAsync(string nextGroupName, CancellationToken ct)
     {
-        int minSec = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
-        int maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds, minSec, 600);
+        double minSec = Math.Clamp(this.ScrapeDelayMinSeconds, 0.0, 600.0);
+        double maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds, minSec, 600.0);
         TimeSpan delay = HumanJitter.NextGaussianDelay(minSec, maxSec);
         if (delay <= TimeSpan.Zero)
         {

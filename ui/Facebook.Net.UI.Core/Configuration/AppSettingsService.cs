@@ -75,9 +75,9 @@ public sealed record AppConfig(
     AppLanguage Language = AppLanguage.ViVn,
     PreferredBrowserKind PreferredBrowser = PreferredBrowserKind.AutoDetect,
     string? CustomBrowserExecutablePath = null,
-    bool RunBrowserHeadless = false,
-    int MinDelaySeconds = 2,
-    int MaxDelaySeconds = 5,
+    bool RunBrowserHeadless = true,
+    double MinDelaySeconds = 2.0,
+    double MaxDelaySeconds = 5.0,
     bool IsAuditDrawerExpanded = false,
     bool IsSidebarCollapsed = false,
     string? LastSelectedAccountUid = null,
@@ -86,12 +86,13 @@ public sealed record AppConfig(
     bool AutoBackgroundScrapeEnabled = false,
     int AutoScrapeIntervalMinutes = 5,
     bool ScrapeAllEnabledTargetGroups = true,
-    int ScrapeDelayMinSeconds = 1,
-    int ScrapeDelayMaxSeconds = 2,
+    double ScrapeDelayMinSeconds = 1.0,
+    double ScrapeDelayMaxSeconds = 2.0,
     int ScrapeMaxGroupsPerCycle = 30,
     string AiSystemPrompt = "",
     string AiModel = AppConfig.DefaultAiModel,
-    string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort)
+    string AiReasoningEffort = AppConfig.DefaultAiReasoningEffort,
+    bool HasExplicitHeadlessPreference = false)
 {
     /// <summary>
     /// Built-in immutable English system prompt always pre-loaded before every AI Assistant conversation.
@@ -121,13 +122,14 @@ public sealed record AppConfig(
     /// </summary>
     public AppConfig Normalize()
     {
-        int clampedMin = Math.Clamp(this.MinDelaySeconds, 0, 3600);
-        int clampedMax = Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600);
+        double clampedMin = Math.Round(Math.Clamp(this.MinDelaySeconds, 0.0, 3600.0), 2);
+        double clampedMax = Math.Round(Math.Clamp(this.MaxDelaySeconds, clampedMin, 3600.0), 2);
         int clampedPerGroup = Math.Clamp(this.ScrapePostsPerGroup <= 0 ? 15 : this.ScrapePostsPerGroup, 5, 100);
         int clampedInterval = Math.Clamp(this.AutoScrapeIntervalMinutes <= 0 ? 5 : this.AutoScrapeIntervalMinutes, 1, 120);
-        int clampedScrapeMin = Math.Clamp(this.ScrapeDelayMinSeconds, 0, 600);
-        int clampedScrapeMax = Math.Clamp(this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600);
+        double clampedScrapeMin = Math.Round(Math.Clamp(this.ScrapeDelayMinSeconds, 0.0, 600.0), 2);
+        double clampedScrapeMax = Math.Round(Math.Clamp(this.ScrapeDelayMaxSeconds, clampedScrapeMin, 600.0), 2);
         int clampedMaxGroups = Math.Clamp(this.ScrapeMaxGroupsPerCycle <= 0 ? 30 : this.ScrapeMaxGroupsPerCycle, 1, 500);
+        bool resolvedHeadless = !this.HasExplicitHeadlessPreference || this.RunBrowserHeadless;
         string? cleanedPath = string.IsNullOrWhiteSpace(this.CustomBrowserExecutablePath)
             ? null
             : this.CustomBrowserExecutablePath.Trim();
@@ -147,6 +149,8 @@ public sealed record AppConfig(
 
         return this with
         {
+            RunBrowserHeadless = resolvedHeadless,
+            HasExplicitHeadlessPreference = true,
             MinDelaySeconds = clampedMin,
             MaxDelaySeconds = clampedMax,
             CustomBrowserExecutablePath = cleanedPath,

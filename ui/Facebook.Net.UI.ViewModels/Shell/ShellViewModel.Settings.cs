@@ -51,15 +51,15 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets or sets a value indicating whether browsers should launch in headless mode.</summary>
     [ObservableProperty]
-    public partial bool RunBrowserHeadless { get; set; }
+    public partial bool RunBrowserHeadless { get; set; } = true;
 
     /// <summary>Gets or sets the minimum safe human delay in seconds between actions.</summary>
     [ObservableProperty]
-    public partial int MinDelaySeconds { get; set; } = 2;
+    public partial double MinDelaySeconds { get; set; } = 2.0;
 
     /// <summary>Gets or sets the maximum safe human delay in seconds between actions.</summary>
     [ObservableProperty]
-    public partial int MaxDelaySeconds { get; set; } = 5;
+    public partial double MaxDelaySeconds { get; set; } = 5.0;
 
     /// <summary>Gets or sets the current application version string (e.g., <c>v1.0.0</c>).</summary>
     [ObservableProperty]
@@ -150,7 +150,7 @@ public sealed partial class ShellViewModel
         }
     }
 
-    partial void OnMinDelaySecondsChanged(int value)
+    partial void OnMinDelaySecondsChanged(double value)
     {
         if (!this._isLoadingSettings)
         {
@@ -158,7 +158,7 @@ public sealed partial class ShellViewModel
         }
     }
 
-    partial void OnMaxDelaySecondsChanged(int value)
+    partial void OnMaxDelaySecondsChanged(double value)
     {
         if (!this._isLoadingSettings)
         {
@@ -198,7 +198,11 @@ public sealed partial class ShellViewModel
             ScrapeAllEnabledTargetGroups: this.ScrapeAllEnabledTargetGroups,
             ScrapeDelayMinSeconds: this.ScrapeDelayMinSeconds,
             ScrapeDelayMaxSeconds: this.ScrapeDelayMaxSeconds,
-            ScrapeMaxGroupsPerCycle: this.ScrapeMaxGroupsPerCycle).Normalize();
+            ScrapeMaxGroupsPerCycle: this.ScrapeMaxGroupsPerCycle,
+            AiSystemPrompt: _context.Settings.Current.AiSystemPrompt,
+            AiModel: _context.Settings.Current.AiModel,
+            AiReasoningEffort: _context.Settings.Current.AiReasoningEffort,
+            HasExplicitHeadlessPreference: true).Normalize();
 
         _context.Settings.Save(updated);
     }
