@@ -106,6 +106,36 @@ public static class BrowserLauncherHelpers
     }
 
     /// <summary>
+    /// Resolves a profile directory path into its Chromium <c>--user-data-dir</c> root and optional <c>--profile-directory</c> subfolder name.
+    /// When <paramref name="rawProfilePath"/> points to a system browser profile subfolder (such as <c>...\User Data\Default</c> or <c>...\User Data\Profile 1</c>),
+    /// splits the parent <c>User Data</c> root from the profile subfolder so Chromium does not create a nested <c>Default\Default</c> folder.
+    /// </summary>
+    public static (string UserDataRoot, string? ProfileDirectoryName) ResolveUserDataRootAndProfileDirectory(string rawProfilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rawProfilePath);
+        string fullPath = Path.GetFullPath(rawProfilePath.Trim());
+        string folderName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string? parentDir = Path.GetDirectoryName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+        if (!string.IsNullOrWhiteSpace(parentDir) &&
+            (string.Equals(folderName, "Default", StringComparison.OrdinalIgnoreCase) ||
+             folderName.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase)))
+        {
+            string parentName = Path.GetFileName(parentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            bool isSystemUserDataRoot =
+                string.Equals(parentName, "User Data", StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(Path.Combine(parentDir, "Local State"));
+
+            if (isSystemUserDataRoot)
+            {
+                return (parentDir, folderName);
+            }
+        }
+
+        return (fullPath, null);
+    }
+
+    /// <summary>
     /// Builds the list of stealth and resource-optimized command-line arguments for launching Chromium/Edge.
     /// Separates Scenario 1 (Visible user login/checkpoint: full rendering) from Scenario 2 (Headless/Automated: low RAM, GPU off).
     /// </summary>
@@ -113,10 +143,12 @@ public static class BrowserLauncherHelpers
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        (string userDataRoot, string? profileDirName) = ResolveUserDataRootAndProfileDirectory(options.UserDataDir);
+
         List<string> args = new(28)
         {
             string.Concat("--remote-debugging-port=", debuggingPort.ToString(CultureInfo.InvariantCulture)),
-            string.Concat("--user-data-dir=", Path.GetFullPath(options.UserDataDir)),
+            string.Concat("--user-data-dir=", userDataRoot),
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",
@@ -135,6 +167,11 @@ public static class BrowserLauncherHelpers
                 ",",
                 options.WindowHeight.ToString(CultureInfo.InvariantCulture))
         };
+
+        if (!string.IsNullOrWhiteSpace(profileDirName))
+        {
+            args.Insert(2, string.Concat("--profile-directory=", profileDirName));
+        }
 
         if (options.EffectiveLowResourceMode)
         {

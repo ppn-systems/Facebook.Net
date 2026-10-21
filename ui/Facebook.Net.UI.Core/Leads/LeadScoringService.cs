@@ -69,6 +69,9 @@ public interface ILeadScoringService
     /// <summary>Strips Vietnamese diacritical marks (`ă`, `â`, `đ`, `ê`, `ô`, `ơ`, `ư`, tones) for accent-insensitive search.</summary>
     string RemoveVietnameseDiacritics(string? input);
 
+    /// <summary>Returns whether <paramref name="sourceText"/> contains <paramref name="keyword"/> using case-insensitive and Vietnamese diacritic-insensitive matching.</summary>
+    bool MatchesAccentInsensitive(string? sourceText, string? keyword);
+
     /// <summary>Extracts all normalized Vietnamese mobile (10-digit) and landline (11-digit) phone numbers from obfuscated text.</summary>
     IReadOnlyList<string> ExtractVietnamesePhoneNumbers(string? text);
 
@@ -244,6 +247,35 @@ public sealed class LeadScoringService : ILeadScoringService
         }
 
         return false;
+    }
+
+    /// <inheritdoc />
+    public bool MatchesAccentInsensitive(string? sourceText, string? keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceText))
+        {
+            return false;
+        }
+
+        string kw = keyword.Trim();
+        if (sourceText.Contains(kw, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string normKw = this.RemoveVietnameseDiacritics(kw);
+        if (string.IsNullOrWhiteSpace(normKw))
+        {
+            return false;
+        }
+
+        string normSource = this.RemoveVietnameseDiacritics(sourceText);
+        return normSource.Contains(normKw, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

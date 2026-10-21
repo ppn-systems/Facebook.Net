@@ -563,21 +563,44 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             : Path.Combine(_dataDirectory, "Profiles", "agy_oauth_profile");
 
         _ = Directory.CreateDirectory(effectiveProfileDir);
+        string? baselineClipboard = TryReadWindowsClipboardText();
 
-        statusProgress?.Report("Đang mở trình duyệt CDP để xác thực Google OAuth...");
+        bool isSystemProfile = IsSystemChromiumProfileDirectory(effectiveProfileDir, out string? systemProfileDirectoryName);
+        IBrowserSession? cdpSession = null;
 
-        BrowserLaunchOptions launchOptions = new(
-            AccountUid: OAuthSessionUid,
-            UserDataDir: effectiveProfileDir,
-            ExecutablePath: browserExe,
-            Headless: false,
-            BlockStaticMedia: false,
-            LowResourceMode: false,
-            TerminateProcessAfterExtract: false,
-            CleanDiskCache: false);
+        if (isSystemProfile && !string.IsNullOrWhiteSpace(browserExe) && !string.IsNullOrWhiteSpace(systemProfileDirectoryName))
+        {
+            CleanupAccidentalNestedDefaultFolder(effectiveProfileDir);
+            statusProgress?.Report($"Đang mở hồ sơ trình duyệt ({systemProfileDirectoryName}) để xác thực Google OAuth...");
+            LaunchSystemBrowserProfileForOAuth(browserExe, systemProfileDirectoryName, oauthUrl);
+        }
+        else
+        {
+            statusProgress?.Report("Đang mở trình duyệt CDP để xác thực Google OAuth...");
 
-        IBrowserSession session = await browserManager.AcquireSessionAsync(launchOptions, ct).ConfigureAwait(false);
-        await session.NavigateAsync(oauthUrl, ct).ConfigureAwait(false);
+            BrowserLaunchOptions launchOptions = new(
+                AccountUid: OAuthSessionUid,
+                UserDataDir: effectiveProfileDir,
+                ExecutablePath: browserExe,
+                Headless: false,
+                BlockStaticMedia: false,
+                LowResourceMode: false,
+                TerminateProcessAfterExtract: false,
+                CleanDiskCache: false);
+
+            try
+            {
+                cdpSession = await browserManager.AcquireSessionAsync(launchOptions, ct).ConfigureAwait(false);
+                await cdpSession.NavigateAsync(oauthUrl, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (!string.IsNullOrWhiteSpace(browserExe))
+                {
+                    LaunchSystemBrowserProfileForOAuth(browserExe, systemProfileDirectoryName ?? "Default", oauthUrl);
+                }
+            }
+        }
 
         statusProgress?.Report("Đang chờ hoàn tất đăng nhập Google trên trình duyệt...");
 
@@ -588,31 +611,51 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         {
             if (_hasAuthenticatedInSession || this.CheckIsAuthenticated())
             {
-                await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
+                if (cdpSession is not null)
+                {
+                    await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
+                }
+
                 _hasAuthenticatedInSession = true;
                 return (true, "Đăng nhập Google Antigravity thành công!", null);
             }
 
             string? extractedCode = null;
-            try
+            if (cdpSession is not null)
             {
-                extractedCode = await session.EvaluateScriptAsync(ExtractOAuthCodeJs, ct).ConfigureAwait(false);
+                try
+                {
+                    extractedCode = await cdpSession.EvaluateScriptAsync(ExtractOAuthCodeJs, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Browser tab may be navigating or closed by user
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            if (string.IsNullOrWhiteSpace(extractedCode))
             {
-                // Browser tab may be navigating or closed by user
+                extractedCode = TryExtractOAuthCodeFromSystemProfile(effectiveProfileDir, state);
+            }
+
+            if (string.IsNullOrWhiteSpace(extractedCode))
+            {
+                extractedCode = TryExtractOAuthCodeFromClipboard(ref baselineClipboard);
             }
 
             string? cleanedCode = NormalizeAuthCode(extractedCode);
             if (!string.IsNullOrWhiteSpace(cleanedCode))
             {
-                statusProgress?.Report("Đã trích xuất mã OAuth tự động qua CDP! Đang trao đổi token với Google...");
+                statusProgress?.Report("Đã trích xuất mã OAuth tự động! Đang trao đổi token với Google...");
                 (bool exchanged, string? exchangeError) = await this.ExchangeCodeAndSaveToKeyringAsync(
                     cleanedCode,
                     codeVerifier,
                     ct).ConfigureAwait(false);
 
-                await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
+                if (cdpSession is not null)
+                {
+                    await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
+                }
 
                 if (exchanged)
                 {
@@ -629,7 +672,7 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 return (false, errMsg, oauthUrl);
             }
 
-            await Task.Delay(600, ct).ConfigureAwait(false);
+            await Task.Delay(450, ct).ConfigureAwait(false);
         }
 
         return (false, "Hết thời gian chờ tự động lấy mã OAuth. Bạn có thể dán mã xác thực thủ công.", oauthUrl);
@@ -839,12 +882,21 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
 
                 Process activeProcess = _warmProcess!;
                 string normalizedSysPrompt = systemContextPrompt?.Trim() ?? string.Empty;
-                bool needsFullSystemPrompt = !_warmSessionHasSystemPrompt ||
-                                             !string.Equals(_warmLastSystemPrompt, normalizedSysPrompt, StringComparison.Ordinal);
+                bool systemPromptChanged = !string.Equals(_warmLastSystemPrompt, normalizedSysPrompt, StringComparison.Ordinal);
 
-                string turnPrompt = needsFullSystemPrompt
-                    ? BuildCompositePrompt(userPrompt.Trim(), systemContextPrompt)
-                    : BuildFollowUpTurnPrompt(userPrompt.Trim());
+                string turnPrompt;
+                if (!_warmSessionHasSystemPrompt)
+                {
+                    turnPrompt = BuildCompositePrompt(userPrompt.Trim(), systemContextPrompt);
+                }
+                else if (systemPromptChanged && !string.IsNullOrWhiteSpace(normalizedSysPrompt))
+                {
+                    turnPrompt = BuildUpdatedContextFollowUpPrompt(userPrompt.Trim(), normalizedSysPrompt);
+                }
+                else
+                {
+                    turnPrompt = BuildFollowUpTurnPrompt(userPrompt.Trim());
+                }
 
                 string jsonLine = BuildUserEventJsonLine(turnPrompt);
 
@@ -1386,6 +1438,25 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     }
 
     private static string BuildFollowUpTurnPrompt(string userPrompt) => userPrompt.Trim();
+
+    private static string BuildUpdatedContextFollowUpPrompt(string userPrompt, string updatedSystemContextPrompt)
+    {
+        StringBuilder sb = new();
+        int workspaceMarkerIdx = updatedSystemContextPrompt.IndexOf("[CURRENT WORKSPACE STATE]", StringComparison.Ordinal);
+        if (workspaceMarkerIdx >= 0)
+        {
+            _ = sb.AppendLine(updatedSystemContextPrompt[workspaceMarkerIdx..].Trim());
+        }
+        else
+        {
+            _ = sb.AppendLine(updatedSystemContextPrompt.Trim());
+        }
+
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("[USER]");
+        _ = sb.Append(userPrompt.Trim());
+        return sb.ToString();
+    }
 
     private static string BuildUserEventJsonLine(string content)
     {
@@ -2071,6 +2142,282 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         }
     }
 
+    private static bool IsSystemChromiumProfileDirectory(string profilePath, out string? profileDirectoryName)
+    {
+        profileDirectoryName = null;
+        if (string.IsNullOrWhiteSpace(profilePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            string fullPath = Path.GetFullPath(profilePath.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string folderName = Path.GetFileName(fullPath);
+            string? parentDir = Path.GetDirectoryName(fullPath);
+
+            if (string.IsNullOrWhiteSpace(parentDir))
+            {
+                return false;
+            }
+
+            if (string.Equals(folderName, "Default", StringComparison.OrdinalIgnoreCase) ||
+                folderName.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
+            {
+                string parentName = Path.GetFileName(parentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (string.Equals(parentName, "User Data", StringComparison.OrdinalIgnoreCase) ||
+                    File.Exists(Path.Combine(parentDir, "Local State")))
+                {
+                    profileDirectoryName = folderName;
+                    return true;
+                }
+            }
+        }
+        catch (ArgumentException)
+        {
+            // Ignore invalid path
+        }
+
+        return false;
+    }
+
+    private static void CleanupAccidentalNestedDefaultFolder(string systemProfileSubfolder)
+    {
+        try
+        {
+            string nestedDefault = Path.Combine(systemProfileSubfolder, "Default");
+            if (Directory.Exists(nestedDefault) &&
+                !File.Exists(Path.Combine(systemProfileSubfolder, "Local State")) &&
+                File.Exists(Path.Combine(systemProfileSubfolder, "Preferences")))
+            {
+                Directory.Delete(nestedDefault, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore locked files if an old process still holds them
+        }
+    }
+
+    private static void LaunchSystemBrowserProfileForOAuth(string browserExe, string profileDirectoryName, string oauthUrl)
+    {
+        try
+        {
+            ProcessStartInfo psi = new()
+            {
+                FileName = browserExe,
+                UseShellExecute = false,
+                CreateNoWindow = false
+            };
+            psi.ArgumentList.Add($"--profile-directory={profileDirectoryName}");
+            psi.ArgumentList.Add(oauthUrl);
+            using Process? p = Process.Start(psi);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            try
+            {
+                using Process? fallback = Process.Start(new ProcessStartInfo(oauthUrl) { UseShellExecute = true });
+            }
+            catch (Exception innerEx) when (innerEx is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // Ignore browser open failure
+            }
+        }
+    }
+
+    private static string? TryExtractOAuthCodeFromSystemProfile(string profileDir, string expectedState)
+    {
+        if (string.IsNullOrWhiteSpace(profileDir) || string.IsNullOrWhiteSpace(expectedState) || !Directory.Exists(profileDir))
+        {
+            return null;
+        }
+
+        string searchProfileDir = profileDir;
+        if (!Directory.Exists(Path.Combine(searchProfileDir, "Sessions")) &&
+            Directory.Exists(Path.Combine(searchProfileDir, "Default", "Sessions")))
+        {
+            searchProfileDir = Path.Combine(searchProfileDir, "Default");
+        }
+
+        List<string> candidateFiles = new(8);
+        string sessionsDir = Path.Combine(searchProfileDir, "Sessions");
+        if (Directory.Exists(sessionsDir))
+        {
+            try
+            {
+                string[] sessionFiles = Directory.GetFiles(sessionsDir);
+                Array.Sort(sessionFiles, (a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
+                for (int i = 0; i < sessionFiles.Length && i < 4; i++)
+                {
+                    candidateFiles.Add(sessionFiles[i]);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Ignore inaccessible Sessions directory
+            }
+        }
+
+        string histJournal = Path.Combine(searchProfileDir, "History-journal");
+        if (File.Exists(histJournal))
+        {
+            candidateFiles.Add(histJournal);
+        }
+
+        string histWal = Path.Combine(searchProfileDir, "History-wal");
+        if (File.Exists(histWal))
+        {
+            candidateFiles.Add(histWal);
+        }
+
+        string histMain = Path.Combine(searchProfileDir, "History");
+        if (File.Exists(histMain))
+        {
+            candidateFiles.Add(histMain);
+        }
+
+        for (int i = 0; i < candidateFiles.Count; i++)
+        {
+            string? code = TryScanFileTailForOAuthCallbackCode(candidateFiles[i], expectedState);
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                return code;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryScanFileTailForOAuthCallbackCode(string filePath, string expectedState)
+    {
+        try
+        {
+            using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            long length = fs.Length;
+            if (length <= 0)
+            {
+                return null;
+            }
+
+            const int maxReadBytes = 2 * 1024 * 1024; // Read at most the last 2 MB
+            int bytesToRead = (int)Math.Min(length, maxReadBytes);
+            if (length > bytesToRead)
+            {
+                _ = fs.Seek(length - bytesToRead, SeekOrigin.Begin);
+            }
+
+            byte[] buffer = new byte[bytesToRead];
+            int totalRead = 0;
+            while (totalRead < bytesToRead)
+            {
+                int read = fs.Read(buffer, totalRead, bytesToRead - totalRead);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                totalRead += read;
+            }
+
+            string rawLatin1 = Encoding.Latin1.GetString(buffer, 0, totalRead);
+            if (!rawLatin1.Contains(expectedState, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            MatchCollection matches = OAuthCallbackUrlInBinaryRegex().Matches(rawLatin1);
+            for (int m = matches.Count - 1; m >= 0; m--)
+            {
+                string url = matches[m].Value;
+                if (!url.Contains(expectedState, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Match codeMatch = UrlCodeQueryParamRegex().Match(url);
+                if (codeMatch.Success)
+                {
+                    string rawCode = Uri.UnescapeDataString(codeMatch.Groups["code"].Value.Trim());
+                    if (rawCode.StartsWith("4/", StringComparison.Ordinal) && rawCode.Length >= 20)
+                    {
+                        return rawCode;
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // Ignore locked or transient file errors
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractOAuthCodeFromClipboard(ref string? baselineClipboard)
+    {
+        string? currentClip = TryReadWindowsClipboardText();
+        if (string.IsNullOrWhiteSpace(currentClip) ||
+            string.Equals(currentClip, baselineClipboard, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string trimmed = currentClip.Trim();
+        if (LooksLikeGoogleOAuthCodeOrCallbackUrl(trimmed))
+        {
+            baselineClipboard = currentClip;
+            return NormalizeAuthCode(trimmed);
+        }
+
+        return null;
+    }
+
+    private static string? TryReadWindowsClipboardText()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        if (!OpenClipboard(IntPtr.Zero))
+        {
+            return null;
+        }
+
+        try
+        {
+            IntPtr hData = GetClipboardData(13u); // CF_UNICODETEXT
+            if (hData == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            IntPtr pText = GlobalLock(hData);
+            if (pText == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(pText);
+            }
+            finally
+            {
+                _ = GlobalUnlock(hData);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or AccessViolationException)
+        {
+            return null;
+        }
+        finally
+        {
+            _ = CloseClipboard();
+        }
+    }
+
     private static bool LooksLikeGoogleOAuthCodeOrCallbackUrl(string? rawInput)
     {
         if (string.IsNullOrWhiteSpace(rawInput))
@@ -2494,6 +2841,26 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr GetClipboardData(uint uFormat);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr hMem);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr hMem);
 #pragma warning restore SYSLIB1054
 
     private static string FirstLine(string text)
@@ -2507,7 +2874,10 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         return newlineIdx >= 0 ? text[..newlineIdx].Trim() : text.Trim();
     }
 
-    [GeneratedRegex(@"[?&]code=(?<code>[^&#\s]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"antigravity\.google/oauth-callback\?[^\x00-\x20""'<>]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OAuthCallbackUrlInBinaryRegex();
+
+    [GeneratedRegex(@"[?&]code=(?<code>[^&#\s\x00-\x1f""'<>]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UrlCodeQueryParamRegex();
 
     [GeneratedRegex(@"\[ACTION:(?<kind>[A-Za-z0-9_]+)(?:\|(?<params>[^\]]*))?\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

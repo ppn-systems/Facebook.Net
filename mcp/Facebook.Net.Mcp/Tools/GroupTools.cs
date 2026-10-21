@@ -599,9 +599,10 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
                 continue;
             }
 
+            string defaultFallbackColor = s_defaultTagColors[createdTags.Count % s_defaultTagColors.Length];
             string resolvedColor = !string.IsNullOrWhiteSpace(colorHex)
-                ? colorHex
-                : s_defaultTagColors[createdTags.Count % s_defaultTagColors.Length];
+                ? _manager.GroupTagService.NormalizeColorHex(colorHex, defaultFallbackColor)
+                : defaultFallbackColor;
 
             string normInputName = _manager.LeadScoring.RemoveVietnameseDiacritics(tagName);
             GroupTag? existing = existingTags.FirstOrDefault(t =>

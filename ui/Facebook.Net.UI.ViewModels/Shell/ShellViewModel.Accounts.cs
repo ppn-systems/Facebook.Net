@@ -83,7 +83,7 @@ public sealed partial class ShellViewModel
             }
 
             if (!string.IsNullOrWhiteSpace(kw) &&
-                !acc.DisplayName.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                !_context.LeadScoring.MatchesAccentInsensitive(acc.DisplayName, kw))
             {
                 continue;
             }

@@ -573,9 +573,10 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 continue;
             }
 
+            string defaultFallbackColor = s_defaultLeadTagColors[createdTags.Count % s_defaultLeadTagColors.Length];
             string resolvedColor = !string.IsNullOrWhiteSpace(colorHex)
-                ? colorHex
-                : s_defaultLeadTagColors[createdTags.Count % s_defaultLeadTagColors.Length];
+                ? _manager.GroupTagService.NormalizeColorHex(colorHex, defaultFallbackColor)
+                : defaultFallbackColor;
 
             string normInputName = _manager.LeadScoring.RemoveVietnameseDiacritics(tagName);
             GroupTag? existing = existingTags.FirstOrDefault(t =>

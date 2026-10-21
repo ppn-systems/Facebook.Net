@@ -1034,6 +1034,20 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.Equal(4.5, vm.MinDelaySeconds);
         Assert.Equal(9.5, vm.MaxDelaySeconds);
         Assert.Equal(45, vm.ScrapePostsPerGroup);
+
+        // 4. Verify accent-insensitive matching in LeadScoringService & SqliteAiMemoryStore
+        Assert.True(context.LeadScoring.MatchesAccentInsensitive("Hội Mua Bán Bất Động Sản Quận 7", "bat dong san"));
+        Assert.False(context.LeadScoring.MatchesAccentInsensitive("Hội Lập Trình C# .NET", "bat dong san"));
+
+        _ = await context.AiMemoryStore.SaveMemoryAsync(
+            AiMemoryCategory.ProductKnowledge,
+            "Căn hộ Vinhomes",
+            "Chuyên phân phối căn hộ Quận 9 giá tốt",
+            importance: 5);
+
+        IReadOnlyList<AiMemoryRecord> accentFreeHits = await context.AiMemoryStore.QueryMemoriesAsync(keyword: "can ho quan 9");
+        _ = Assert.Single(accentFreeHits);
+        Assert.Equal("Căn hộ Vinhomes", accentFreeHits[0].Key);
     }
 
     public void Dispose()

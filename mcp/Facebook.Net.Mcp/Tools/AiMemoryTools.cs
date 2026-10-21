@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.AiAssistant;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using ModelContextProtocol.Server;
 
@@ -42,6 +43,14 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
             content: content.Trim(),
             importance: Math.Clamp(importance, 1, 5),
             accountUid: string.IsNullOrWhiteSpace(accountUid) ? null : accountUid.Trim(),
+            ct: ct).ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            record.Key,
+            $"MCP saved AI context memory [{record.Category}] '{record.Key}'.",
             ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
@@ -106,6 +115,17 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
         bool deleted = await _manager.AiMemoryStore.DeleteMemoryAsync(idOrKey.Trim(), ct).ConfigureAwait(false);
+        if (deleted)
+        {
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Warning,
+                account: null,
+                idOrKey.Trim(),
+                $"MCP deleted AI context memory '{idOrKey.Trim()}'.",
+                ct: ct).ConfigureAwait(false);
+        }
+
         return JsonSerializer.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",

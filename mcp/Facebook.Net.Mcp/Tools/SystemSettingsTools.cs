@@ -51,7 +51,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
     }
 
     [McpServerTool(Name = "fb_update_app_settings")]
-    [Description("Update application configuration settings in appsettings.json (anti-checkpoint publishing delays, scraping delays, posts per group, background auto-scrape toggle/interval, filter keywords, browser headless mode, preferred browser, theme, or language).")]
+    [Description("Update application configuration settings in appsettings.json (anti-checkpoint publishing delays, scraping delays, posts per group, background auto-scrape toggle/interval, filter keywords, browser headless mode, preferred browser, theme, language, or AI model/effort).")]
     public async Task<string> UpdateAppSettingsAsync(
         [Description("Optional minimum anti-checkpoint delay in seconds between campaign posts/comments (0..3600)")] double? minDelaySeconds = null,
         [Description("Optional maximum anti-checkpoint delay in seconds between campaign posts/comments (0..3600)")] double? maxDelaySeconds = null,
@@ -59,6 +59,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
         [Description("Optional maximum delay in seconds between group feed scrapes (0..600)")] double? scrapeDelayMaxSeconds = null,
         [Description("Optional number of posts to scrape per group (5..100)")] int? scrapePostsPerGroup = null,
         [Description("Optional maximum number of groups to scrape per cycle (1..500)")] int? scrapeMaxGroupsPerCycle = null,
+        [Description("Optional toggle to scrape all enabled target groups regardless of scrapeMaxGroupsPerCycle")] bool? scrapeAllEnabledTargetGroups = null,
         [Description("Optional toggle for automatic background group feed scraping")] bool? autoBackgroundScrapeEnabled = null,
         [Description("Optional interval in minutes for automatic background scraping (1..120)")] int? autoScrapeIntervalMinutes = null,
         [Description("Optional comma-separated buyer filter keywords for group scraping")] string? scrapeFilterKeywords = null,
@@ -66,6 +67,8 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
         [Description("Optional preferred browser engine: 'AutoDetect', 'Edge', 'Chrome', or 'Brave'")] string? preferredBrowser = null,
         [Description("Optional UI theme mode: 'System', 'Light', or 'Dark'")] string? theme = null,
         [Description("Optional UI language: 'ViVn' or 'EnUs'")] string? language = null,
+        [Description("Optional AI Copilot model identifier (e.g. 'gemini-3-flash', 'gemini-3.1-pro-high', 'claude-sonnet-4-6')")] string? aiModel = null,
+        [Description("Optional AI Copilot reasoning effort: 'low', 'medium', or 'high'")] string? aiReasoningEffort = null,
         CancellationToken ct = default)
     {
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
@@ -113,6 +116,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             ScrapeDelayMaxSeconds = scrapeDelayMaxSeconds ?? current.ScrapeDelayMaxSeconds,
             ScrapePostsPerGroup = scrapePostsPerGroup ?? current.ScrapePostsPerGroup,
             ScrapeMaxGroupsPerCycle = scrapeMaxGroupsPerCycle ?? current.ScrapeMaxGroupsPerCycle,
+            ScrapeAllEnabledTargetGroups = scrapeAllEnabledTargetGroups ?? current.ScrapeAllEnabledTargetGroups,
             AutoBackgroundScrapeEnabled = autoBackgroundScrapeEnabled ?? current.AutoBackgroundScrapeEnabled,
             AutoScrapeIntervalMinutes = autoScrapeIntervalMinutes ?? current.AutoScrapeIntervalMinutes,
             ScrapeFilterKeywords = scrapeFilterKeywords ?? current.ScrapeFilterKeywords,
@@ -120,7 +124,9 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             HasExplicitHeadlessPreference = true,
             PreferredBrowser = resolvedBrowser,
             Theme = resolvedTheme,
-            Language = resolvedLang
+            Language = resolvedLang,
+            AiModel = !string.IsNullOrWhiteSpace(aiModel) ? aiModel.Trim() : current.AiModel,
+            AiReasoningEffort = !string.IsNullOrWhiteSpace(aiReasoningEffort) ? aiReasoningEffort.Trim() : current.AiReasoningEffort
         }).Normalize();
 
         await _manager.Settings.SaveAsync(updated, ct).ConfigureAwait(false);
@@ -148,9 +154,12 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
                 scrape_delay_max_seconds = updated.ScrapeDelayMaxSeconds,
                 scrape_posts_per_group = updated.ScrapePostsPerGroup,
                 scrape_max_groups_per_cycle = updated.ScrapeMaxGroupsPerCycle,
+                scrape_all_enabled_target_groups = updated.ScrapeAllEnabledTargetGroups,
                 auto_background_scrape_enabled = updated.AutoBackgroundScrapeEnabled,
                 auto_scrape_interval_minutes = updated.AutoScrapeIntervalMinutes,
-                scrape_filter_keywords = updated.ScrapeFilterKeywords
+                scrape_filter_keywords = updated.ScrapeFilterKeywords,
+                ai_model = updated.AiModel,
+                ai_reasoning_effort = updated.AiReasoningEffort
             }
         });
     }
@@ -236,13 +245,30 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             ? cat
             : null;
 
+        int clampedLimit = Math.Clamp(limit, 1, 500);
+        string? trimmedKw = string.IsNullOrWhiteSpace(searchKeyword) ? null : searchKeyword.Trim();
+
         AuditLogFilter filter = new(
             Category: parsedCat,
             AccountUid: string.IsNullOrWhiteSpace(accountUid) ? null : accountUid.Trim(),
-            SearchKeyword: string.IsNullOrWhiteSpace(searchKeyword) ? null : searchKeyword.Trim(),
-            Limit: Math.Clamp(limit, 1, 500));
+            SearchKeyword: null,
+            Limit: trimmedKw is null ? clampedLimit : Math.Max(clampedLimit * 4, 600));
 
-        IReadOnlyList<AuditLogRecord> logs = await _manager.AuditStore.QueryAsync(filter, ct).ConfigureAwait(false);
+        IReadOnlyList<AuditLogRecord> rawLogs = await _manager.AuditStore.QueryAsync(filter, ct).ConfigureAwait(false);
+        List<AuditLogRecord> logs = new(Math.Min(rawLogs.Count, clampedLimit));
+        for (int i = 0; i < rawLogs.Count && logs.Count < clampedLimit; i++)
+        {
+            AuditLogRecord rec = rawLogs[i];
+            if (trimmedKw is not null &&
+                !_manager.LeadScoring.MatchesAccentInsensitive(rec.Message, trimmedKw) &&
+                !_manager.LeadScoring.MatchesAccentInsensitive(rec.TargetName, trimmedKw) &&
+                !_manager.LeadScoring.MatchesAccentInsensitive(rec.AccountDisplayName, trimmedKw))
+            {
+                continue;
+            }
+
+            logs.Add(rec);
+        }
 
         return JsonSerializer.Serialize(new
         {
