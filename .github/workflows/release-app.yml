@@ -104,6 +104,9 @@ jobs:
             --configuration Release \
             --runtime win-x64 \
             --self-contained true \
+            -p:Version=${{ steps.release.outputs.msi_version }} \
+            -p:AssemblyVersion=${{ steps.release.outputs.msi_version }}.0 \
+            -p:FileVersion=${{ steps.release.outputs.msi_version }}.0 \
             -p:PublishSingleFile=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:EnableCompressionInSingleFile=true \
@@ -120,6 +123,9 @@ jobs:
             --configuration Release \
             --runtime win-x64 \
             --self-contained true \
+            -p:Version=${{ steps.release.outputs.msi_version }} \
+            -p:AssemblyVersion=${{ steps.release.outputs.msi_version }}.0 \
+            -p:FileVersion=${{ steps.release.outputs.msi_version }}.0 \
             -p:PublishSingleFile=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:IncludeAllContentForSelfExtract=true \
@@ -370,6 +376,9 @@ jobs:
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
+            -p:Version=${{ steps.release.outputs.bundle_version }} \
+            -p:AssemblyVersion=${{ steps.release.outputs.bundle_version }}.0 \
+            -p:FileVersion=${{ steps.release.outputs.bundle_version }}.0 \
             -p:PublishSingleFile=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:EnableCompressionInSingleFile=true \
@@ -386,6 +395,9 @@ jobs:
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
+            -p:Version=${{ steps.release.outputs.bundle_version }} \
+            -p:AssemblyVersion=${{ steps.release.outputs.bundle_version }}.0 \
+            -p:FileVersion=${{ steps.release.outputs.bundle_version }}.0 \
             -p:PublishSingleFile=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:IncludeAllContentForSelfExtract=true \

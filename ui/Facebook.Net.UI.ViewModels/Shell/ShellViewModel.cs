@@ -154,7 +154,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // Settings commands
         this.SaveSettingsCommand = new AsyncRelayCommand(this.SaveSettingsAsync);
         this.CheckForUpdatesCommand = new AsyncRelayCommand(this.CheckForUpdatesAsync);
-        this.OpenUpdateDownloadCommand = new RelayCommand(this.OpenUpdateDownloadPage);
+        this.OpenUpdateDownloadCommand = new AsyncRelayCommand(this.DownloadAndApplyUpdateAsync);
 
         this.UpdateStatusMessage = _context.Localization["Settings.UpdateStatusIdle"];
         this.SyncLocalizedDefaultPrompts();
@@ -372,8 +372,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>Gets the command to check GitHub Releases for a newer application version.</summary>
     public IAsyncRelayCommand CheckForUpdatesCommand { get; }
 
-    /// <summary>Gets the command to open the latest release download URL in the system browser.</summary>
-    public IRelayCommand OpenUpdateDownloadCommand { get; }
+    /// <summary>Gets the command to download and install the latest release update (or open it in the browser).</summary>
+    public IAsyncRelayCommand OpenUpdateDownloadCommand { get; }
 
     /// <summary>
     /// Initializes SQLite databases (<c>facebook_net.db</c>, <c>facebook_audit.db</c>, and <c>facebook_ai_memory.db</c>) and loads stored state.

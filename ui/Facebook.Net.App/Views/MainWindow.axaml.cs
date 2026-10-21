@@ -550,7 +550,7 @@ public sealed partial class MainWindow : Window
 
         TextBlock versionLabel = SectionHeader.CreateLabel(
             _theme,
-            "Facebook One Client  |  v2026.10.0",
+            $"Facebook One Client  |  {_vm.CurrentAppVersion}",
             11,
             FontWeight.Normal,
             isSecondary: true);

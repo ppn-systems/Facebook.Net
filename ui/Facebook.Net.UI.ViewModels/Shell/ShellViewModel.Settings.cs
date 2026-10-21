@@ -608,7 +608,7 @@ public sealed partial class ShellViewModel
 
             const string ReleasesPageFallback = "https://github.com/ppn-systems/Facebook.Net/releases";
             string json = await http
-                .GetStringAsync(new Uri("https://api.github.com/repos/ppn-systems/Facebook.Net/releases?per_page=5"))
+                .GetStringAsync(new Uri("https://api.github.com/repos/ppn-systems/Facebook.Net/releases?per_page=20"))
                 .ConfigureAwait(true);
 
             using JsonDocument doc = JsonDocument.Parse(json);
@@ -621,14 +621,40 @@ public sealed partial class ShellViewModel
                 return;
             }
 
+            // Pick the highest semantic version among all non-draft releases (tie-breaking by published_at timestamp)
             JsonElement? chosenRelease = null;
+            Version? highestVersion = null;
+            DateTimeOffset highestPublishedAt = DateTimeOffset.MinValue;
+
             foreach (JsonElement item in doc.RootElement.EnumerateArray())
             {
                 bool isDraft = item.TryGetProperty("draft", out JsonElement draftProp) && draftProp.ValueKind == JsonValueKind.True;
-                if (!isDraft && item.TryGetProperty("tag_name", out JsonElement tagCheck) && !string.IsNullOrWhiteSpace(tagCheck.GetString()))
+                if (isDraft || !item.TryGetProperty("tag_name", out JsonElement tagCheck))
                 {
+                    continue;
+                }
+
+                string? rawTag = tagCheck.GetString();
+                if (string.IsNullOrWhiteSpace(rawTag))
+                {
+                    continue;
+                }
+
+                Version candidateVer = TryParseReleaseVersion(rawTag);
+                DateTimeOffset candidateDate = DateTimeOffset.MinValue;
+                if (item.TryGetProperty("published_at", out JsonElement pubProp) &&
+                    DateTimeOffset.TryParse(pubProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsedPub))
+                {
+                    candidateDate = parsedPub;
+                }
+
+                if (highestVersion is null ||
+                    candidateVer > highestVersion ||
+                    (candidateVer == highestVersion && candidateDate > highestPublishedAt))
+                {
+                    highestVersion = candidateVer;
+                    highestPublishedAt = candidateDate;
                     chosenRelease = item;
-                    break;
                 }
             }
 
@@ -694,6 +720,139 @@ public sealed partial class ShellViewModel
         catch (Exception ex)
         {
             this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusFailed", ex.Message);
+        }
+        finally
+        {
+            this.IsCheckingForUpdate = false;
+        }
+    }
+
+    /// <summary>
+    /// Downloads the latest installer package (<c>.msi</c> on Windows, <c>.dmg</c> on macOS) directly into <c>%TEMP%</c>,
+    /// runs the silent/passive upgrade installer, and automatically relaunches the updated application.
+    /// Falls back to opening the release download URL in the system browser if direct binary installation is not applicable.
+    /// </summary>
+    public async Task DownloadAndApplyUpdateAsync()
+    {
+        if (this.IsCheckingForUpdate)
+        {
+            return;
+        }
+
+        string url = !string.IsNullOrWhiteSpace(this.LatestReleaseDownloadUrl)
+            ? this.LatestReleaseDownloadUrl.Trim()
+            : "https://github.com/ppn-systems/Facebook.Net/releases";
+
+        bool isMsi = OperatingSystem.IsWindows() && url.EndsWith(".msi", StringComparison.OrdinalIgnoreCase);
+        bool isDmg = OperatingSystem.IsMacOS() && url.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase);
+
+        if (!isMsi && !isDmg)
+        {
+            this.OpenUpdateDownloadPage();
+            return;
+        }
+
+        this.IsCheckingForUpdate = true;
+        string tag = !string.IsNullOrWhiteSpace(this.LatestReleaseTag) ? this.LatestReleaseTag : "latest";
+
+        try
+        {
+            string ext = isMsi ? ".msi" : ".dmg";
+            string safeTag = tag.Replace('/', '_').Replace('\\', '_');
+            string tempInstallerPath = Path.Combine(Path.GetTempPath(), $"FacebookOneClient-Update-{safeTag}{ext}");
+
+            using HttpClient http = new()
+            {
+                Timeout = TimeSpan.FromMinutes(10)
+            };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
+
+            using HttpResponseMessage response = await http
+                .GetAsync(new Uri(url), HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(true);
+            _ = response.EnsureSuccessStatusCode();
+
+            long? totalBytes = response.Content.Headers.ContentLength;
+            await using (Stream contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(true))
+            await using (FileStream fileStream = new(tempInstallerPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                byte[] buffer = new byte[81920];
+                long totalRead = 0;
+                int lastReportedPct = -1;
+                int read;
+                while ((read = await contentStream.ReadAsync(buffer).ConfigureAwait(true)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(true);
+                    totalRead += read;
+                    if (totalBytes is > 0)
+                    {
+                        int pct = (int)Math.Clamp(totalRead * 100L / totalBytes.Value, 0, 100);
+                        if (pct != lastReportedPct)
+                        {
+                            lastReportedPct = pct;
+                            this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusDownloading", tag, pct);
+                        }
+                    }
+                }
+            }
+
+            this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusInstalling", tag);
+            this.FlushSettingsToDisk();
+
+            if (isMsi)
+            {
+                string currentExe = Environment.ProcessPath
+                    ?? Path.Combine(AppContext.BaseDirectory, "FacebookOneClient.exe");
+                const string InstalledProgramFilesExe = @"C:\Program Files\Facebook One Client\FacebookOneClient.exe";
+                string batchPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.cmd");
+                string batchScript =
+                    "@echo off\r\n" +
+                    "timeout /t 2 /nobreak >nul\r\n" +
+                    $"msiexec.exe /i \"{tempInstallerPath}\" /passive /norestart\r\n" +
+                    $"if exist \"{InstalledProgramFilesExe}\" (\r\n" +
+                    $"    start \"\" \"{InstalledProgramFilesExe}\"\r\n" +
+                    ") else (\r\n" +
+                    $"    start \"\" \"{currentExe}\"\r\n" +
+                    ")\r\n" +
+                    "del \"%~f0\"\r\n";
+
+                await File.WriteAllTextAsync(batchPath, batchScript).ConfigureAwait(true);
+                _ = Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+                Environment.Exit(0);
+            }
+            else if (isDmg)
+            {
+                string shPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.sh");
+                string mountPoint = $"/Volumes/FBOneUpdate_{Guid.NewGuid():N}"[..28];
+                string shScript =
+                    "#!/bin/bash\n" +
+                    "sleep 2\n" +
+                    $"hdiutil attach -nobrowse -mountpoint \"{mountPoint}\" \"{tempInstallerPath}\" >/dev/null 2>&1\n" +
+                    $"if [ -d \"{mountPoint}/Facebook One Client.app\" ]; then\n" +
+                    "  rm -rf \"/Applications/Facebook One Client.app\"\n" +
+                    $"  cp -R \"{mountPoint}/Facebook One Client.app\" \"/Applications/\"\n" +
+                    "fi\n" +
+                    $"hdiutil detach \"{mountPoint}\" -force >/dev/null 2>&1 || true\n" +
+                    "open -a \"/Applications/Facebook One Client.app\"\n" +
+                    "rm -f \"$0\"\n";
+
+                await File.WriteAllTextAsync(shPath, shScript).ConfigureAwait(true);
+                _ = Process.Start(new ProcessStartInfo("/bin/bash", $"\"{shPath}\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+                Environment.Exit(0);
+            }
+        }
+        catch
+        {
+            this.OpenUpdateDownloadPage();
         }
         finally
         {
