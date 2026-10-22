@@ -154,7 +154,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
 
         if (alsoPublishToPersonalFeed)
         {
-            string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, primaryAccount.DisplayName, "Trang cá nhân");
+            string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, primaryAccount.DisplayName, "Personal Feed");
             string? feedPostId = await _manager.CometClient
                 .PublishPostAsync(primarySession, feedMsg, ComposerTarget.Feed, null, primaryPhotoIds, primaryVideoIds, ct: ct)
                 .ConfigureAwait(false);

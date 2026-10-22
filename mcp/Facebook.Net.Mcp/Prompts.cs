@@ -17,8 +17,8 @@ public sealed class Prompts
     [McpServerPrompt(Name = "analyze_group_leads")]
     [Description("Generates a prompt template to find high-intent buyer posts in scraped Facebook groups and suggest tailored sales comments.")]
     public static GetPromptResult AnalyzeGroupLeads(
-        [Description("Comma-separated buyer keywords to search (e.g. 'căn hộ, tìm mua, báo giá')")] string keywords,
-        [Description("Language for the report (default 'vi')")] string language = "vi")
+        [Description("Comma-separated buyer keywords to search")] string keywords,
+        [Description("Language for the report (default 'auto' to match user's language)")] string language = "auto")
     {
         return new GetPromptResult
         {
@@ -32,7 +32,7 @@ public sealed class Prompts
                     {
                         Text = $"""
                             1. Call `fb_search_leads_advanced` (with keywords = "{keywords}" and commentStatus = "pending") and `fb_analyze_workspace_data` (with buyerKeywords = "{keywords}").
-                            2. Review the highest-scoring buyer-intent posts (including extracted Vietnamese phone numbers and zero-comment first-mover opportunities) and present a concise summary in {language}:
+                            2. Review the highest-scoring buyer-intent posts (including extracted phone numbers and zero-comment first-mover opportunities) and present a concise summary (language: {language}):
                                - Author name, Group name, Buyer-Intent Score, Extracted Phones, and key inquiry details.
                                - Offer to auto-tag high-value leads in-app via `fb_auto_tag_leads_by_rules`, save notes via `fb_update_lead_notes`, or send friend requests via `fb_send_friend_requests_batch` (strictly NEVER export leads to external Excel/CSV files).
                                - Draft a natural, helpful sales comment (with Spintax variations) ready to send via `fb_create_comment` or `fb_auto_comment_leads_batch`.
@@ -122,7 +122,7 @@ public sealed class Prompts
                             3. Call `fb_watch_and_reply_stories_batch` (maxStoriesToWatch = 5, replySpintax = "{❤️|🔥|😍}") to watch active Stories.
                             4. Call `fb_handle_friend_requests_batch` (action = "confirm", maxCount = 3) to accept incoming friend requests.
                             5. Call `fb_get_notifications` (onlyUnread = true) to check if any customer replied to our posts or comments.
-                            Summarize all warmup actions performed clearly in Vietnamese.
+                            Summarize all warmup actions performed clearly in the user's preferred language.
                             """
                     }
                 }
@@ -133,7 +133,7 @@ public sealed class Prompts
     [McpServerPrompt(Name = "auto_join_groups_with_answers")]
     [Description("Generates a workflow prompt to search and join community groups by keyword and automatically answer pending membership approval questionnaires.")]
     public static GetPromptResult AutoJoinGroupsWithAnswers(
-        [Description("Keyword to search community groups (e.g. 'bất động sản hà nội')")] string keyword,
+        [Description("Keyword to search community groups")] string keyword,
         [Description("Maximum number of groups to join (default 5)")] int maxGroups = 5)
     {
         return new GetPromptResult
@@ -149,7 +149,7 @@ public sealed class Prompts
                         Text = $"""
                             1. Call `fb_search_groups` with keyword = "{keyword}" to find relevant unjoined groups.
                             2. For up to {maxGroups} unjoined groups, call `fb_join_group` (with fetchQuestionsIfRequested = true).
-                            3. Whenever a group returns `pending_questions` (membership_state = "Requested"), craft polite, rule-abiding Vietnamese answers tailored to each question and submit them immediately using `fb_submit_group_answers`.
+                            3. Whenever a group returns `pending_questions` (membership_state = "Requested"), craft polite, rule-abiding answers in the group's language tailored to each question and submit them immediately using `fb_submit_group_answers`.
                             4. Report the final join status and submitted answers for each group.
                             """
                     }

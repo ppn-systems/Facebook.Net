@@ -19,7 +19,7 @@ namespace Meta.UI.ViewModels.AiAssistant;
 public sealed partial class AiAssistantViewModel
 {
     /// <summary>
-    /// Applies a built-in specialized System Prompt preset and persists AI settings.
+    /// Applies a built-in specialized System Prompt preset (strictly in token-efficient English) and persists AI settings.
     /// </summary>
     public void ApplySystemPromptPreset(string? presetKey)
     {
@@ -30,9 +30,12 @@ public sealed partial class AiAssistantViewModel
 
         string presetPrompt = presetKey.Trim().ToLowerInvariant() switch
         {
-            "closing_expert" => _context.Localization["Ai.PresetPromptClosingExpert"],
-            "viral_copywriter" => _context.Localization["Ai.PresetPromptViralCopywriter"],
-            "data_analyst" => _context.Localization["Ai.PresetPromptDataAnalyst"],
+            "closing_expert" =>
+                "You are a Sales Closing and Customer Consultation Expert for Facebook Groups. Always reply in the exact language used by the user. When analyzing a customer post, evaluate genuine buyer intent, distinguish real buyers from brokers or seeders, suggest an appropriate customer color tag, and draft a natural personalized consultation comment. Silently record product info, pricing, hotline, or consultation rules via [LEARN:Category|Key|Content] at the end of your reply. When proposing a consultation comment, append [ACTION:COMMENT_LEAD|targetId=<postId>|content=<comment text>].",
+            "viral_copywriter" =>
+                "You are a Viral Sales Copywriter and Anti-Checkpoint Spintax Specialist for Facebook Groups. Always reply in the exact language used by the user. Craft engaging, well-structured posts using natural Spintax {Option 1|Option 2|Option 3} across the hook, body, and call-to-action for safe multi-group publishing. Silently remember brand voice, product USPs, and hotline details via [LEARN:WritingStyle|Key|Content]. When a post draft is ready, append [ACTION:PUBLISH_GROUPS|count=<groups>|minDelay=<sec>|maxDelay=<sec>|content=<Spintax post>].",
+            "data_analyst" =>
+                "You are a Workspace Data Analyst and Auto-Tagging Specialist. Always reply in the exact language used by the user. Proactively analyze deep workspace metrics, evaluate group ROI, detect repeat authors or seeders, and identify peak posting hours and top inquiry terms. When asked to create or assign color tags for Groups or Customers, use the MCP tools and append [ACTION:FILTER_LEADS|keyword=<keyword>] or [ACTION:OPEN_GROUP_TAGS|targetId=<tagId>].",
             _ => string.Empty
         };
 
@@ -222,7 +225,7 @@ public sealed partial class AiAssistantViewModel
         {
             _ = await _context.AiMemoryStore.SaveMemoryAsync(
                 AiMemoryCategory.CampaignRule,
-                _context.Localization["Ai.MemoryKeySafeDelay"],
+                "safe_delay_rule",
                 prompt,
                 importance: 4,
                 accountUid: activeUid).ConfigureAwait(true);
@@ -235,7 +238,7 @@ public sealed partial class AiAssistantViewModel
             {
                 _ = await _context.AiMemoryStore.SaveMemoryAsync(
                     AiMemoryCategory.ProductKnowledge,
-                    _context.Localization["Ai.MemoryKeyRecentCampaign"],
+                    "recent_campaign",
                     quotedPost,
                     importance: 4,
                     accountUid: activeUid).ConfigureAwait(true);
@@ -264,7 +267,7 @@ public sealed partial class AiAssistantViewModel
             {
                 _ = await _context.AiMemoryStore.SaveMemoryAsync(
                     AiMemoryCategory.ProductKnowledge,
-                    _context.Localization["Ai.MemoryKeyContactHotline"],
+                    "contact_hotline",
                     prompt.Length > 200 ? prompt[..200].Trim() : prompt,
                     importance: 4,
                     accountUid: activeUid).ConfigureAwait(true);
@@ -276,7 +279,7 @@ public sealed partial class AiAssistantViewModel
             {
                 _ = await _context.AiMemoryStore.SaveMemoryAsync(
                     AiMemoryCategory.ProductKnowledge,
-                    _context.Localization["Ai.MemoryKeyPricingPolicy"],
+                    "pricing_policy",
                     prompt.Length > 220 ? prompt[..220].Trim() : prompt,
                     importance: 4,
                     accountUid: activeUid).ConfigureAwait(true);

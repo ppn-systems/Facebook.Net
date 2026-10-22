@@ -90,8 +90,8 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         ImportedSessionBundle bundle = UniversalSessionImporter.Parse(
             rawSessionInput,
             friendlyName,
-            defaultBrowserLoginName: "Tài khoản trình duyệt",
-            defaultImportedPrefix: "Tài khoản");
+            defaultBrowserLoginName: "Browser Account",
+            defaultImportedPrefix: "Account");
 
         string profileDir = Path.Combine(_manager.ProfilesRootDirectory, bundle.AccountUid);
         _ = Directory.CreateDirectory(profileDir);

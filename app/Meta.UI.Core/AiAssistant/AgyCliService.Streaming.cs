@@ -678,24 +678,24 @@ public sealed partial class AgyCliService
         StringBuilder sb = new();
         if (!string.IsNullOrWhiteSpace(systemContextPrompt))
         {
-            _ = sb.AppendLine(systemContextPrompt.Trim());
+            string trimmedContext = systemContextPrompt.Trim();
+            if (!trimmedContext.Contains("[SYSTEM PROMPT]", StringComparison.Ordinal))
+            {
+                _ = sb.AppendLine("[SYSTEM PROMPT]");
+                _ = sb.AppendLine(AppConfig.DefaultAiSystemPrompt);
+                _ = sb.AppendLine();
+            }
+
+            _ = sb.AppendLine(trimmedContext);
             _ = sb.AppendLine();
         }
         else
         {
+            _ = sb.AppendLine("[SYSTEM PROMPT]");
             _ = sb.AppendLine(AppConfig.DefaultAiSystemPrompt);
             _ = sb.AppendLine();
         }
 
-        _ = sb.AppendLine("[MCP TOOLS, SILENT SELF-LEARNING & ACTION TAGS]");
-        _ = sb.AppendLine("- Workspace state, saved templates, target groups, group tags, lead tags, and AI memories are ALREADY pre-loaded above. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless explicitly asked for data not in the snapshot (or `fb_memory_save` / `fb_memory_delete` when explicitly managing memories).");
-        _ = sb.AppendLine("- SILENT SELF-LEARNING: Whenever the user shares product info, pricing, target audience, tone preferences, or when you discover high-performing groups/keywords during analysis, silently append `[LEARN:Category|Key|Content]` (`ProductKnowledge`, `WritingStyle`, `CampaignRule`, `GroupStrategy`, `LeadPlaybook`, or `UserPreference`) at the end of your reply. NEVER tell the user you saved or learned something into memory.");
-        _ = sb.AppendLine("- ACCOUNTS & PROFILES: `fb_list_accounts`, `fb_switch_account`, `fb_import_session`, `fb_check_account_health`, `fb_set_account_proxy`, `fb_delete_account`, `fb_warmup_account`, `fb_open_browser_login`, `fb_list_browser_profiles`, `fb_create_or_assign_browser_profile`, `fb_delete_browser_profile`.");
-        _ = sb.AppendLine("- GROUP & CUSTOMER CRM TAGGING: `fb_clean_and_classify_all_groups`, `fb_list_target_groups`, `fb_save_target_group`, `fb_remove_target_group`, `fb_configure_target_groups_selection`, `fb_sync_joined_groups`, `fb_search_groups`, `fb_join_group`, `fb_batch_join_groups`, `fb_list_group_tags`, `fb_create_group_tag`, `fb_create_group_tags_batch`, `fb_auto_tag_groups_by_keywords`, `fb_assign_group_tag`, `fb_delete_group_tag` for groups; `fb_list_lead_tags`, `fb_create_lead_tags_batch`, `fb_assign_lead_tag`, `fb_auto_tag_leads_by_rules`, `fb_delete_lead_tag`, `fb_update_lead_notes` for customer/lead tags and CRM notes.");
-        _ = sb.AppendLine("- ANALYTICS, LEADS, CAMPAIGNS & SETTINGS: `fb_analyze_workspace_data`, `fb_scrape_group_feed`, `fb_scrape_target_groups_batch`, `fb_query_scraped_leads`, `fb_search_leads_advanced`, `fb_auto_comment_leads_batch`, `fb_delete_scraped_leads`, `fb_get_single_post`, `fb_publish_post`, `fb_publish_campaign_batch`, `fb_sync_personal_timeline_posts`, `fb_repost_to_groups`, `fb_create_comment`, `fb_react_to_post`, `fb_list_published_posts`, `fb_delete_published_post`, `fb_list_templates`, `fb_save_template`, `fb_delete_template`, `fb_bump_recent_posts`, `fb_get_app_settings`, `fb_update_app_settings`, `fb_get_storage_usage`, `fb_clean_browser_cache`, `fb_get_audit_logs`, `fb_clear_audit_logs`, `fb_check_app_updates`.");
-        _ = sb.AppendLine("- INTERACTIVE ACTION TAGS: Append at most one `[ACTION:...]` tag at the very end of your reply: `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]`, `[ACTION:SEARCH_GROUPS|keyword=<text>]`, `[ACTION:SCAN_LEADS|keyword=<text>]`, `[ACTION:FILTER_LEADS|tagId=<lead_tag_id>|keyword=<text>]`, `[ACTION:COMMENT_LEAD|targetId=<post_id>|content=<comment_spintax>]`, `[ACTION:OPEN_GROUP_TAGS|targetId=<group_tag_id>]`, or `[ACTION:BUMP_POSTS|content=<bump_spintax>]`.");
-        _ = sb.AppendLine("- Always reply concisely in the exact language of the user's message.");
-        _ = sb.AppendLine();
         _ = sb.AppendLine("[USER]");
         _ = sb.Append(userPrompt);
         return sb.ToString();
