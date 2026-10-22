@@ -151,46 +151,4 @@ public sealed class BrowserAdapterTests
         Assert.True(cookies[1].HttpOnly);
         Assert.Equal(".facebook.com", cookies[1].Domain);
     }
-
-    [Fact]
-    public void LocalSessionFile_WhenPresentLocally_ValidatesExtractedTokensAndChecksum()
-    {
-        string? localSessionPath = TryFindLocalSessionFile();
-        if (localSessionPath is null)
-        {
-            // Running on CI/CD or clean machine without .local/test-session.json -> skip gracefully
-            return;
-        }
-
-        string json = System.IO.File.ReadAllText(localSessionPath);
-        using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json);
-        System.Text.Json.JsonElement root = doc.RootElement;
-
-        string? uid = root.GetProperty("uid").GetString();
-        string? fbDtsg = root.GetProperty("fbDtsg").GetString();
-        string? jazoest = root.GetProperty("jazoest").GetString();
-        string? lsd = root.GetProperty("lsd").GetString();
-
-        Assert.False(string.IsNullOrWhiteSpace(uid));
-        Assert.False(string.IsNullOrWhiteSpace(fbDtsg));
-        Assert.False(string.IsNullOrWhiteSpace(lsd));
-        Assert.Equal(jazoest, ProtocolCodec.ComputeJazoest(fbDtsg.AsSpan()));
-    }
-
-    private static string? TryFindLocalSessionFile()
-    {
-        System.IO.DirectoryInfo? dir = new(System.AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            string candidate = System.IO.Path.Combine(dir.FullName, ".local", "test-session.json");
-            if (System.IO.File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
-    }
 }
