@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -171,40 +169,6 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         {
             this.LatestTickerText = _context.Localization["Audit.ReadyTicker"];
         }
-    }
-
-    /// <summary>
-    /// Exports the currently displayed <see cref="FilteredLogs"/> to a UTF-8 with BOM CSV file and records an audit entry.
-    /// </summary>
-    /// <param name="filePath">Target file path on disk.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The number of exported rows.</returns>
-    public async Task<int> ExportFilteredLogsToCsvAsync(string filePath, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            return 0;
-        }
-
-        List<AuditLogRecord> snapshot = [.. this.FilteredLogs];
-        int count = await _context.CsvExport.ExportAuditLogsToCsvAsync(
-            filePath,
-            snapshot,
-            cat => _context.Localization.FormatAuditCategory(cat),
-            ct).ConfigureAwait(true);
-
-        string fileName = Path.GetFileName(filePath);
-        _ = await _context.AuditStore.AppendAsync(
-            AuditCategory.System,
-            AuditSeverity.Success,
-            "system",
-            _context.Localization["Audit.Cat.System"],
-            _context.Localization["Audit.TaskbarTitle"],
-            _context.Localization.Format("Log.AuditExportedCsv", count, fileName),
-            null,
-            ct).ConfigureAwait(true);
-
-        return count;
     }
 
     private static DateTimeOffset? ResolveFromTime(AuditTimeRange range) =>

@@ -12,7 +12,6 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Meta.UI.Core.Audit;
 using Meta.UI.Core.Collections;
-using Meta.UI.Core.Exports;
 using Meta.UI.Core.Leads;
 using Meta.UI.Core.Publisher;
 
@@ -591,45 +590,6 @@ public sealed partial class ShellViewModel
         }
 
         this.FilterCachedPostsFromDb();
-    }
-
-    /// <summary>
-    /// Exports all currently filtered <see cref="ScrapedPosts"/> to a UTF-8 with BOM CSV file for Excel/CRM usage.
-    /// </summary>
-    public async Task ExportFilteredLeadsToCsvAsync(string filePath, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            return;
-        }
-
-        List<LeadCsvExportRow> rows = new(this.ScrapedPosts.Count);
-        for (int i = 0; i < this.ScrapedPosts.Count; i++)
-        {
-            PostSummary p = this.ScrapedPosts[i];
-            IReadOnlyList<string> phones = this.ExtractAllPostPhoneNumbers(p);
-            int score = _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
-            string statusStr = this.IsPostCommented(p.PostId)
-                ? _context.Localization["Leads.StatusCommented"]
-                : _context.Localization["Leads.StatusPending"];
-
-            IReadOnlyList<GroupTag> tags = this.ResolveLeadTags(p);
-            List<string> tagNames = new(tags.Count);
-            for (int t = 0; t < tags.Count; t++)
-            {
-                tagNames.Add(tags[t].Name);
-            }
-
-            rows.Add(new LeadCsvExportRow(p, phones, score, statusStr, tagNames));
-        }
-
-        _ = await _context.CsvExport.ExportLeadsToCsvAsync(filePath, rows, ct).ConfigureAwait(true);
-
-        _ = await this.LogAuditAsync(
-            AuditCategory.Scrape,
-            AuditSeverity.Success,
-            _context.Localization["Audit.Cat.Scrape"],
-            _context.Localization.Format("Log.LeadsExportedCsv", this.ScrapedPosts.Count, Path.GetFileName(filePath))).ConfigureAwait(true);
     }
 
     /// <summary>

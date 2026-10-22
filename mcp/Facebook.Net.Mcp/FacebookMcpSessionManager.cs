@@ -13,7 +13,6 @@ using Meta.UI.Core.Accounts;
 using Meta.UI.Core.AiAssistant;
 using Meta.UI.Core.Audit;
 using Meta.UI.Core.Configuration;
-using Meta.UI.Core.Exports;
 using Meta.UI.Core.Groups;
 using Meta.UI.Core.Leads;
 using Meta.UI.Core.Publisher;
@@ -69,7 +68,6 @@ public sealed class FacebookMcpSessionManager : IDisposable
         this.CampaignPublisher = CampaignPublisherDomainService.Instance;
         this.StorageUsage = StorageUsageService.Instance;
         this.AppRelease = GitHubAppReleaseService.Instance;
-        this.CsvExport = CsvExportService.Instance;
         _activeAccountUid = this.Settings.Current.LastSelectedAccountUid;
     }
 
@@ -114,9 +112,6 @@ public sealed class FacebookMcpSessionManager : IDisposable
 
     /// <summary>Gets the application release update check domain service.</summary>
     public IAppReleaseService AppRelease { get; }
-
-    /// <summary>Gets the CSV export domain service.</summary>
-    public ICsvExportService CsvExport { get; }
 
     /// <summary>Gets the currently selected active account UID.</summary>
     public string? ActiveAccountUid => _activeAccountUid;

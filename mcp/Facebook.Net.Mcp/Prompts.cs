@@ -34,7 +34,7 @@ public sealed class Prompts
                             1. Call `fb_search_leads_advanced` (with keywords = "{keywords}" and commentStatus = "pending") and `fb_analyze_workspace_data` (with buyerKeywords = "{keywords}").
                             2. Review the highest-scoring buyer-intent posts (including extracted Vietnamese phone numbers and zero-comment first-mover opportunities) and present a concise summary in {language}:
                                - Author name, Group name, Buyer-Intent Score, Extracted Phones, and key inquiry details.
-                               - Offer to auto-tag high-value leads via `fb_auto_tag_leads_by_rules`, export them to Excel/CSV via `fb_export_leads_csv`, or send friend requests via `fb_send_friend_requests_batch`.
+                               - Offer to auto-tag high-value leads in-app via `fb_auto_tag_leads_by_rules`, save notes via `fb_update_lead_notes`, or send friend requests via `fb_send_friend_requests_batch` (strictly NEVER export leads to external Excel/CSV files).
                                - Draft a natural, helpful sales comment (with Spintax variations) ready to send via `fb_create_comment` or `fb_auto_comment_leads_batch`.
                             """
                     }

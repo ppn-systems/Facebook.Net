@@ -7,7 +7,6 @@ using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Meta.UI.Core.Audit;
-using Meta.UI.Core.Exports;
 using Meta.UI.Core.Leads;
 using ModelContextProtocol.Server;
 
@@ -1297,128 +1296,6 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 avatar_uri = u.AvatarUri,
                 friendship_state = u.Friendship.ToString()
             })
-        });
-    }
-
-    [McpServerTool(Name = "fb_export_leads_csv")]
-    [Description("Export filtered scraped customer leads (with extracted Vietnamese phone numbers, buyer-intent score, CRM tags, notes, and permalink) to a UTF-8 with BOM CSV file compatible with Microsoft Excel and external CRMs.")]
-    public async Task<string> ExportLeadsCsvAsync(
-        [Description("Optional output file path (.csv). If omitted, saves to the user's Desktop as 'Facebook_Leads_YYYYMMDD_HHmmss.csv'.")] string? outputFilePath = null,
-        [Description("Optional comma-separated keywords to filter and score buyer intent")] string? keywords = null,
-        [Description("If true, only export leads containing extracted Vietnamese phone numbers (default false)")] bool onlyWithPhone = false,
-        [Description("Minimum buyer-intent score (0..100, default 0)")] int minIntentScore = 0,
-        [Description("Optional customer/lead color tag ID or name filter")] string? leadTagIdOrName = null,
-        [Description("Maximum number of leads to export (1..2000, default 500)")] int limit = 500,
-        CancellationToken ct = default)
-    {
-        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
-
-        HashSet<string> commentedPostIds = await this.GetCommentedPostIdsAsync(ct).ConfigureAwait(false);
-        IReadOnlyList<GroupTag> leadTags = await _manager.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(false);
-        Dictionary<string, string> tagNameById = new(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < leadTags.Count; i++)
-        {
-            tagNameById[leadTags[i].Id] = leadTags[i].Name;
-        }
-
-        string? effectiveLeadTagId = null;
-        if (!string.IsNullOrWhiteSpace(leadTagIdOrName))
-        {
-            string cleanTag = leadTagIdOrName.Trim();
-            string normTag = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTag);
-            GroupTag? matchedTag = leadTags.FirstOrDefault(t =>
-                string.Equals(t.Id, cleanTag, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(t.Name, cleanTag, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTag, StringComparison.OrdinalIgnoreCase));
-            effectiveLeadTagId = matchedTag?.Id ?? cleanTag;
-        }
-
-        string[] kwArray = string.IsNullOrWhiteSpace(keywords)
-            ? []
-            : keywords.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        IReadOnlyList<PostSummary> dbPosts = await _manager.AccountStore
-            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 2000, ct: ct)
-            .ConfigureAwait(false);
-
-        int cap = Math.Clamp(limit, 1, 2000);
-        List<LeadCsvExportRow> rows = [];
-
-        for (int i = 0; i < dbPosts.Count && rows.Count < cap; i++)
-        {
-            PostSummary post = dbPosts[i];
-            if (!string.IsNullOrWhiteSpace(effectiveLeadTagId) && !post.HasTag(effectiveLeadTagId))
-            {
-                continue;
-            }
-
-            if (kwArray.Length > 0 && !_manager.LeadScoring.MatchesPostOrAuthorKeywords(post, kwArray))
-            {
-                continue;
-            }
-
-            IReadOnlyList<string> phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(post.MessageText);
-            if (onlyWithPhone && phones.Count == 0)
-            {
-                continue;
-            }
-
-            int score = _manager.LeadScoring.CalculateBuyerIntentScore(post.MessageText, keywords);
-            if (minIntentScore > 0 && score < minIntentScore)
-            {
-                continue;
-            }
-
-            IReadOnlyList<string> rawTagIds = post.GetTagIds();
-            List<string> tagNames = new(rawTagIds.Count);
-            for (int t = 0; t < rawTagIds.Count; t++)
-            {
-                tagNames.Add(tagNameById.TryGetValue(rawTagIds[t], out string? tName) ? tName : rawTagIds[t]);
-            }
-
-            string statusText = commentedPostIds.Contains(post.PostId) ? "Commented" : "Pending";
-            rows.Add(new LeadCsvExportRow(post, phones, score, statusText, tagNames));
-        }
-
-        rows.Sort(static (a, b) => b.BuyerIntentScore.CompareTo(a.BuyerIntentScore));
-
-        string resolvedPath;
-        if (!string.IsNullOrWhiteSpace(outputFilePath))
-        {
-            resolvedPath = Path.GetFullPath(outputFilePath.Trim());
-        }
-        else
-        {
-            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            string baseDir = !string.IsNullOrWhiteSpace(desktop) && Directory.Exists(desktop)
-                ? desktop
-                : _manager.DataDirectory;
-            resolvedPath = Path.Combine(baseDir, $"Facebook_Leads_{DateTimeOffset.Now:yyyyMMdd_HHmmss}.csv");
-        }
-
-        string? parentDir = Path.GetDirectoryName(resolvedPath);
-        if (!string.IsNullOrWhiteSpace(parentDir))
-        {
-            _ = Directory.CreateDirectory(parentDir);
-        }
-
-        int exportedCount = await _manager.CsvExport
-            .ExportLeadsToCsvAsync(resolvedPath, rows, ct)
-            .ConfigureAwait(false);
-
-        _ = await _manager.LogAuditAsync(
-            AuditCategory.Personal,
-            AuditSeverity.Success,
-            account: null,
-            Path.GetFileName(resolvedPath),
-            $"MCP exported {exportedCount} customer lead(s) to CSV '{resolvedPath}'.",
-            ct: ct).ConfigureAwait(false);
-
-        return JsonSerializer.Serialize(new
-        {
-            status = "success",
-            exported_count = exportedCount,
-            file_path = resolvedPath
         });
     }
 

@@ -10,7 +10,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
-using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
 using Meta.UI.Components.Controls;
 using Meta.UI.Components.Icons;
@@ -129,10 +128,10 @@ public sealed partial class AuditLogsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
-        // Row 1: Unified 2-Level Search & Filter Bar ([ ▽ Bộ lọc (N) | [Chip ×] Tìm hoặc lọc | 🔍 ]) + Export CSV + Refresh + Clear
+        // Row 1: Unified 2-Level Search & Filter Bar ([ ▽ Bộ lọc (N) | [Chip ×] Tìm hoặc lọc | 🔍 ]) + Refresh + Clear
         Grid filterBarRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -288,42 +287,6 @@ public sealed partial class AuditLogsPage : UserControl
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
-        Button exportCsvBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Audit.BtnExportCsv"],
-            command: null,
-            iconSvg: VectorIcons.Download);
-        exportCsvBtn.Height = 36;
-        exportCsvBtn.Click += async (_, _) =>
-        {
-            TopLevel? topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel?.StorageProvider is null)
-            {
-                return;
-            }
-
-            string defaultFileName = $"audit_logs_{DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)}.csv";
-            IStorageFile? file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = this._i18n["Audit.BtnExportCsv"],
-                SuggestedFileName = defaultFileName,
-                DefaultExtension = "csv",
-                FileTypeChoices =
-                [
-                    new FilePickerFileType("CSV") { Patterns = ["*.csv"] }
-                ]
-            }).ConfigureAwait(true);
-
-            if (file is not null)
-            {
-                string? localPath = file.TryGetLocalPath();
-                if (!string.IsNullOrWhiteSpace(localPath))
-                {
-                    _ = await drawerVm.ExportFilteredLogsToCsvAsync(localPath).ConfigureAwait(true);
-                }
-            }
-        };
-
         Button refreshBtn = AppButton.CreateIcon(
             this._theme,
             VectorIcons.Sync,
@@ -366,11 +329,9 @@ public sealed partial class AuditLogsPage : UserControl
         };
 
         Grid.SetColumn(searchFilterBar, 0);
-        Grid.SetColumn(exportCsvBtn, 1);
-        Grid.SetColumn(refreshBtn, 2);
-        Grid.SetColumn(clearBtn, 3);
+        Grid.SetColumn(refreshBtn, 1);
+        Grid.SetColumn(clearBtn, 2);
         filterBarRow.Children.Add(searchFilterBar);
-        filterBarRow.Children.Add(exportCsvBtn);
         filterBarRow.Children.Add(refreshBtn);
         filterBarRow.Children.Add(clearBtn);
         Grid.SetRow(filterBarRow, 1);
@@ -416,7 +377,6 @@ public sealed partial class AuditLogsPage : UserControl
                     this._i18n["Table.ColMessage"]
                 ],
                 this._i18n["Empty.AuditLogs"]);
-            AppButton.SetText(exportCsvBtn, this._i18n["Audit.BtnExportCsv"]);
             AppButton.SetText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
             AppButton.SetText(clearBtn, this._i18n["Audit.BtnClear"]);
         };

@@ -116,7 +116,7 @@ public sealed partial class SalesLeadsPage : UserControl
         // 1. Page Title + Quick Action Bar
         Grid topHeaderBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -128,19 +128,6 @@ public sealed partial class SalesLeadsPage : UserControl
             out TextBlock titleTb,
             out TextBlock descTb);
 
-        Button exportCsvBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Leads.BtnExportCsv"],
-            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
-            {
-                string? savePath = await this.PickSaveCsvFileAsync(this._i18n["Leads.BtnExportCsv"]).ConfigureAwait(true);
-                if (!string.IsNullOrWhiteSpace(savePath))
-                {
-                    await this._vm.ExportFilteredLeadsToCsvAsync(savePath).ConfigureAwait(true);
-                }
-            }),
-            VectorIcons.Clipboard);
-
         Button scrapeNowBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnScanPosts"],
@@ -148,10 +135,8 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Sync);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(exportCsvBtn, 1);
-        Grid.SetColumn(scrapeNowBtn, 2);
+        Grid.SetColumn(scrapeNowBtn, 1);
         topHeaderBar.Children.Add(header);
-        topHeaderBar.Children.Add(exportCsvBtn);
         topHeaderBar.Children.Add(scrapeNowBtn);
         Grid.SetRow(topHeaderBar, 0);
         tabGrid.Children.Add(topHeaderBar);
@@ -787,7 +772,6 @@ public sealed partial class SalesLeadsPage : UserControl
         {
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
-            AppButton.SetText(exportCsvBtn, this._i18n["Leads.BtnExportCsv"]);
             AppButton.SetText(scrapeNowBtn, this._i18n["Leads.BtnScanPosts"]);
             detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
             AppButton.SetText(askAiConsultBtn, this._i18n["Leads.BtnAskAiConsult"]);
@@ -838,30 +822,5 @@ public sealed partial class SalesLeadsPage : UserControl
         }).ConfigureAwait(true);
 
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
-    }
-
-    private async Task<string?> PickSaveCsvFileAsync(string title)
-    {
-        IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
-        if (storage is null)
-        {
-            return null;
-        }
-
-        IStorageFile? file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = title,
-            DefaultExtension = "csv",
-            SuggestedFileName = $"facebook_leads_{DateTime.Now:yyyyMMdd_HHmm}.csv",
-            FileTypeChoices =
-            [
-                new FilePickerFileType("CSV Files (*.csv)")
-                {
-                    Patterns = ["*.csv"]
-                }
-            ]
-        }).ConfigureAwait(true);
-
-        return file?.TryGetLocalPath();
     }
 }
