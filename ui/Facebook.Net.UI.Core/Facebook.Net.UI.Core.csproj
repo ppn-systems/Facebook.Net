@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net.Application\Facebook.Net.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

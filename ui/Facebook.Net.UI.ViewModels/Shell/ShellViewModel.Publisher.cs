@@ -9,7 +9,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Publisher;
 
@@ -167,7 +166,7 @@ public sealed partial class ShellViewModel
     /// </summary>
     public void GenerateSpintaxPreview()
     {
-        string spun = PayloadBuilder.SpinText(this.PostSpintaxText);
+        string spun = _context.CampaignPublisher.SpinText(this.PostSpintaxText);
         this.SpintaxPreviewText = $"{_context.Localization["Publisher.SpintaxPreviewPrefix"]} {spun}";
     }
 
@@ -392,7 +391,7 @@ public sealed partial class ShellViewModel
 
             if (publishToFeed)
             {
-                string feedSpintax = ResolveDynamicCommentVariables(this.PostSpintaxText, accountName, accountName);
+                string feedSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.PostSpintaxText, accountName, accountName);
                 string? postId = await _context.CometClient
                     .PublishPostAsync(session, feedSpintax, ComposerTarget.Feed, null, photoIds, ct: ct)
                     .ConfigureAwait(true);
@@ -415,7 +414,7 @@ public sealed partial class ShellViewModel
                 await _context.AccountStore.RecordActionAsync(
                     new ActionHistoryEntry(
                         session.AccountUid,
-                        "POST",
+                        DomainActionKinds.Post,
                         session.AccountUid,
                         postId,
                         DateTimeOffset.UtcNow),
@@ -426,7 +425,7 @@ public sealed partial class ShellViewModel
                     AccountUid: session.AccountUid,
                     AuthorName: accountName,
                     AuthorAvatarUrl: accountAvatar,
-                    MessageText: PayloadBuilder.SpinText(feedSpintax),
+                    MessageText: _context.CampaignPublisher.SpinText(feedSpintax),
                     MediaPreviewUrl: null,
                     LocalMediaFilePath: trimmedMediaPath,
                     TargetGroupId: null,
@@ -493,7 +492,7 @@ public sealed partial class ShellViewModel
                     group.GroupName,
                     _context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
-                string groupSpintax = ResolveDynamicCommentVariables(this.PostSpintaxText, accountName, group.GroupName);
+                string groupSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.PostSpintaxText, accountName, group.GroupName);
                 string? postId = await _context.CometClient
                     .PublishPostAsync(session, groupSpintax, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
                     .ConfigureAwait(true);
@@ -517,7 +516,7 @@ public sealed partial class ShellViewModel
                 await _context.AccountStore.RecordActionAsync(
                     new ActionHistoryEntry(
                         session.AccountUid,
-                        "POST",
+                        DomainActionKinds.Post,
                         group.GroupId,
                         postId,
                         DateTimeOffset.UtcNow),
@@ -528,7 +527,7 @@ public sealed partial class ShellViewModel
                     AccountUid: session.AccountUid,
                     AuthorName: accountName,
                     AuthorAvatarUrl: accountAvatar,
-                    MessageText: PayloadBuilder.SpinText(groupSpintax),
+                    MessageText: _context.CampaignPublisher.SpinText(groupSpintax),
                     MediaPreviewUrl: null,
                     LocalMediaFilePath: trimmedMediaPath,
                     TargetGroupId: group.GroupId,
@@ -783,7 +782,7 @@ public sealed partial class ShellViewModel
 
                 SavedTargetGroup group = targets[i];
                 this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
-                string groupText = ResolveDynamicCommentVariables(rawSpintax, accountName, group.GroupName);
+                string groupText = _context.CampaignPublisher.ResolveDynamicVariables(rawSpintax, accountName, group.GroupName);
 
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
@@ -833,7 +832,7 @@ public sealed partial class ShellViewModel
                     AccountUid: session.AccountUid,
                     AuthorName: accountName,
                     AuthorAvatarUrl: accountAvatar,
-                    MessageText: PayloadBuilder.SpinText(groupText),
+                    MessageText: _context.CampaignPublisher.SpinText(groupText),
                     MediaPreviewUrl: sourcePost.MediaPreviewUrl,
                     LocalMediaFilePath: sourcePost.LocalMediaFilePath,
                     TargetGroupId: group.GroupId,
@@ -961,7 +960,7 @@ public sealed partial class ShellViewModel
                 ? this.BumpCommentSpintaxText
                 : _context.Localization["Publisher.DefaultBumpSpintax"];
 
-            string resolvedBumpText = ResolveDynamicCommentVariables(
+            string resolvedBumpText = _context.CampaignPublisher.ResolveDynamicVariables(
                 bumpText,
                 this.SelectedAccount?.DisplayName,
                 target.TargetGroupName);
@@ -1078,7 +1077,7 @@ public sealed partial class ShellViewModel
                 }
 
                 (string postId, string? groupName) = bumpTargets[i];
-                string resolvedBumpText = ResolveDynamicCommentVariables(bumpText, this.SelectedAccount?.DisplayName, groupName);
+                string resolvedBumpText = _context.CampaignPublisher.ResolveDynamicVariables(bumpText, this.SelectedAccount?.DisplayName, groupName);
                 _ = await _context.CometClient
                     .CreateCommentAsync(session, postId, resolvedBumpText, null, ct: ct)
                     .ConfigureAwait(true);

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Facebook.Net.Application</AssemblyName>
+    <RootNamespace>Facebook.Net.UI.Core</RootNamespace>
+    <Title>Facebook.Net.Application - Pure Domain &amp; Application Services Layer</Title>
+    <Description>Pure UI-agnostic Domain and Application services for Facebook.Net: Account Vault, Group Tags, Lead Scoring &amp; Phone Extraction, Campaign Publisher &amp; Spintax, Universal Session Importer, CSV Export, Storage Usage, and Release Updater.</Description>
+    <PackageTags>facebook;facebook-application;ddd;domain-services;solid;net10;aot</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

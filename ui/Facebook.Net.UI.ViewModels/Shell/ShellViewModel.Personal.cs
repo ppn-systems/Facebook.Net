@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -443,20 +442,8 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        _ = _context;
         string url = $"https://www.facebook.com/{user.Uid}";
-        try
-        {
-            _ = Process.Start(new ProcessStartInfo
-            {
-                FileName = url,
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            // Ignore shell launch failures in headless environments.
-        }
+        _ = _context.SystemLauncher.OpenUrl(url);
     }
 
     // ── Optimistic UI rollback helpers ──────────────────────────────────────────

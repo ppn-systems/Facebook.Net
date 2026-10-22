@@ -3,9 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -188,31 +186,13 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             return 0;
         }
 
-        List<AuditLogRecord> snapshot = new(this.FilteredLogs.Count);
-        for (int i = 0; i < this.FilteredLogs.Count; i++)
-        {
-            snapshot.Add(this.FilteredLogs[i]);
-        }
+        List<AuditLogRecord> snapshot = [.. this.FilteredLogs];
+        int count = await _context.CsvExport.ExportAuditLogsToCsvAsync(
+            filePath,
+            snapshot,
+            cat => _context.Localization.FormatAuditCategory(cat),
+            ct).ConfigureAwait(true);
 
-        StringBuilder sb = new(capacity: (snapshot.Count + 1) * 128);
-        _ = sb.AppendLine("Timestamp,Severity,Category,Account,Target,Message,PermalinkUrl");
-
-        for (int i = 0; i < snapshot.Count; i++)
-        {
-            AuditLogRecord rec = snapshot[i];
-            _ = sb.Append(EscapeCsvField(rec.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))).Append(',')
-                  .Append(EscapeCsvField(rec.Severity.ToString())).Append(',')
-                  .Append(EscapeCsvField(_context.Localization.FormatAuditCategory(rec.Category))).Append(',')
-                  .Append(EscapeCsvField(rec.AccountDisplayName)).Append(',')
-                  .Append(EscapeCsvField(rec.TargetName)).Append(',')
-                  .Append(EscapeCsvField(rec.Message)).Append(',')
-                  .AppendLine(EscapeCsvField(rec.PermalinkUrl ?? string.Empty));
-        }
-
-        UTF8Encoding utf8Bom = new(encoderShouldEmitUTF8Identifier: true);
-        await File.WriteAllTextAsync(filePath, sb.ToString(), utf8Bom, ct).ConfigureAwait(true);
-
-        int count = snapshot.Count;
         string fileName = Path.GetFileName(filePath);
         _ = await _context.AuditStore.AppendAsync(
             AuditCategory.System,
@@ -225,17 +205,6 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
             ct).ConfigureAwait(true);
 
         return count;
-    }
-
-    private static string EscapeCsvField(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "\"\"";
-        }
-
-        string escaped = value.Replace("\"", "\"\"", StringComparison.Ordinal);
-        return $"\"{escaped}\"";
     }
 
     private static DateTimeOffset? ResolveFromTime(AuditTimeRange range) =>

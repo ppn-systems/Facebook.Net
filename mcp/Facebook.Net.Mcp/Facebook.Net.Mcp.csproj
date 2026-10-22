@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Facebook.Net.Contracts\Facebook.Net.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Facebook.Net.Application\Facebook.Net.Application.csproj" />
     <ProjectReference Include="..\..\src\Facebook.Net\Facebook.Net.csproj" />
     <ProjectReference Include="..\..\src\Facebook.Net.Storage\Facebook.Net.Storage.csproj" />
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />

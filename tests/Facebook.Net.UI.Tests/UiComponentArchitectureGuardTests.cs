@@ -360,9 +360,41 @@ public sealed partial class UiComponentArchitectureGuardTests
         Assert.True(typeof(Facebook.Net.UI.Core.Localization.ILocalizationService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Localization.LocalizationService)));
         Assert.True(typeof(Facebook.Net.UI.Core.Configuration.IAppSettingsService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.AppSettingsService)));
         Assert.True(typeof(Facebook.Net.UI.Core.Configuration.IStorageUsageService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.StorageUsageService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Configuration.IAppReleaseService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.GitHubAppReleaseService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Configuration.ISystemLauncherService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Configuration.SystemLauncherService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Exports.ICsvExportService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Exports.CsvExportService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Importing.IUniversalSessionImporter).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Importing.UniversalSessionImporterService)));
+        Assert.True(typeof(Facebook.Net.UI.Core.Publisher.ICampaignPublisherDomainService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Publisher.CampaignPublisherDomainService)));
         Assert.True(typeof(Facebook.Net.UI.Core.Leads.ILeadScoringService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Leads.LeadScoringService)));
         Assert.True(typeof(Facebook.Net.UI.Core.Accounts.IAccountVaultDomainService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Accounts.AccountVaultDomainService)));
         Assert.True(typeof(Facebook.Net.UI.Core.Groups.IGroupTagDomainService).IsAssignableFrom(typeof(Facebook.Net.UI.Core.Groups.GroupTagDomainService)));
+
+        // Verify ISP segregated repository & protocol client interfaces
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IAccountRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IProxyRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.ITargetGroupRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.ICampaignTemplateRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IActionHistoryRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.ILeadCrmRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IPublishedPostRepository).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.IAccountStore)));
+
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IFacebookPublishClient).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.ICometClient)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IFacebookFeedClient).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.ICometClient)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IFacebookGroupClient).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.ICometClient)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IFacebookFriendshipClient).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.ICometClient)));
+        Assert.True(typeof(Facebook.Net.Contracts.Abstractions.IFacebookMediaClient).IsAssignableFrom(typeof(Facebook.Net.Contracts.Abstractions.ICometClient)));
+
+        // Verify Facebook.Net.Application assembly is 100% pure (no Avalonia or SQLite reference)
+        System.Reflection.Assembly appAssembly = typeof(Core.Leads.LeadScoringService).Assembly;
+        Assert.Equal("Facebook.Net.Application", appAssembly.GetName().Name);
+
+        // Verify DDD Value Object / Entity record immutability (SavedTargetGroup equality must not be broken by HasTag/GetTagIds)
+        Facebook.Net.Contracts.Models.SavedTargetGroup gA = new("g1", "Group 1", IsEnabled: true, Notes: null, AvatarUrl: null, TagsCsv: "tag_bds,tag_vip");
+        Facebook.Net.Contracts.Models.SavedTargetGroup gB = new("g1", "Group 1", IsEnabled: true, Notes: null, AvatarUrl: null, TagsCsv: "tag_bds,tag_vip");
+        Assert.True(gA.HasTag("tag_vip"));
+        Assert.False(gA.HasTag("tag_job"));
+        Assert.Equal(gA, gB);
+        Assert.Equal(gA.GetHashCode(), gB.GetHashCode());
 
         // Verify DDD Domain Services behavior
         Core.Leads.LeadScoringService leadScoring = Core.Leads.LeadScoringService.Instance;
@@ -375,22 +407,36 @@ public sealed partial class UiComponentArchitectureGuardTests
         Assert.True(changed);
         Assert.Equal("tag_vip", tagged.TagsCsv);
 
+        string spunText = Core.Publisher.CampaignPublisherDomainService.Instance.SpinText("{Xin chào|Chào bạn}");
+        Assert.True(spunText is "Xin chào" or "Chào bạn");
+
         // Verify ShellViewModel delegates to Bounded Context Domain Services instead of embedding raw domain algorithms
         string repoRoot = FindRepositoryRoot();
+        string appCsprojSource = File.ReadAllText(Path.Combine(repoRoot, "src", "Facebook.Net.Application", "Facebook.Net.Application.csproj"));
+        Assert.DoesNotContain("Avalonia", appCsprojSource, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Sqlite", appCsprojSource, StringComparison.OrdinalIgnoreCase);
+
         string shellDir = Path.Combine(repoRoot, "ui", "Facebook.Net.UI.ViewModels", "Shell");
         string salesLeadsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.SalesLeads.cs"));
         string accountsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Accounts.cs"));
         string groupsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Groups.cs"));
         string settingsSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Settings.cs"));
+        string publisherSource = File.ReadAllText(Path.Combine(shellDir, "ShellViewModel.Publisher.cs"));
 
         Assert.Contains("_context.LeadScoring.", salesLeadsSource, StringComparison.Ordinal);
+        Assert.Contains("_context.CsvExport.", salesLeadsSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NormalizationForm.FormD", salesLeadsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("using Facebook.Net.Protocol;", salesLeadsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("using Facebook.Net.Protocol;", publisherSource, StringComparison.Ordinal);
 
         Assert.Contains("_context.AccountVault.", accountsSource, StringComparison.Ordinal);
+        Assert.Contains("_context.SessionImporter.", accountsSource, StringComparison.Ordinal);
         Assert.DoesNotContain("FileMode.Open", accountsSource, StringComparison.Ordinal);
 
         Assert.Contains("_context.GroupTagService.", groupsSource, StringComparison.Ordinal);
         Assert.Contains("_context.StorageUsage.", settingsSource, StringComparison.Ordinal);
+        Assert.Contains("_context.AppRelease.", settingsSource, StringComparison.Ordinal);
+        Assert.Contains("_context.SystemLauncher.", settingsSource, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

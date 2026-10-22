@@ -14,7 +14,9 @@ using Facebook.Net.UI.Core.Accounts;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Exports;
 using Facebook.Net.UI.Core.Groups;
+using Facebook.Net.UI.Core.Importing;
 using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Publisher;
@@ -90,6 +92,9 @@ public sealed class UiServiceContext : IDisposable
     /// <param name="agyCliService">Optional custom Google Antigravity CLI service implementation (for testing).</param>
     /// <param name="campaignPublisher">Optional custom campaign publisher domain service (for testing).</param>
     /// <param name="appRelease">Optional custom application release service (for testing).</param>
+    /// <param name="sessionImporter">Optional custom universal session importer service (for testing).</param>
+    /// <param name="csvExport">Optional custom CSV export service (for testing).</param>
+    /// <param name="systemLauncher">Optional custom system URL/directory launcher service (for testing).</param>
     public UiServiceContext(
         IBrowserAdapter platformBrowserAdapter,
         string? customDataDir = null,
@@ -105,7 +110,10 @@ public sealed class UiServiceContext : IDisposable
         IAiMemoryStore? aiMemoryStore = null,
         IAgyCliService? agyCliService = null,
         ICampaignPublisherDomainService? campaignPublisher = null,
-        IAppReleaseService? appRelease = null)
+        IAppReleaseService? appRelease = null,
+        IUniversalSessionImporter? sessionImporter = null,
+        ICsvExportService? csvExport = null,
+        ISystemLauncherService? systemLauncher = null)
     {
         ArgumentNullException.ThrowIfNull(platformBrowserAdapter);
 
@@ -146,6 +154,9 @@ public sealed class UiServiceContext : IDisposable
         this.GroupTagService = groupTagService ?? GroupTagDomainService.Instance;
         this.CampaignPublisher = campaignPublisher ?? CampaignPublisherDomainService.Instance;
         this.AppRelease = appRelease ?? GitHubAppReleaseService.Instance;
+        this.SessionImporter = sessionImporter ?? UniversalSessionImporterService.Instance;
+        this.CsvExport = csvExport ?? CsvExportService.Instance;
+        this.SystemLauncher = systemLauncher ?? SystemLauncherService.Instance;
 
         this.BrowserAdapter = new ConfigurableBrowserAdapter(platformBrowserAdapter, this.Settings);
         this.SessionManager = sessionManager ?? new BrowserSessionManager(this.BrowserAdapter);
@@ -202,6 +213,15 @@ public sealed class UiServiceContext : IDisposable
 
     /// <summary>Gets the application release and update check service.</summary>
     public IAppReleaseService AppRelease { get; }
+
+    /// <summary>Gets the universal session and cookie importer service.</summary>
+    public IUniversalSessionImporter SessionImporter { get; }
+
+    /// <summary>Gets the CSV export application service.</summary>
+    public ICsvExportService CsvExport { get; }
+
+    /// <summary>Gets the OS URL and folder launcher service.</summary>
+    public ISystemLauncherService SystemLauncher { get; }
 
     /// <summary>Gets the configurable browser adapter.</summary>
     public IBrowserAdapter BrowserAdapter { get; }

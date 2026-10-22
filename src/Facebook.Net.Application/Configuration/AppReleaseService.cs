@@ -2,7 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
@@ -35,6 +37,14 @@ public interface IAppReleaseService
 
     /// <summary>Queries GitHub Releases (<c>ppn-systems/Facebook.Net</c>) to check if a newer application version is available.</summary>
     Task<AppReleaseCheckResult> CheckForUpdatesAsync(CancellationToken ct = default);
+
+    /// <summary>Downloads the latest installer package (<c>.msi</c> on Windows, <c>.dmg</c> on macOS) into <c>%TEMP%</c> and launches the silent/passive upgrade script.</summary>
+    Task<bool> DownloadAndLaunchInstallerAsync(
+        string downloadUrl,
+        string? latestTag,
+        Action<int>? onProgressPercent = null,
+        Action? onBeforeLaunch = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>
@@ -210,5 +220,125 @@ public sealed class GitHubAppReleaseService : IAppReleaseService
                 DownloadUrl: ReleasesPageFallback,
                 ErrorMessage: ex.Message);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DownloadAndLaunchInstallerAsync(
+        string downloadUrl,
+        string? latestTag,
+        Action<int>? onProgressPercent = null,
+        Action? onBeforeLaunch = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(downloadUrl))
+        {
+            return false;
+        }
+
+        string url = downloadUrl.Trim();
+        bool isMsi = OperatingSystem.IsWindows() && url.EndsWith(".msi", StringComparison.OrdinalIgnoreCase);
+        bool isDmg = OperatingSystem.IsMacOS() && url.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase);
+        if (!isMsi && !isDmg)
+        {
+            return false;
+        }
+
+        string tag = !string.IsNullOrWhiteSpace(latestTag) ? latestTag.Trim() : "latest";
+        string ext = isMsi ? ".msi" : ".dmg";
+        string safeTag = tag.Replace('/', '_').Replace('\\', '_');
+        string tempInstallerPath = Path.Combine(Path.GetTempPath(), $"FacebookOneClient-Update-{safeTag}{ext}");
+
+        using HttpClient http = new()
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
+
+        using HttpResponseMessage response = await http
+            .GetAsync(new Uri(url), HttpCompletionOption.ResponseHeadersRead, ct)
+            .ConfigureAwait(false);
+        _ = response.EnsureSuccessStatusCode();
+
+        long? totalBytes = response.Content.Headers.ContentLength;
+        await using (Stream contentStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+        await using (FileStream fileStream = new(tempInstallerPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+        {
+            byte[] buffer = new byte[81920];
+            long totalRead = 0;
+            int lastReportedPct = -1;
+            int read;
+            while ((read = await contentStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                totalRead += read;
+                if (totalBytes is > 0 && onProgressPercent is not null)
+                {
+                    int pct = (int)Math.Clamp(totalRead * 100L / totalBytes.Value, 0, 100);
+                    if (pct != lastReportedPct)
+                    {
+                        lastReportedPct = pct;
+                        onProgressPercent(pct);
+                    }
+                }
+            }
+        }
+
+        onBeforeLaunch?.Invoke();
+
+        if (isMsi)
+        {
+            string currentExe = Environment.ProcessPath
+                ?? Path.Combine(AppContext.BaseDirectory, "FacebookOneClient.exe");
+            const string InstalledProgramFilesExe = @"C:\Program Files\Facebook One Client\FacebookOneClient.exe";
+            string batchPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.cmd");
+            string batchScript =
+                "@echo off\r\n" +
+                "timeout /t 2 /nobreak >nul\r\n" +
+                $"msiexec.exe /i \"{tempInstallerPath}\" /passive /norestart\r\n" +
+                $"if exist \"{InstalledProgramFilesExe}\" (\r\n" +
+                $"    start \"\" \"{InstalledProgramFilesExe}\"\r\n" +
+                ") else (\r\n" +
+                $"    start \"\" \"{currentExe}\"\r\n" +
+                ")\r\n" +
+                "del \"%~f0\"\r\n";
+
+            await File.WriteAllTextAsync(batchPath, batchScript, ct).ConfigureAwait(false);
+            _ = Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+            Environment.Exit(0);
+            return true;
+        }
+
+        if (isDmg)
+        {
+            string shPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.sh");
+            string mountPoint = $"/Volumes/FBOneUpdate_{Guid.NewGuid():N}"[..28];
+            string shScript =
+                "#!/bin/bash\n" +
+                "sleep 2\n" +
+                $"hdiutil attach -nobrowse -mountpoint \"{mountPoint}\" \"{tempInstallerPath}\" >/dev/null 2>&1\n" +
+                $"if [ -d \"{mountPoint}/Facebook One Client.app\" ]; then\n" +
+                "  rm -rf \"/Applications/Facebook One Client.app\"\n" +
+                $"  cp -R \"{mountPoint}/Facebook One Client.app\" \"/Applications/\"\n" +
+                "fi\n" +
+                $"hdiutil detach \"{mountPoint}\" -force >/dev/null 2>&1 || true\n" +
+                "open -a \"/Applications/Facebook One Client.app\"\n" +
+                "rm -f \"$0\"\n";
+
+            await File.WriteAllTextAsync(shPath, shScript, ct).ConfigureAwait(false);
+            _ = Process.Start(new ProcessStartInfo("/bin/bash", $"\"{shPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false
+            });
+            Environment.Exit(0);
+            return true;
+        }
+
+        return false;
     }
 }

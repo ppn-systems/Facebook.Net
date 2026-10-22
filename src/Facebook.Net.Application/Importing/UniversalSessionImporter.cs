@@ -20,6 +20,58 @@ public sealed record ImportedSessionBundle(
     string? TwoFactorSecret);
 
 /// <summary>
+/// Domain service contract for parsing J2Team Cookies JSON, Cookie-Editor JSON arrays,
+/// pipe-delimited account lines (<c>UID|Pass|2FA|Cookie</c>), raw Cookie headers, and proxy specifications.
+/// </summary>
+public interface IUniversalSessionImporter
+{
+    /// <summary>Parses a user-friendly proxy specification string into a <see cref="Facebook.Net.Contracts.Models.ProxyConfig"/>.</summary>
+    bool TryParseProxySpec(string? rawProxy, string proxyId, out Facebook.Net.Contracts.Models.ProxyConfig? proxy);
+
+    /// <summary>Formats a <see cref="Facebook.Net.Contracts.Models.ProxyConfig"/> into a clean string for editing in UI.</summary>
+    string FormatProxySpec(Facebook.Net.Contracts.Models.ProxyConfig? proxy);
+
+    /// <summary>Parses any supported cookie/session text or creates an interactive browser login profile if empty.</summary>
+    ImportedSessionBundle Parse(
+        string? rawInput,
+        string? friendlyName = null,
+        string? defaultBrowserLoginName = null,
+        string? defaultImportedPrefix = null);
+
+    /// <summary>Computes a deterministic 12-character hex identifier from arbitrary session material using SHA-256.</summary>
+    string ComputeDeterministicId(string prefix, string material);
+}
+
+/// <summary>
+/// Default stateless implementation of <see cref="IUniversalSessionImporter"/> delegating to <see cref="UniversalSessionImporter"/>.
+/// </summary>
+public sealed class UniversalSessionImporterService : IUniversalSessionImporter
+{
+    /// <summary>Gets the shared stateless singleton instance of <see cref="UniversalSessionImporterService"/>.</summary>
+    public static UniversalSessionImporterService Instance { get; } = new();
+
+    /// <inheritdoc />
+    public bool TryParseProxySpec(string? rawProxy, string proxyId, out Facebook.Net.Contracts.Models.ProxyConfig? proxy) =>
+        UniversalSessionImporter.TryParseProxySpec(rawProxy, proxyId, out proxy);
+
+    /// <inheritdoc />
+    public string FormatProxySpec(Facebook.Net.Contracts.Models.ProxyConfig? proxy) =>
+        UniversalSessionImporter.FormatProxySpec(proxy);
+
+    /// <inheritdoc />
+    public ImportedSessionBundle Parse(
+        string? rawInput,
+        string? friendlyName = null,
+        string? defaultBrowserLoginName = null,
+        string? defaultImportedPrefix = null) =>
+        UniversalSessionImporter.Parse(rawInput, friendlyName, defaultBrowserLoginName, defaultImportedPrefix);
+
+    /// <inheritdoc />
+    public string ComputeDeterministicId(string prefix, string material) =>
+        UniversalSessionImporter.ComputeDeterministicId(prefix, material);
+}
+
+/// <summary>
 /// Universal zero-UID session and cookie importer compatible with:
 /// 1. J2TEAM Cookies JSON (<c>{ "url": "...", "cookies": [ { "name": "c_user", "value": "..." } ] }</c>)
 /// 2. EditThisCookie / Cookie-Editor JSON array (<c>[ { "name": "c_user", "value": "..." } ]</c>)

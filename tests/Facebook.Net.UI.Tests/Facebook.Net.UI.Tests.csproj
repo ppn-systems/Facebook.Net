@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Application\Facebook.Net.Application.csproj" />
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
     <ProjectReference Include="..\..\ui\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
