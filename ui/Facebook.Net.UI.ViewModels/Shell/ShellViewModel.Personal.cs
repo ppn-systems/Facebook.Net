@@ -187,18 +187,24 @@ public sealed partial class ShellViewModel
 
     private async Task ConfirmSelectedFriendRequestAsync()
     {
+        UserSummary? selected = this.SelectedIncomingRequest;
+        if (selected is null)
+        {
+            return;
+        }
+
+        // Optimistic UI: remove from list immediately for instant responsiveness.
+        int originalIndex = this.IndexOfIncoming(selected);
+        _ = this.IncomingFriendRequests.Remove(selected);
+        this.SelectedIncomingRequest = null;
+
         CancellationToken ct = this.BeginTaskScope();
         try
         {
-            UserSummary? selected = this.SelectedIncomingRequest;
-            if (selected is null)
-            {
-                return;
-            }
-
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
+                this.RollbackIncoming(selected, originalIndex);
                 return;
             }
 
@@ -206,10 +212,9 @@ public sealed partial class ShellViewModel
                 .ConfirmFriendRequestAsync(session, selected.Uid, ct: ct)
                 .ConfigureAwait(true);
 
-            if (result == FriendshipState.AreFriends)
+            if (result != FriendshipState.AreFriends && result != FriendshipState.Unknown)
             {
-                _ = this.IncomingFriendRequests.Remove(selected);
-                this.SelectedIncomingRequest = null;
+                this.RollbackIncoming(selected, originalIndex);
             }
 
             _ = await this.LogAuditAsync(
@@ -220,10 +225,11 @@ public sealed partial class ShellViewModel
         }
         catch (OperationCanceledException)
         {
-            // Task was cancelled; no action needed.
+            this.RollbackIncoming(selected, originalIndex);
         }
         catch (Exception ex)
         {
+            this.RollbackIncoming(selected, originalIndex);
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
                 AuditSeverity.Error,
@@ -238,27 +244,30 @@ public sealed partial class ShellViewModel
 
     private async Task DeleteSelectedFriendRequestAsync()
     {
+        UserSummary? selected = this.SelectedIncomingRequest;
+        if (selected is null)
+        {
+            return;
+        }
+
+        // Optimistic UI: remove from list immediately for instant responsiveness.
+        int originalIndex = this.IndexOfIncoming(selected);
+        _ = this.IncomingFriendRequests.Remove(selected);
+        this.SelectedIncomingRequest = null;
+
         CancellationToken ct = this.BeginTaskScope();
         try
         {
-            UserSummary? selected = this.SelectedIncomingRequest;
-            if (selected is null)
-            {
-                return;
-            }
-
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
+                this.RollbackIncoming(selected, originalIndex);
                 return;
             }
 
             _ = await _context.CometClient
                 .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: true, ct: ct)
                 .ConfigureAwait(true);
-
-            _ = this.IncomingFriendRequests.Remove(selected);
-            this.SelectedIncomingRequest = null;
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
@@ -268,10 +277,11 @@ public sealed partial class ShellViewModel
         }
         catch (OperationCanceledException)
         {
-            // Task was cancelled; no action needed.
+            this.RollbackIncoming(selected, originalIndex);
         }
         catch (Exception ex)
         {
+            this.RollbackIncoming(selected, originalIndex);
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
                 AuditSeverity.Error,
@@ -286,27 +296,30 @@ public sealed partial class ShellViewModel
 
     private async Task CancelSelectedOutgoingRequestAsync()
     {
+        UserSummary? selected = this.SelectedOutgoingRequest;
+        if (selected is null)
+        {
+            return;
+        }
+
+        // Optimistic UI: remove from list immediately for instant responsiveness.
+        int originalIndex = this.IndexOfOutgoing(selected);
+        _ = this.OutgoingFriendRequests.Remove(selected);
+        this.SelectedOutgoingRequest = null;
+
         CancellationToken ct = this.BeginTaskScope();
         try
         {
-            UserSummary? selected = this.SelectedOutgoingRequest;
-            if (selected is null)
-            {
-                return;
-            }
-
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
+                this.RollbackOutgoing(selected, originalIndex);
                 return;
             }
 
             _ = await _context.CometClient
                 .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: false, ct: ct)
                 .ConfigureAwait(true);
-
-            _ = this.OutgoingFriendRequests.Remove(selected);
-            this.SelectedOutgoingRequest = null;
 
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
@@ -316,10 +329,11 @@ public sealed partial class ShellViewModel
         }
         catch (OperationCanceledException)
         {
-            // Task was cancelled; no action needed.
+            this.RollbackOutgoing(selected, originalIndex);
         }
         catch (Exception ex)
         {
+            this.RollbackOutgoing(selected, originalIndex);
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
                 AuditSeverity.Error,
@@ -334,18 +348,24 @@ public sealed partial class ShellViewModel
 
     private async Task SendFriendRequestToSelectedAsync()
     {
+        UserSummary? selected = this.SelectedSuggestion;
+        if (selected is null)
+        {
+            return;
+        }
+
+        // Optimistic UI: remove from suggestions immediately for instant responsiveness.
+        int originalIndex = this.IndexOfSuggestion(selected);
+        _ = this.FriendSuggestions.Remove(selected);
+        this.SelectedSuggestion = null;
+
         CancellationToken ct = this.BeginTaskScope();
         try
         {
-            UserSummary? selected = this.SelectedSuggestion;
-            if (selected is null)
-            {
-                return;
-            }
-
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
             if (session is null)
             {
+                this.RollbackSuggestion(selected, originalIndex);
                 return;
             }
 
@@ -353,10 +373,9 @@ public sealed partial class ShellViewModel
                 .SendFriendRequestAsync(session, selected.Uid, ct: ct)
                 .ConfigureAwait(true);
 
-            if (result == FriendshipState.OutgoingRequest || result == FriendshipState.AreFriends)
+            if (result != FriendshipState.OutgoingRequest && result != FriendshipState.AreFriends)
             {
-                _ = this.FriendSuggestions.Remove(selected);
-                this.SelectedSuggestion = null;
+                this.RollbackSuggestion(selected, originalIndex);
             }
 
             _ = await this.LogAuditAsync(
@@ -367,10 +386,11 @@ public sealed partial class ShellViewModel
         }
         catch (OperationCanceledException)
         {
-            // Task was cancelled; no action needed.
+            this.RollbackSuggestion(selected, originalIndex);
         }
         catch (Exception ex)
         {
+            this.RollbackSuggestion(selected, originalIndex);
             _ = await this.LogAuditAsync(
                 AuditCategory.Personal,
                 AuditSeverity.Error,
@@ -380,6 +400,83 @@ public sealed partial class ShellViewModel
         finally
         {
             this.EndTaskScope();
+        }
+    }
+
+    // ── Optimistic UI rollback helpers ──────────────────────────────────────────
+
+    private int IndexOfIncoming(UserSummary item)
+    {
+        for (int i = 0; i < this.IncomingFriendRequests.Count; i++)
+        {
+            if (string.Equals(this.IncomingFriendRequests[i].Uid, item.Uid, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private void RollbackIncoming(UserSummary item, int index)
+    {
+        if (index >= 0 && index <= this.IncomingFriendRequests.Count)
+        {
+            this.IncomingFriendRequests.Insert(index, item);
+        }
+        else
+        {
+            this.IncomingFriendRequests.Add(item);
+        }
+    }
+
+    private int IndexOfOutgoing(UserSummary item)
+    {
+        for (int i = 0; i < this.OutgoingFriendRequests.Count; i++)
+        {
+            if (string.Equals(this.OutgoingFriendRequests[i].Uid, item.Uid, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private void RollbackOutgoing(UserSummary item, int index)
+    {
+        if (index >= 0 && index <= this.OutgoingFriendRequests.Count)
+        {
+            this.OutgoingFriendRequests.Insert(index, item);
+        }
+        else
+        {
+            this.OutgoingFriendRequests.Add(item);
+        }
+    }
+
+    private int IndexOfSuggestion(UserSummary item)
+    {
+        for (int i = 0; i < this.FriendSuggestions.Count; i++)
+        {
+            if (string.Equals(this.FriendSuggestions[i].Uid, item.Uid, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private void RollbackSuggestion(UserSummary item, int index)
+    {
+        if (index >= 0 && index <= this.FriendSuggestions.Count)
+        {
+            this.FriendSuggestions.Insert(index, item);
+        }
+        else
+        {
+            this.FriendSuggestions.Add(item);
         }
     }
 }
