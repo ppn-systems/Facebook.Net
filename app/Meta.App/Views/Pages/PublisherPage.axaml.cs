@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -172,80 +171,20 @@ public sealed partial class PublisherPage : UserControl
             this._i18n["Publisher.ModeFeedAndGroups"]
         ];
 
-        List<(Button Btn, TextBlock Lbl)> modeButtons = new(3);
-        StackPanel modeRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 2
-        };
-
-        void RefreshModeButtonsVisuals()
-        {
-            ThemePalette p = this._theme.Palette;
-            int activeIdx = Math.Clamp(this._vm.PublishTargetMode, 0, 2);
-            for (int i = 0; i < modeButtons.Count; i++)
+        SegmentedFilterPill modeSelectorBar = new(
+            this._theme,
+            GetModeLabels(),
+            initialIndex: Math.Clamp(this._vm.PublishTargetMode, 0, 2),
+            onSelected: idx =>
             {
-                (Button btn, TextBlock lbl) = modeButtons[i];
-                bool isActive = i == activeIdx;
-                btn.Background = isActive ? p.BrandPrimary : Brushes.Transparent;
-                lbl.Foreground = isActive ? Brushes.White : p.TextSecondary;
-                lbl.FontWeight = isActive ? FontWeight.SemiBold : FontWeight.Medium;
-            }
-        }
-
-        string[] initialModeLabels = GetModeLabels();
-        for (int i = 0; i < initialModeLabels.Length; i++)
-        {
-            int capturedMode = i;
-            TextBlock modeLbl = new()
-            {
-                Text = initialModeLabels[i],
-                FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-
-            Button modeBtn = new()
-            {
-                Content = modeLbl,
-                Padding = new Thickness(12, 5),
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(0),
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-            modeBtn.Click += (_, _) =>
-            {
-                if (this._vm.PublishTargetMode != capturedMode)
+                if (this._vm.PublishTargetMode != idx)
                 {
-                    this._vm.PublishTargetMode = capturedMode;
-                    RefreshModeButtonsVisuals();
+                    this._vm.PublishTargetMode = idx;
                 }
-            };
-
-            modeButtons.Add((modeBtn, modeLbl));
-            modeRow.Children.Add(modeBtn);
-        }
-
-        Border modeSelectorBar = new()
+            })
         {
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(4),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Child = modeRow
+            HorizontalAlignment = HorizontalAlignment.Left
         };
-
-        void ApplyModeSelectorColors()
-        {
-            ThemePalette p = this._theme.Palette;
-            modeSelectorBar.Background = p.ElevatedSurface;
-            modeSelectorBar.BorderBrush = p.InteractiveBorder;
-            RefreshModeButtonsVisuals();
-        }
-
-        ApplyModeSelectorColors();
-        ThemeLifecycle.Bind(modeSelectorBar, this._theme, ApplyModeSelectorColors);
 
         identityMeta.Children.Add(nameAndBadgeRow);
         identityMeta.Children.Add(modeSelectorBar);
@@ -461,7 +400,7 @@ public sealed partial class PublisherPage : UserControl
             string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
             profileNameTb.Text = accName;
             avatarHost.Content = AvatarBadge.Create(this._theme, accName, 42, this._vm.SelectedAccount?.AvatarUrl);
-            RefreshModeButtonsVisuals();
+            modeSelectorBar.SetSelectedIndex(Math.Clamp(this._vm.PublishTargetMode, 0, 2));
 
             int enabledGroups = 0;
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
@@ -585,11 +524,7 @@ public sealed partial class PublisherPage : UserControl
         refreshI18n = () =>
         {
             StatusPill.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
-            string[] nextModeLabels = GetModeLabels();
-            for (int i = 0; i < modeButtons.Count && i < nextModeLabels.Length; i++)
-            {
-                modeButtons[i].Lbl.Text = nextModeLabels[i];
-            }
+            modeSelectorBar.UpdateLabels(GetModeLabels());
 
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];

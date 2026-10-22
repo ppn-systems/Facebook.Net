@@ -182,7 +182,7 @@ public sealed partial class SettingsPage
             cat =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(_theme, this.FormatCategoryLabel(cat), 12, FontWeight.Medium);
-                _i18n.LanguageChanged += (_, _) => tb.Text = this.FormatCategoryLabel(cat);
+                ThemeLifecycle.BindLanguage(tb, _i18n, () => tb.Text = this.FormatCategoryLabel(cat));
                 return tb;
             },
             selectedItem: aiVm.NewMemoryCategory);

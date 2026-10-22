@@ -21,7 +21,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Xunit;
 
-namespace Facebook.Net.UI.Tests;
+namespace Meta.UI.Tests;
 
 /// <summary>
 /// Unit tests verifying <see cref="SqliteAuditLogStore"/>, <see cref="LocalizationService"/>,

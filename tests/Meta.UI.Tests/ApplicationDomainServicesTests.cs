@@ -12,7 +12,7 @@ using Meta.UI.Core.Leads;
 using Meta.UI.Core.Publisher;
 using Xunit;
 
-namespace Facebook.Net.UI.Tests;
+namespace Meta.UI.Tests;
 
 /// <summary>
 /// Pure unit tests for <c>Meta.Application</c> domain services:

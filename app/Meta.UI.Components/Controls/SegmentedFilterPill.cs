@@ -116,6 +116,24 @@ public sealed class SegmentedFilterPill : Border
         }
     }
 
+    /// <summary>
+    /// Sets the active segment index programmatically without invoking the selection callback.
+    /// </summary>
+    public void SetSelectedIndex(int index)
+    {
+        if (this._segments.Count == 0)
+        {
+            return;
+        }
+
+        int clamped = Math.Clamp(index, 0, this._segments.Count - 1);
+        if (this._selectedIndex != clamped)
+        {
+            this._selectedIndex = clamped;
+            this.RefreshSegmentVisuals();
+        }
+    }
+
     private void RefreshSegmentVisuals()
     {
         ThemePalette p = this._theme.Palette;

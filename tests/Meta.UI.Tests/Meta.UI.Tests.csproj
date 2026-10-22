@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Title>Facebook.Net.UI.Tests - Unit Tests for UI Core, i18n, Theme, Audit DB &amp; ViewModels</Title>
+    <Title>Meta.UI.Tests - Unit Tests for UI Core, i18n, Theme, Audit DB &amp; ViewModels</Title>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>

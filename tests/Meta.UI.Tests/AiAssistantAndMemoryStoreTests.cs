@@ -12,7 +12,7 @@ using Meta.UI.ViewModels.Services;
 using Meta.UI.ViewModels.Shell;
 using Xunit;
 
-namespace Facebook.Net.UI.Tests;
+namespace Meta.UI.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="SqliteAiMemoryStore"/>, <see cref="AgyCliService"/> stream/action parsing,

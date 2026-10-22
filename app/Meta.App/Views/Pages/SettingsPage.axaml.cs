@@ -144,7 +144,7 @@ public sealed partial class SettingsPage : UserControl
             m =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(_theme, _i18n.FormatThemeMode(m), 12);
-                _i18n.LanguageChanged += (_, _) => tb.Text = _i18n.FormatThemeMode(m);
+                ThemeLifecycle.BindLanguage(tb, _i18n, () => tb.Text = _i18n.FormatThemeMode(m));
                 return tb;
             },
             selectedItem: _vm.SelectedThemeMode);
@@ -195,7 +195,7 @@ public sealed partial class SettingsPage : UserControl
             k =>
             {
                 TextBlock tb = SectionHeader.CreateLabel(_theme, _i18n.FormatBrowserKind(k), 12);
-                _i18n.LanguageChanged += (_, _) => tb.Text = _i18n.FormatBrowserKind(k);
+                ThemeLifecycle.BindLanguage(tb, _i18n, () => tb.Text = _i18n.FormatBrowserKind(k));
                 return tb;
             },
             selectedItem: _vm.SelectedBrowserKind);

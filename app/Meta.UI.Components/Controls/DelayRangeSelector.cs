@@ -68,19 +68,6 @@ public static class DelayRangeSelector
         AttachDecimalSeparatorNormalizer(minBox);
         AttachDecimalSeparatorNormalizer(maxBox);
 
-        i18n?.LanguageChanged += (_, _) =>
-        {
-            NumberFormatInfo nextFormat = ResolveNumberFormat(i18n);
-            minBox.NumberFormat = nextFormat;
-            maxBox.NumberFormat = nextFormat;
-
-            // Refresh FormatString so the inner TextBox re-renders with the new decimal separator immediately
-            minBox.FormatString = "0.###";
-            minBox.FormatString = "0.##";
-            maxBox.FormatString = "0.###";
-            maxBox.FormatString = "0.##";
-        };
-
         Grid row = new()
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*"),
@@ -94,6 +81,22 @@ public static class DelayRangeSelector
         row.Children.Add(minBox);
         row.Children.Add(maxPrefix);
         row.Children.Add(maxBox);
+
+        if (i18n is not null)
+        {
+            ThemeLifecycle.BindLanguage(row, i18n, () =>
+            {
+                NumberFormatInfo nextFormat = ResolveNumberFormat(i18n);
+                minBox.NumberFormat = nextFormat;
+                maxBox.NumberFormat = nextFormat;
+
+                // Refresh FormatString so the inner TextBox re-renders with the new decimal separator immediately
+                minBox.FormatString = "0.###";
+                minBox.FormatString = "0.##";
+                maxBox.FormatString = "0.###";
+                maxBox.FormatString = "0.##";
+            });
+        }
 
         minLabelBlock = minPrefix;
         minBoxControl = minBox;

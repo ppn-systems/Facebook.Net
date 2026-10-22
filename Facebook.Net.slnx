@@ -24,6 +24,6 @@
     <Project Path="tests/Facebook.Net.Storage.Tests/Facebook.Net.Storage.Tests.csproj" />
     <Project Path="tests/Facebook.Net.Browser.Tests/Facebook.Net.Browser.Tests.csproj" />
     <Project Path="tests/Facebook.Net.Tests/Facebook.Net.Tests.csproj" />
-    <Project Path="tests/Facebook.Net.UI.Tests/Facebook.Net.UI.Tests.csproj" />
+    <Project Path="tests/Meta.UI.Tests/Meta.UI.Tests.csproj" />
   </Folder>
 </Solution>

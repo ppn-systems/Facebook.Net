@@ -62,10 +62,10 @@ public static class ThemeLifecycle
     }
 
     /// <summary>
-    /// Subscribes <paramref name="applyLanguage"/> to <see cref="LocalizationService.LanguageChanged"/> while
+    /// Subscribes <paramref name="applyLanguage"/> to <see cref="ILocalizationService.LanguageChanged"/> while
     /// <paramref name="control"/> is attached to the visual tree, preventing event handler memory leaks on virtualized rows.
     /// </summary>
-    public static void BindLanguage(Control control, LocalizationService i18n, Action applyLanguage)
+    public static void BindLanguage(Control control, ILocalizationService i18n, Action applyLanguage)
     {
         ArgumentNullException.ThrowIfNull(control);
         ArgumentNullException.ThrowIfNull(i18n);

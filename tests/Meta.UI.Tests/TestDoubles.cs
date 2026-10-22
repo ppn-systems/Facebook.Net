@@ -12,7 +12,7 @@ using Meta.UI.Core.AiAssistant;
 using Meta.UI.Core.Configuration;
 using Meta.UI.Core.Threading;
 
-namespace Facebook.Net.UI.Tests;
+namespace Meta.UI.Tests;
 
 internal sealed class ImmediateDispatcher : IUiDispatcher
 {
