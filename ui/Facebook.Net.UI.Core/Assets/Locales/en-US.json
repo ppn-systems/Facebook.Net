@@ -76,6 +76,7 @@
   "Accounts.TabImportAndProxy": "Add & Proxy",
   "Accounts.TabImport": "Add & Import Account",
   "Accounts.TabProxy": "Dedicated Network Setup",
+  "Accounts.TabFriendRequests": "Friend Requests",
   "Accounts.ProxySelectedAccountLabel": "Account selected for network setup:",
   "Accounts.FilterSegAll": "All",
   "Accounts.FilterSegActive": "Active",

@@ -15,8 +15,8 @@ using Facebook.Net.UI.Core.Collections;
 namespace Facebook.Net.UI.ViewModels.Shell;
 
 /// <summary>
-/// Partial implementation of <see cref="ShellViewModel"/> handling Personal Profile information,
-/// incoming/outgoing friend request management, and "People You May Know" friend suggestions.
+/// Partial implementation of <see cref="ShellViewModel"/> handling
+/// incoming/outgoing friend request management.
 /// </summary>
 public sealed partial class ShellViewModel
 {
@@ -26,9 +26,6 @@ public sealed partial class ShellViewModel
     /// <summary>Gets the collection of outgoing friend requests sent by the active account.</summary>
     public BulkObservableCollection<UserSummary> OutgoingFriendRequests { get; }
 
-    /// <summary>Gets the collection of "People You May Know" friend suggestions.</summary>
-    public BulkObservableCollection<UserSummary> FriendSuggestions { get; }
-
     /// <summary>Gets or sets the visually selected incoming friend request.</summary>
     [ObservableProperty]
     public partial UserSummary? SelectedIncomingRequest { get; set; }
@@ -37,18 +34,11 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial UserSummary? SelectedOutgoingRequest { get; set; }
 
-    /// <summary>Gets or sets the visually selected friend suggestion.</summary>
-    [ObservableProperty]
-    public partial UserSummary? SelectedSuggestion { get; set; }
-
     /// <summary>Gets the command to refresh incoming friend requests from Facebook.</summary>
     public IAsyncRelayCommand SyncIncomingFriendRequestsCommand { get; }
 
     /// <summary>Gets the command to refresh outgoing friend requests from Facebook.</summary>
     public IAsyncRelayCommand SyncOutgoingFriendRequestsCommand { get; }
-
-    /// <summary>Gets the command to refresh friend suggestions from Facebook.</summary>
-    public IAsyncRelayCommand SyncFriendSuggestionsCommand { get; }
 
     /// <summary>Gets the command to accept the selected incoming friend request.</summary>
     public IAsyncRelayCommand ConfirmFriendRequestCommand { get; }
@@ -58,9 +48,6 @@ public sealed partial class ShellViewModel
 
     /// <summary>Gets the command to cancel the selected outgoing friend request.</summary>
     public IAsyncRelayCommand CancelFriendRequestCommand { get; }
-
-    /// <summary>Gets the command to send a friend request to the selected suggestion.</summary>
-    public IAsyncRelayCommand SendFriendRequestCommand { get; }
 
     private async Task SyncIncomingFriendRequestsAsync()
     {
@@ -136,47 +123,6 @@ public sealed partial class ShellViewModel
                 AuditCategory.Personal,
                 AuditSeverity.Error,
                 _context.Localization["Personal.OutgoingHeader"],
-                _context.Localization.Format("Log.FriendRequestFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
-        }
-        finally
-        {
-            this.EndTaskScope();
-        }
-    }
-
-    private async Task SyncFriendSuggestionsAsync()
-    {
-        CancellationToken ct = this.BeginTaskScope();
-        try
-        {
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
-            if (session is null)
-            {
-                return;
-            }
-
-            PagedResult<UserSummary> result = await _context.CometClient
-                .GetFriendSuggestionsAsync(session, count: 50, cursor: null, ct: ct)
-                .ConfigureAwait(true);
-
-            this.FriendSuggestions.ReplaceAll(result.Items);
-
-            _ = await this.LogAuditAsync(
-                AuditCategory.Personal,
-                AuditSeverity.Info,
-                _context.Localization["Personal.SuggestionsHeader"],
-                _context.Localization.Format("Log.FriendSuggestionsSynced", result.Items.Count)).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            // Task was cancelled; no action needed.
-        }
-        catch (Exception ex)
-        {
-            _ = await this.LogAuditAsync(
-                AuditCategory.Personal,
-                AuditSeverity.Error,
-                _context.Localization["Personal.SuggestionsHeader"],
                 _context.Localization.Format("Log.FriendRequestFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
         }
         finally
@@ -346,63 +292,6 @@ public sealed partial class ShellViewModel
         }
     }
 
-    private async Task SendFriendRequestToSelectedAsync()
-    {
-        UserSummary? selected = this.SelectedSuggestion;
-        if (selected is null)
-        {
-            return;
-        }
-
-        // Optimistic UI: remove from suggestions immediately for instant responsiveness.
-        int originalIndex = this.IndexOfSuggestion(selected);
-        _ = this.FriendSuggestions.Remove(selected);
-        this.SelectedSuggestion = null;
-
-        CancellationToken ct = this.BeginTaskScope();
-        try
-        {
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
-            if (session is null)
-            {
-                this.RollbackSuggestion(selected, originalIndex);
-                return;
-            }
-
-            FriendshipState result = await _context.CometClient
-                .SendFriendRequestAsync(session, selected.Uid, ct: ct)
-                .ConfigureAwait(true);
-
-            if (result != FriendshipState.OutgoingRequest && result != FriendshipState.AreFriends)
-            {
-                this.RollbackSuggestion(selected, originalIndex);
-            }
-
-            _ = await this.LogAuditAsync(
-                AuditCategory.Personal,
-                AuditSeverity.Success,
-                selected.Name,
-                _context.Localization.Format("Log.FriendRequestSent", selected.Name)).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            this.RollbackSuggestion(selected, originalIndex);
-        }
-        catch (Exception ex)
-        {
-            this.RollbackSuggestion(selected, originalIndex);
-            _ = await this.LogAuditAsync(
-                AuditCategory.Personal,
-                AuditSeverity.Error,
-                _context.Localization["Personal.SuggestionsHeader"],
-                _context.Localization.Format("Log.FriendRequestFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
-        }
-        finally
-        {
-            this.EndTaskScope();
-        }
-    }
-
     // ── Optimistic UI rollback helpers ──────────────────────────────────────────
 
     private int IndexOfIncoming(UserSummary item)
@@ -452,31 +341,6 @@ public sealed partial class ShellViewModel
         else
         {
             this.OutgoingFriendRequests.Add(item);
-        }
-    }
-
-    private int IndexOfSuggestion(UserSummary item)
-    {
-        for (int i = 0; i < this.FriendSuggestions.Count; i++)
-        {
-            if (string.Equals(this.FriendSuggestions[i].Uid, item.Uid, StringComparison.Ordinal))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private void RollbackSuggestion(UserSummary item, int index)
-    {
-        if (index >= 0 && index <= this.FriendSuggestions.Count)
-        {
-            this.FriendSuggestions.Insert(index, item);
-        }
-        else
-        {
-            this.FriendSuggestions.Add(item);
         }
     }
 }

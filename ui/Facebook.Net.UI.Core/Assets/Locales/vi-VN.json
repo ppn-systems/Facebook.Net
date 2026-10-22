@@ -76,6 +76,7 @@
   "Accounts.TabImportAndProxy": "Thêm & Mạng Proxy",
   "Accounts.TabImport": "Thêm & Nhập Tài khoản",
   "Accounts.TabProxy": "Cấu hình Mạng Riêng",
+  "Accounts.TabFriendRequests": "Lời mời kết bạn",
   "Accounts.ProxySelectedAccountLabel": "Tài khoản đang cấu hình kết nối mạng:",
   "Accounts.FilterSegAll": "Tất cả",
   "Accounts.FilterSegActive": "Đang hoạt động",

@@ -21,7 +21,8 @@ namespace Facebook.Net.App.Views.Pages;
 /// Uses a top <see cref="SubTabBar"/> to cleanly separate:
 /// 1) Account Vault &amp; Filter List,
 /// 2) Add &amp; Import Account Session,
-/// 3) Dedicated Network Proxy Setup.
+/// 3) Dedicated Network Proxy Setup,
+/// 4) Friend Requests (Incoming &amp; Outgoing).
 /// </summary>
 public sealed partial class AccountsPage : UserControl
 {
@@ -63,13 +64,15 @@ public sealed partial class AccountsPage : UserControl
         Control tab1View = this.BuildVaultTab(out Action refreshTab1);
         Control tab2View = this.BuildImportTab(out Action refreshTab2);
         Control tab3View = this.BuildProxyTab(out Action refreshTab3);
+        Control tab4View = this.BuildFriendRequestsTab(out Action refreshTab4);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, tab1View),
                 new SubTabItem(this._i18n["Accounts.TabImport"], VectorIcons.Plus, tab2View),
-                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View)
+                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View),
+                new SubTabItem(this._i18n["Accounts.TabFriendRequests"], VectorIcons.Personal, tab4View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -78,11 +81,13 @@ public sealed partial class AccountsPage : UserControl
             [
                 this._i18n["Accounts.TabVault"],
                 this._i18n["Accounts.TabImport"],
-                this._i18n["Accounts.TabProxy"]
+                this._i18n["Accounts.TabProxy"],
+                this._i18n["Accounts.TabFriendRequests"]
             ]);
             refreshTab1();
             refreshTab2();
             refreshTab3();
+            refreshTab4();
         };
 
         return subTabBar;

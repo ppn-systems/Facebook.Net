@@ -44,10 +44,7 @@ public enum NavigationSection
     Overview = 5,
 
     /// <summary>Full-page Activity &amp; Audit Logs viewer.</summary>
-    AuditLogs = 6,
-
-    /// <summary>Personal Profile, Friend Requests, and Social Insights.</summary>
-    Personal = 7
+    AuditLogs = 6
 }
 
 /// <summary>
@@ -59,7 +56,7 @@ public enum NavigationSection
 /// - <c>ShellViewModel.Groups.cs</c> (Auto group sync, visual selection &amp; group search/join)
 /// - <c>ShellViewModel.PublisherAndLeads.cs</c> (Group/Timeline publishing, keyword lead scanner &amp; sales commenting)
 /// - <c>ShellViewModel.Settings.cs</c> (Dark/Light theme, vi-VN/en-US language &amp; browser selection)
-/// - <c>ShellViewModel.Personal.cs</c> (Personal profile, friend requests &amp; friend suggestions)
+/// - <c>ShellViewModel.Personal.cs</c> (Friend request management)
 /// </summary>
 public sealed partial class ShellViewModel : ObservableObject, IDisposable
 {
@@ -108,7 +105,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.ScrapedPosts = new BulkObservableCollection<PostSummary>();
         this.IncomingFriendRequests = new BulkObservableCollection<UserSummary>();
         this.OutgoingFriendRequests = new BulkObservableCollection<UserSummary>();
-        this.FriendSuggestions = new BulkObservableCollection<UserSummary>();
 
         // Load persisted settings synchronously BEFORE the UI window constructs controls
         this.LoadSettingsIntoProperties();
@@ -121,7 +117,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         this.NavigateSalesLeadsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.SalesLeads));
         this.NavigateSettingsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Settings));
         this.NavigateAuditLogsCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.AuditLogs));
-        this.NavigatePersonalCommand = new RelayCommand(() => this.Navigation.NavigateTo(NavigationSection.Personal));
         this.NavigateBackCommand = new RelayCommand(() => _ = this.Navigation.GoBack());
         this.ToggleSidebarCommand = new RelayCommand(() => this.IsSidebarCollapsed = !this.IsSidebarCollapsed);
         this.ToggleThemeQuickCommand = new RelayCommand(this.ToggleThemeQuick);
@@ -151,11 +146,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // Personal commands
         this.SyncIncomingFriendRequestsCommand = new AsyncRelayCommand(this.SyncIncomingFriendRequestsAsync);
         this.SyncOutgoingFriendRequestsCommand = new AsyncRelayCommand(this.SyncOutgoingFriendRequestsAsync);
-        this.SyncFriendSuggestionsCommand = new AsyncRelayCommand(this.SyncFriendSuggestionsAsync);
         this.ConfirmFriendRequestCommand = new AsyncRelayCommand(this.ConfirmSelectedFriendRequestAsync);
         this.DeleteFriendRequestCommand = new AsyncRelayCommand(this.DeleteSelectedFriendRequestAsync);
         this.CancelFriendRequestCommand = new AsyncRelayCommand(this.CancelSelectedOutgoingRequestAsync);
-        this.SendFriendRequestCommand = new AsyncRelayCommand(this.SendFriendRequestToSelectedAsync);
 
         // Publisher & Sales Leads commands
         this.PreviewSpintaxCommand = new RelayCommand(this.GenerateSpintaxPreview);
@@ -211,7 +204,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Navigates to a main section by its name (<c>Accounts</c>, <c>Groups</c>, <c>Publisher</c>, <c>SalesLeads</c>, <c>Settings</c>, <c>Overview</c>, <c>AuditLogs</c>, <c>Personal</c>).
+    /// Navigates to a main section by its name (<c>Accounts</c>, <c>Groups</c>, <c>Publisher</c>, <c>SalesLeads</c>, <c>Settings</c>, <c>Overview</c>, <c>AuditLogs</c>).
     /// </summary>
     public void SelectNavItem(string? sectionKey)
     {
@@ -301,9 +294,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the command to navigate to Activity / Audit Logs screen.</summary>
     public IRelayCommand NavigateAuditLogsCommand { get; }
-
-    /// <summary>Gets the command to navigate to the Personal Profile screen.</summary>
-    public IRelayCommand NavigatePersonalCommand { get; }
 
     /// <summary>Gets the command to navigate back to the previous screen in the navigation stack.</summary>
     public IRelayCommand NavigateBackCommand { get; }
