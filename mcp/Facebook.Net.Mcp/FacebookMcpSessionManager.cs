@@ -13,6 +13,7 @@ using Meta.UI.Core.Accounts;
 using Meta.UI.Core.AiAssistant;
 using Meta.UI.Core.Audit;
 using Meta.UI.Core.Configuration;
+using Meta.UI.Core.Exports;
 using Meta.UI.Core.Groups;
 using Meta.UI.Core.Leads;
 using Meta.UI.Core.Publisher;
@@ -68,6 +69,7 @@ public sealed class FacebookMcpSessionManager : IDisposable
         this.CampaignPublisher = CampaignPublisherDomainService.Instance;
         this.StorageUsage = StorageUsageService.Instance;
         this.AppRelease = GitHubAppReleaseService.Instance;
+        this.CsvExport = CsvExportService.Instance;
         _activeAccountUid = this.Settings.Current.LastSelectedAccountUid;
     }
 
@@ -112,6 +114,9 @@ public sealed class FacebookMcpSessionManager : IDisposable
 
     /// <summary>Gets the application release update check domain service.</summary>
     public IAppReleaseService AppRelease { get; }
+
+    /// <summary>Gets the CSV export domain service.</summary>
+    public ICsvExportService CsvExport { get; }
 
     /// <summary>Gets the currently selected active account UID.</summary>
     public string? ActiveAccountUid => _activeAccountUid;
@@ -249,6 +254,62 @@ public sealed class FacebookMcpSessionManager : IDisposable
         }
 
         throw new InvalidOperationException("No Facebook account found in the vault. Call 'fb_import_session' or 'fb_open_browser_login' first.");
+    }
+
+    /// <summary>
+    /// Resolves one or more account UIDs for multi-account round-robin rotation in batch campaigns.
+    /// If <paramref name="accountUidsCsv"/> is <c>"all"</c> or <c>"*"</c>, returns all non-disabled accounts in the vault.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ResolveRotationAccountUidsAsync(
+        string? accountUidsCsv = null,
+        string? fallbackSingleAccountUid = null,
+        CancellationToken ct = default)
+    {
+        await this.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(accountUidsCsv))
+        {
+            string trimmed = accountUidsCsv.Trim();
+            IReadOnlyList<AccountProfile> allAccounts = await this.AccountStore.GetAllAccountsAsync(ct).ConfigureAwait(false);
+
+            if (string.Equals(trimmed, "all", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "*", StringComparison.Ordinal))
+            {
+                List<string> activeUids = [];
+                for (int i = 0; i < allAccounts.Count; i++)
+                {
+                    if (allAccounts[i].Status is not (AccountStatus.Disabled or AccountStatus.Checkpoint))
+                    {
+                        activeUids.Add(allAccounts[i].Uid);
+                    }
+                }
+
+                if (activeUids.Count > 0)
+                {
+                    return activeUids;
+                }
+            }
+            else
+            {
+                string[] requested = trimmed.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                HashSet<string> validVaultUids = new(allAccounts.Select(a => a.Uid), StringComparer.Ordinal);
+                List<string> matched = [];
+                for (int i = 0; i < requested.Length; i++)
+                {
+                    if (validVaultUids.Contains(requested[i]) && !matched.Contains(requested[i], StringComparer.Ordinal))
+                    {
+                        matched.Add(requested[i]);
+                    }
+                }
+
+                if (matched.Count > 0)
+                {
+                    return matched;
+                }
+            }
+        }
+
+        AccountProfile single = await this.ResolveAccountAsync(fallbackSingleAccountUid, ct).ConfigureAwait(false);
+        return [single.Uid];
     }
 
     /// <summary>

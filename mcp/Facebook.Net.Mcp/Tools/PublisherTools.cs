@@ -18,15 +18,24 @@ namespace Facebook.Net.Mcp.Tools;
 [McpServerToolType]
 public sealed class PublisherTools(FacebookMcpSessionManager manager)
 {
+    private static readonly HashSet<string> s_videoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4",
+        ".mov",
+        ".m4v",
+        ".webm",
+        ".avi"
+    };
+
     private readonly FacebookMcpSessionManager _manager = manager;
 
     [McpServerTool(Name = "fb_publish_post")]
-    [Description("Publish a new post (supporting Spintax '{a|b}', dynamic variables '{group_name}', '{date}', '{time}', '{random_id}', and single or semicolon-separated multi-photo local paths) to the personal timeline ('Feed') or a community group ('Group').")]
+    [Description("Publish a new post (supporting Spintax '{a|b}', dynamic variables '{group_name}', '{date}', '{time}', '{random_id}', and single or semicolon-separated multi-photo or .mp4 video local paths) to the personal timeline ('Feed') or a community group ('Group').")]
     public async Task<string> PublishPostAsync(
         [Description("Message content or Spintax text to publish")] string messageText,
         [Description("Optional target Facebook Group ID. Leave empty/null to publish to the personal profile timeline.")] string? targetGroupId = null,
         [Description("Optional target group display name (for history logging and {group_name} variable)")] string? targetGroupName = null,
-        [Description("Optional single or semicolon-separated local image file paths to attach to the post")] string? mediaFilePath = null,
+        [Description("Optional single or semicolon-separated local image or .mp4 video file paths to attach to the post")] string? mediaFilePath = null,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -36,7 +45,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .ConfigureAwait(false);
 
         string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePath) ? null : mediaFilePath.Trim();
-        List<string>? photoIds = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
+        (List<string>? photoIds, List<string>? videoIds) = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
 
         bool isGroup = !string.IsNullOrWhiteSpace(targetGroupId);
         ComposerTarget composerTarget = isGroup ? ComposerTarget.Group : ComposerTarget.Feed;
@@ -48,7 +57,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         string resolvedMessage = _manager.CampaignPublisher.ResolveDynamicVariables(messageText, account.DisplayName, groupLabel);
 
         string? postId = await _manager.CometClient
-            .PublishPostAsync(session, resolvedMessage, composerTarget, cleanGroupId, photoIds, ct: ct)
+            .PublishPostAsync(session, resolvedMessage, composerTarget, cleanGroupId, photoIds, videoIds, ct: ct)
             .ConfigureAwait(false);
 
         string recordedPostId = !string.IsNullOrWhiteSpace(postId)
@@ -103,58 +112,68 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             target = isGroup ? "Group" : "Feed",
             target_group_id = cleanGroupId,
             attached_photos_count = photoIds?.Count ?? 0,
+            attached_videos_count = videoIds?.Count ?? 0,
             permalink_url = permalink
         });
     }
 
     [McpServerTool(Name = "fb_publish_campaign_batch")]
-    [Description("Execute a multi-group publishing campaign with Spintax and dynamic variables ('{group_name}', '{date}', '{time}', '{random_id}'), single/multi-photo upload reuse, optional Group Tag filter, anti-checkpoint delay, and optional auto-reaction.")]
+    [Description("Execute a multi-group publishing campaign with Spintax and dynamic variables ('{group_name}', '{date}', '{time}', '{random_id}'), single/multi-photo or .mp4 video upload reuse, optional Group Tag filter, multi-account round-robin rotation ('accountUidsCsv'), anti-checkpoint delay, and optional auto-reaction.")]
     public async Task<string> PublishCampaignBatchAsync(
         [Description("Spintax post template to publish across target groups")] string messageSpintax,
-        [Description("Optional single or semicolon-separated local image file paths to upload once and attach to all posts")] string? mediaFilePaths = null,
+        [Description("Optional single or semicolon-separated local image or .mp4 video file paths to upload once per account and attach to all posts")] string? mediaFilePaths = null,
         [Description("Optional group color tag ID or tag name to filter target groups (if omitted, publishes to enabled target groups)")] string? filterByTagIdOrName = null,
         [Description("Maximum number of target groups to publish to (1..100, default 20)")] int maxGroups = 20,
         [Description("Anti-checkpoint delay in seconds between posts (2..120, default 5)")] int delaySeconds = 5,
         [Description("Whether to also publish the post to the account's personal timeline before posting to groups (default false)")] bool alsoPublishToPersonalFeed = false,
         [Description("Whether to automatically react ('Love') to each newly published post for initial engagement (default true)")] bool autoReactAfterPost = true,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        [Description("Optional comma-separated Facebook account UIDs (or 'all') to rotate across target groups in round-robin fashion for anti-checkpoint load balancing")] string? accountUidsCsv = null,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageSpintax);
-        (AccountProfile account, IBrowserSession session) = await _manager
-            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+
+        IReadOnlyList<string> rotationUids = await _manager
+            .ResolveRotationAccountUidsAsync(accountUidsCsv, accountUid, ct)
+            .ConfigureAwait(false);
+
+        (AccountProfile primaryAccount, IBrowserSession primarySession) = await _manager
+            .AcquireBrowserSessionAsync(rotationUids[0], forceVisible: false, ct)
             .ConfigureAwait(false);
 
         List<SavedTargetGroup> targetGroups = await this.ResolveCampaignTargetGroupsAsync(filterByTagIdOrName, Math.Clamp(maxGroups, 1, 100), ct)
             .ConfigureAwait(false);
 
         string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePaths) ? null : mediaFilePaths.Trim();
-        List<string>? photoIds = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
+        Dictionary<string, (List<string>? PhotoIds, List<string>? VideoIds)> mediaCacheByUid = new(StringComparer.Ordinal);
+
+        (List<string>? primaryPhotoIds, List<string>? primaryVideoIds) = await this.UploadMediaFilesOnceAsync(primarySession, trimmedMedia, ct).ConfigureAwait(false);
+        mediaCacheByUid[primaryAccount.Uid] = (primaryPhotoIds, primaryVideoIds);
 
         int delaySec = Math.Clamp(delaySeconds, 2, 120);
         List<object> publishedResults = [];
 
         if (alsoPublishToPersonalFeed)
         {
-            string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, "Trang cá nhân");
+            string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, primaryAccount.DisplayName, "Trang cá nhân");
             string? feedPostId = await _manager.CometClient
-                .PublishPostAsync(session, feedMsg, ComposerTarget.Feed, null, photoIds, ct: ct)
+                .PublishPostAsync(primarySession, feedMsg, ComposerTarget.Feed, null, primaryPhotoIds, primaryVideoIds, ct: ct)
                 .ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(feedPostId))
             {
                 if (autoReactAfterPost)
                 {
-                    _ = await _manager.CometClient.ReactToPostAsync(session, feedPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                    _ = await _manager.CometClient.ReactToPostAsync(primarySession, feedPostId, ReactionKind.Love, ct).ConfigureAwait(false);
                 }
 
                 string feedPermalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/{feedPostId}";
                 await _manager.AccountStore.UpsertPublishedPostAsync(
                     new PublishedPostRecord(
                         PostId: feedPostId,
-                        AccountUid: session.AccountUid,
-                        AuthorName: account.DisplayName,
-                        AuthorAvatarUrl: account.AvatarUrl,
+                        AccountUid: primarySession.AccountUid,
+                        AuthorName: primaryAccount.DisplayName,
+                        AuthorAvatarUrl: primaryAccount.AvatarUrl,
                         MessageText: PayloadBuilder.SpinText(feedMsg),
                         MediaPreviewUrl: null,
                         LocalMediaFilePath: trimmedMedia,
@@ -169,6 +188,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 publishedResults.Add(new
                 {
                     target = "Feed",
+                    account_uid = primaryAccount.Uid,
                     group_id = (string?)null,
                     group_name = "Trang cá nhân",
                     post_id = feedPostId,
@@ -185,10 +205,21 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 await Task.Delay(TimeSpan.FromSeconds(delaySec), ct).ConfigureAwait(false);
             }
 
+            string currentUid = rotationUids[i % rotationUids.Count];
+            (AccountProfile account, IBrowserSession session) = string.Equals(currentUid, primaryAccount.Uid, StringComparison.Ordinal)
+                ? (primaryAccount, primarySession)
+                : await _manager.AcquireBrowserSessionAsync(currentUid, forceVisible: false, ct).ConfigureAwait(false);
+
+            if (!mediaCacheByUid.TryGetValue(account.Uid, out (List<string>? PhotoIds, List<string>? VideoIds) mediaForAccount))
+            {
+                mediaForAccount = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
+                mediaCacheByUid[account.Uid] = mediaForAccount;
+            }
+
             SavedTargetGroup grp = targetGroups[i];
             string personalized = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, grp.GroupName);
             string? postId = await _manager.CometClient
-                .PublishPostAsync(session, personalized, ComposerTarget.Group, grp.GroupId, photoIds, ct: ct)
+                .PublishPostAsync(session, personalized, ComposerTarget.Group, grp.GroupId, mediaForAccount.PhotoIds, mediaForAccount.VideoIds, ct: ct)
                 .ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(postId))
@@ -223,6 +254,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 publishedResults.Add(new
                 {
                     target = "Group",
+                    account_uid = account.Uid,
                     group_id = grp.GroupId,
                     group_name = grp.GroupName,
                     post_id = postId,
@@ -234,18 +266,20 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         _ = await _manager.LogAuditAsync(
             AuditCategory.Post,
             AuditSeverity.Success,
-            account,
+            primaryAccount,
             "Campaign Batch",
-            $"MCP published campaign batch ({publishedResults.Count} posts across {targetGroups.Count} target groups).",
+            $"MCP published campaign batch ({publishedResults.Count} posts across {targetGroups.Count} target groups using {rotationUids.Count} account(s)).",
             ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
             status = "success",
-            account_uid = account.Uid,
+            account_uid = primaryAccount.Uid,
+            accounts_rotated = rotationUids,
             target_groups_selected = targetGroups.Count,
             published_count = publishedResults.Count,
-            attached_photos_count = photoIds?.Count ?? 0,
+            attached_photos_count = primaryPhotoIds?.Count ?? 0,
+            attached_videos_count = primaryVideoIds?.Count ?? 0,
             posts = publishedResults
         });
     }
@@ -350,9 +384,10 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .ConfigureAwait(false);
 
         List<string>? fallbackPhotoIds = null;
+        List<string>? fallbackVideoIds = null;
         if (!string.IsNullOrWhiteSpace(sourceRecord?.LocalMediaFilePath))
         {
-            fallbackPhotoIds = await this.UploadMediaFilesOnceAsync(session, sourceRecord.LocalMediaFilePath, ct).ConfigureAwait(false);
+            (fallbackPhotoIds, fallbackVideoIds) = await this.UploadMediaFilesOnceAsync(session, sourceRecord.LocalMediaFilePath, ct).ConfigureAwait(false);
         }
 
         int delaySec = Math.Clamp(delaySeconds, 2, 120);
@@ -376,7 +411,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             if (string.IsNullOrWhiteSpace(newPostId) && !string.IsNullOrWhiteSpace(caption))
             {
                 newPostId = await _manager.CometClient
-                    .PublishPostAsync(session, caption, ComposerTarget.Group, grp.GroupId, fallbackPhotoIds, ct: ct)
+                    .PublishPostAsync(session, caption, ComposerTarget.Group, grp.GroupId, fallbackPhotoIds, fallbackVideoIds, ct: ct)
                     .ConfigureAwait(false);
             }
 
@@ -785,7 +820,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         });
     }
 
-    private async Task<List<string>?> UploadMediaFilesOnceAsync(
+    private async Task<(List<string>? PhotoIds, List<string>? VideoIds)> UploadMediaFilesOnceAsync(
         IBrowserSession session,
         string? rawPaths,
         CancellationToken ct)
@@ -793,22 +828,41 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         List<string> existingPaths = _manager.CampaignPublisher.ParseExistingMediaFilePaths(rawPaths);
         if (existingPaths.Count == 0)
         {
-            return null;
+            return (null, null);
         }
 
-        List<string> uploadedIds = new(existingPaths.Count);
+        List<string> uploadedPhotoIds = [];
+        List<string> uploadedVideoIds = [];
+
         for (int i = 0; i < existingPaths.Count; i++)
         {
-            string? uploadedFbid = await _manager.CometClient
-                .UploadUfiPhotoAsync(session, existingPaths[i], ct)
-                .ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(uploadedFbid))
+            string filePath = existingPaths[i];
+            string ext = Path.GetExtension(filePath);
+            if (s_videoExtensions.Contains(ext))
             {
-                uploadedIds.Add(uploadedFbid);
+                string? videoId = await _manager.CometClient
+                    .UploadVideoAsync(session, filePath, ct)
+                    .ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(videoId))
+                {
+                    uploadedVideoIds.Add(videoId);
+                }
+            }
+            else
+            {
+                string? uploadedFbid = await _manager.CometClient
+                    .UploadUfiPhotoAsync(session, filePath, ct)
+                    .ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(uploadedFbid))
+                {
+                    uploadedPhotoIds.Add(uploadedFbid);
+                }
             }
         }
 
-        return uploadedIds.Count > 0 ? uploadedIds : null;
+        return (
+            uploadedPhotoIds.Count > 0 ? uploadedPhotoIds : null,
+            uploadedVideoIds.Count > 0 ? uploadedVideoIds : null);
     }
 
     private async Task<List<SavedTargetGroup>> ResolveCampaignTargetGroupsAsync(

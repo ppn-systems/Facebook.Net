@@ -177,6 +177,8 @@ public sealed partial class UiCoreAndViewModelsTests : IDisposable
         CollectTools<GroupTools>(registeredMcpTools);
         CollectTools<PublisherTools>(registeredMcpTools);
         CollectTools<SalesLeadsTools>(registeredMcpTools);
+        CollectTools<FriendshipTools>(registeredMcpTools);
+        CollectTools<EngagementTools>(registeredMcpTools);
         CollectTools<SystemSettingsTools>(registeredMcpTools);
         CollectTools<AiMemoryTools>(registeredMcpTools);
 
@@ -184,14 +186,21 @@ public sealed partial class UiCoreAndViewModelsTests : IDisposable
 
         string analyzePromptText = ((TextContentBlock)Prompts.AnalyzeGroupLeads("test").Messages[0].Content).Text;
         string composePromptText = ((TextContentBlock)Prompts.ComposeSpintaxCampaign("test").Messages[0].Content).Text;
+        string hijackPromptText = ((TextContentBlock)Prompts.CompetitorPostHijack("123").Messages[0].Content).Text;
+        string warmupPromptText = ((TextContentBlock)Prompts.AccountWarmupRoutine("10001").Messages[0].Content).Text;
+        string autoJoinPromptText = ((TextContentBlock)Prompts.AutoJoinGroupsWithAnswers("bds").Messages[0].Content).Text;
 
         string[] promptSources =
         [
             AppConfig.DefaultAiSystemPrompt,
             Resources.Overview(),
             Resources.SalesAgentGuide(),
+            Resources.AntiCheckpointPlaybook(),
             analyzePromptText,
-            composePromptText
+            composePromptText,
+            hijackPromptText,
+            warmupPromptText,
+            autoJoinPromptText
         ];
 
         Regex toolRegex = FbToolNameRegex();

@@ -769,4 +769,143 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             directory_path = targetDir
         });
     }
+
+    [McpServerTool(Name = "fb_get_account_safety_quota")]
+    [Description("Evaluate anti-checkpoint safety and rate-limit quotas across all stored Facebook accounts (or a specific accountUid) based on recent action history (posts, comments, bumps, group joins, friend requests in the last 1h and 24h) and recommend the safest account for the next batch campaign.")]
+    public async Task<string> GetAccountSafetyQuotaAsync(
+        [Description("Optional target Facebook account UID (if omitted, evaluates all accounts in the vault)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        IReadOnlyList<AccountProfile> allAccounts = await _manager.AccountStore.GetAllAccountsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<ActionHistoryEntry> recentActions = await _manager.AccountStore.GetRecentActionsAsync(2000, ct).ConfigureAwait(false);
+
+        DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
+        DateTimeOffset oneHourAgo = nowUtc.AddHours(-1);
+        DateTimeOffset twentyFourHoursAgo = nowUtc.AddHours(-24);
+
+        List<AccountProfile> selectedAccounts = string.IsNullOrWhiteSpace(accountUid)
+            ? allAccounts.ToList()
+            : allAccounts.Where(a => string.Equals(a.Uid, accountUid.Trim(), StringComparison.Ordinal)).ToList();
+
+        List<object> evaluations = [];
+        string? recommendedSafestUid = null;
+        int lowestHeatScore = int.MaxValue;
+
+        for (int i = 0; i < selectedAccounts.Count; i++)
+        {
+            AccountProfile acc = selectedAccounts[i];
+            int posts1h = 0, posts24h = 0;
+            int comments1h = 0, comments24h = 0;
+            int joins1h = 0, joins24h = 0;
+            int friendReqs1h = 0, friendReqs24h = 0;
+            DateTimeOffset? lastActionAt = null;
+
+            for (int a = 0; a < recentActions.Count; a++)
+            {
+                ActionHistoryEntry entry = recentActions[a];
+                if (!string.Equals(entry.AccountUid, acc.Uid, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!lastActionAt.HasValue || entry.ExecutedAt > lastActionAt.Value)
+                {
+                    lastActionAt = entry.ExecutedAt;
+                }
+
+                if (entry.ExecutedAt < twentyFourHoursAgo)
+                {
+                    continue;
+                }
+
+                bool inLastHour = entry.ExecutedAt >= oneHourAgo;
+                if (string.Equals(entry.ActionKind, "POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    posts24h++;
+                    if (inLastHour)
+                    {
+                        posts1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, "COMMENT", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(entry.ActionKind, "BUMP_COMMENT", StringComparison.OrdinalIgnoreCase))
+                {
+                    comments24h++;
+                    if (inLastHour)
+                    {
+                        comments1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, DomainActionKinds.JoinGroup, StringComparison.OrdinalIgnoreCase))
+                {
+                    joins24h++;
+                    if (inLastHour)
+                    {
+                        joins1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, "FRIEND_REQUEST", StringComparison.OrdinalIgnoreCase))
+                {
+                    friendReqs24h++;
+                    if (inLastHour)
+                    {
+                        friendReqs1h++;
+                    }
+                }
+            }
+
+            int heatScore = (posts1h * 6) + (comments1h * 4) + (joins1h * 5) + (friendReqs1h * 3)
+                          + (posts24h * 2) + comments24h + (joins24h * 2) + friendReqs24h;
+
+            string safetyState = acc.Status is AccountStatus.Checkpoint or AccountStatus.Disabled or AccountStatus.CookieExpired
+                ? "UNAVAILABLE"
+                : heatScore >= 80 || posts1h >= 12 || comments1h >= 20
+                    ? "COOLDOWN_RECOMMENDED"
+                    : heatScore >= 35 || posts1h >= 6 || comments1h >= 10
+                        ? "MODERATE"
+                        : "SAFE";
+
+            if (safetyState is "SAFE" or "MODERATE" && heatScore < lowestHeatScore)
+            {
+                lowestHeatScore = heatScore;
+                recommendedSafestUid = acc.Uid;
+            }
+
+            evaluations.Add(new
+            {
+                uid = acc.Uid,
+                display_name = acc.DisplayName,
+                account_status = acc.Status.ToString(),
+                is_active = string.Equals(acc.Uid, _manager.ActiveAccountUid, StringComparison.Ordinal),
+                safety_state = safetyState,
+                heat_score = heatScore,
+                last_action_at = lastActionAt?.ToString("o"),
+                last_1h = new
+                {
+                    posts = posts1h,
+                    comments_and_bumps = comments1h,
+                    group_joins = joins1h,
+                    friend_requests = friendReqs1h
+                },
+                last_24h = new
+                {
+                    posts = posts24h,
+                    comments_and_bumps = comments24h,
+                    group_joins = joins24h,
+                    friend_requests = friendReqs24h
+                }
+            });
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            active_account_uid = _manager.ActiveAccountUid,
+            recommended_safest_account_uid = recommendedSafestUid,
+            accounts_evaluated = evaluations.Count,
+            quotas = evaluations
+        });
+    }
 }

@@ -7,6 +7,7 @@ using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Meta.UI.Core.Audit;
+using Meta.UI.Core.Exports;
 using Meta.UI.Core.Leads;
 using ModelContextProtocol.Server;
 
@@ -251,7 +252,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
     }
 
     [McpServerTool(Name = "fb_auto_comment_leads_batch")]
-    [Description("Find uncommented ('pending') scraped customer leads matching filter criteria (keywords, phone presence, minimum buyer-intent score) and automatically post personalized Spintax sales comments ('{author_name}', '{group_name}', '{date}', '{time}', '{random_id}') with duplicate-comment protection and anti-checkpoint delay.")]
+    [Description("Find uncommented ('pending') scraped customer leads matching filter criteria (keywords, phone presence, minimum buyer-intent score) and automatically post personalized Spintax sales comments ('{author_name}', '{group_name}', '{date}', '{time}', '{random_id}') with duplicate-comment protection, multi-account rotation ('accountUidsCsv'), and anti-checkpoint delay.")]
     public async Task<string> AutoCommentLeadsBatchAsync(
         [Description("Spintax sales comment template (supports {author_name}, {group_name}, {date}, {time}, {random_id})")] string commentSpintax,
         [Description("Optional comma-separated keywords to filter leads")] string? keywords = null,
@@ -262,11 +263,17 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         [Description("Automatically react (Like/Love) to each post before commenting (default true)")] bool autoReactFirst = true,
         [Description("Optional local image file path to upload and attach to comments")] string? mediaFilePath = null,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        [Description("Optional comma-separated Facebook account UIDs (or 'all') to rotate across leads in round-robin fashion for anti-checkpoint load balancing")] string? accountUidsCsv = null,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(commentSpintax);
-        (AccountProfile account, IBrowserSession session) = await _manager
-            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+
+        IReadOnlyList<string> rotationUids = await _manager
+            .ResolveRotationAccountUidsAsync(accountUidsCsv, accountUid, ct)
+            .ConfigureAwait(false);
+
+        (AccountProfile primaryAccount, IBrowserSession primarySession) = await _manager
+            .AcquireBrowserSessionAsync(rotationUids[0], forceVisible: false, ct)
             .ConfigureAwait(false);
 
         HashSet<string> commentedPostIds = await this.GetCommentedPostIdsAsync(ct).ConfigureAwait(false);
@@ -311,19 +318,21 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         int cap = Math.Clamp(maxLeadsToComment, 1, 25);
         int delaySec = Math.Clamp(delaySeconds, 2, 120);
 
-        string? attachmentFbid = null;
-        if (!string.IsNullOrWhiteSpace(mediaFilePath) && File.Exists(mediaFilePath.Trim()))
-        {
-            attachmentFbid = await _manager.CometClient
-                .UploadUfiPhotoAsync(session, mediaFilePath.Trim(), ct)
-                .ConfigureAwait(false);
-        }
+        Dictionary<string, string?> attachmentByUid = new(StringComparer.Ordinal);
+        string? cleanMediaPath = !string.IsNullOrWhiteSpace(mediaFilePath) && File.Exists(mediaFilePath.Trim())
+            ? mediaFilePath.Trim()
+            : null;
 
         List<object> commentedResults = [];
         for (int i = 0; i < candidates.Count && commentedResults.Count < cap; i++)
         {
             ct.ThrowIfCancellationRequested();
             PostSummary lead = candidates[i].Post;
+
+            string currentUid = rotationUids[commentedResults.Count % rotationUids.Count];
+            (AccountProfile account, IBrowserSession session) = string.Equals(currentUid, primaryAccount.Uid, StringComparison.Ordinal)
+                ? (primaryAccount, primarySession)
+                : await _manager.AcquireBrowserSessionAsync(currentUid, forceVisible: false, ct).ConfigureAwait(false);
 
             bool alreadyDone = await _manager.AccountStore
                 .HasExecutedActionAsync(session.AccountUid, "COMMENT", lead.PostId, ct)
@@ -342,6 +351,18 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             {
                 ReactionKind reaction = Random.Shared.NextDouble() < 0.75 ? ReactionKind.Like : ReactionKind.Love;
                 _ = await _manager.CometClient.ReactToPostAsync(session, lead.PostId, reaction, ct).ConfigureAwait(false);
+            }
+
+            string? attachmentFbid = null;
+            if (cleanMediaPath is not null)
+            {
+                if (!attachmentByUid.TryGetValue(account.Uid, out attachmentFbid))
+                {
+                    attachmentFbid = await _manager.CometClient
+                        .UploadUfiPhotoAsync(session, cleanMediaPath, ct)
+                        .ConfigureAwait(false);
+                    attachmentByUid[account.Uid] = attachmentFbid;
+                }
             }
 
             string personalizedComment = _manager.CampaignPublisher.ResolveDynamicVariables(
@@ -363,6 +384,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 {
                     post_id = lead.PostId,
                     comment_id = commentId,
+                    account_uid = account.Uid,
                     author_name = lead.AuthorName,
                     group_name = lead.GroupName,
                     buyer_intent_score = candidates[i].Score,
@@ -374,15 +396,16 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         _ = await _manager.LogAuditAsync(
             AuditCategory.SalesComment,
             AuditSeverity.Success,
-            account,
+            primaryAccount,
             "Auto Comment Leads Batch",
-            $"MCP auto-commented on {commentedResults.Count} high-intent leads.",
+            $"MCP auto-commented on {commentedResults.Count} high-intent leads across {rotationUids.Count} account(s).",
             ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
         {
             status = "success",
-            account_uid = account.Uid,
+            account_uid = primaryAccount.Uid,
+            accounts_rotated = rotationUids,
             matched_pending_leads = candidates.Count,
             commented_count = commentedResults.Count,
             commented_leads = commentedResults
@@ -1205,6 +1228,197 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             post,
             reactors,
             commenters
+        });
+    }
+
+    [McpServerTool(Name = "fb_get_post_commenters")]
+    [Description("Scrape users who commented on a specific Facebook post ('CommentsListComponentsPaginationQuery') — ideal for competitor post hijacking or checking customer replies on your own published posts.")]
+    public async Task<string> GetPostCommentersAsync(
+        [Description("Target Facebook Post ID")] string postId,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanId = postId.Trim();
+        PagedResult<UserSummary> commenters = await _manager.CometClient
+            .GetPostCommentersAsync(session, cleanId, ct: ct)
+            .ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            post_id = cleanId,
+            count = commenters.Items.Count,
+            has_next_page = commenters.HasNextPage,
+            commenters = commenters.Items.Select(u => new
+            {
+                uid = u.Uid,
+                name = u.Name,
+                avatar_uri = u.AvatarUri,
+                friendship_state = u.Friendship.ToString()
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_get_post_reactors")]
+    [Description("Scrape users who reacted to a specific Facebook post ('CometUFIReactionsDialogTabContentRefetchQuery') to build a warm audience for friend requests or outreach.")]
+    public async Task<string> GetPostReactorsAsync(
+        [Description("Target Facebook Post ID")] string postId,
+        [Description("Maximum number of reactors to fetch (1..100, default 30)")] int count = 30,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanId = postId.Trim();
+        PagedResult<UserSummary> reactors = await _manager.CometClient
+            .GetPostReactorsAsync(session, cleanId, count: Math.Clamp(count, 1, 100), ct: ct)
+            .ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            post_id = cleanId,
+            count = reactors.Items.Count,
+            has_next_page = reactors.HasNextPage,
+            reactors = reactors.Items.Select(u => new
+            {
+                uid = u.Uid,
+                name = u.Name,
+                avatar_uri = u.AvatarUri,
+                friendship_state = u.Friendship.ToString()
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_export_leads_csv")]
+    [Description("Export filtered scraped customer leads (with extracted Vietnamese phone numbers, buyer-intent score, CRM tags, notes, and permalink) to a UTF-8 with BOM CSV file compatible with Microsoft Excel and external CRMs.")]
+    public async Task<string> ExportLeadsCsvAsync(
+        [Description("Optional output file path (.csv). If omitted, saves to the user's Desktop as 'Facebook_Leads_YYYYMMDD_HHmmss.csv'.")] string? outputFilePath = null,
+        [Description("Optional comma-separated keywords to filter and score buyer intent")] string? keywords = null,
+        [Description("If true, only export leads containing extracted Vietnamese phone numbers (default false)")] bool onlyWithPhone = false,
+        [Description("Minimum buyer-intent score (0..100, default 0)")] int minIntentScore = 0,
+        [Description("Optional customer/lead color tag ID or name filter")] string? leadTagIdOrName = null,
+        [Description("Maximum number of leads to export (1..2000, default 500)")] int limit = 500,
+        CancellationToken ct = default)
+    {
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        HashSet<string> commentedPostIds = await this.GetCommentedPostIdsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<GroupTag> leadTags = await _manager.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(false);
+        Dictionary<string, string> tagNameById = new(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < leadTags.Count; i++)
+        {
+            tagNameById[leadTags[i].Id] = leadTags[i].Name;
+        }
+
+        string? effectiveLeadTagId = null;
+        if (!string.IsNullOrWhiteSpace(leadTagIdOrName))
+        {
+            string cleanTag = leadTagIdOrName.Trim();
+            string normTag = _manager.LeadScoring.RemoveVietnameseDiacritics(cleanTag);
+            GroupTag? matchedTag = leadTags.FirstOrDefault(t =>
+                string.Equals(t.Id, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t.Name, cleanTag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_manager.LeadScoring.RemoveVietnameseDiacritics(t.Name), normTag, StringComparison.OrdinalIgnoreCase));
+            effectiveLeadTagId = matchedTag?.Id ?? cleanTag;
+        }
+
+        string[] kwArray = string.IsNullOrWhiteSpace(keywords)
+            ? []
+            : keywords.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        IReadOnlyList<PostSummary> dbPosts = await _manager.AccountStore
+            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 2000, ct: ct)
+            .ConfigureAwait(false);
+
+        int cap = Math.Clamp(limit, 1, 2000);
+        List<LeadCsvExportRow> rows = [];
+
+        for (int i = 0; i < dbPosts.Count && rows.Count < cap; i++)
+        {
+            PostSummary post = dbPosts[i];
+            if (!string.IsNullOrWhiteSpace(effectiveLeadTagId) && !post.HasTag(effectiveLeadTagId))
+            {
+                continue;
+            }
+
+            if (kwArray.Length > 0 && !_manager.LeadScoring.MatchesPostOrAuthorKeywords(post, kwArray))
+            {
+                continue;
+            }
+
+            IReadOnlyList<string> phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(post.MessageText);
+            if (onlyWithPhone && phones.Count == 0)
+            {
+                continue;
+            }
+
+            int score = _manager.LeadScoring.CalculateBuyerIntentScore(post.MessageText, keywords);
+            if (minIntentScore > 0 && score < minIntentScore)
+            {
+                continue;
+            }
+
+            IReadOnlyList<string> rawTagIds = post.GetTagIds();
+            List<string> tagNames = new(rawTagIds.Count);
+            for (int t = 0; t < rawTagIds.Count; t++)
+            {
+                tagNames.Add(tagNameById.TryGetValue(rawTagIds[t], out string? tName) ? tName : rawTagIds[t]);
+            }
+
+            string statusText = commentedPostIds.Contains(post.PostId) ? "Commented" : "Pending";
+            rows.Add(new LeadCsvExportRow(post, phones, score, statusText, tagNames));
+        }
+
+        rows.Sort(static (a, b) => b.BuyerIntentScore.CompareTo(a.BuyerIntentScore));
+
+        string resolvedPath;
+        if (!string.IsNullOrWhiteSpace(outputFilePath))
+        {
+            resolvedPath = Path.GetFullPath(outputFilePath.Trim());
+        }
+        else
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string baseDir = !string.IsNullOrWhiteSpace(desktop) && Directory.Exists(desktop)
+                ? desktop
+                : _manager.DataDirectory;
+            resolvedPath = Path.Combine(baseDir, $"Facebook_Leads_{DateTimeOffset.Now:yyyyMMdd_HHmmss}.csv");
+        }
+
+        string? parentDir = Path.GetDirectoryName(resolvedPath);
+        if (!string.IsNullOrWhiteSpace(parentDir))
+        {
+            _ = Directory.CreateDirectory(parentDir);
+        }
+
+        int exportedCount = await _manager.CsvExport
+            .ExportLeadsToCsvAsync(resolvedPath, rows, ct)
+            .ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            Path.GetFileName(resolvedPath),
+            $"MCP exported {exportedCount} customer lead(s) to CSV '{resolvedPath}'.",
+            ct: ct).ConfigureAwait(false);
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "success",
+            exported_count = exportedCount,
+            file_path = resolvedPath
         });
     }
 

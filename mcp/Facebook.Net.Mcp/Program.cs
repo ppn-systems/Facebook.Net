@@ -63,6 +63,8 @@ public static class Program
             .WithTools<GroupTools>()
             .WithTools<PublisherTools>()
             .WithTools<SalesLeadsTools>()
+            .WithTools<FriendshipTools>()
+            .WithTools<EngagementTools>()
             .WithTools<SystemSettingsTools>()
             .WithTools<AiMemoryTools>()
             .WithStdioServerTransport();
