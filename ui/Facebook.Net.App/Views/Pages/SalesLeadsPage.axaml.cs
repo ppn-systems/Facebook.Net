@@ -107,8 +107,8 @@ public sealed partial class SalesLeadsPage : UserControl
         // 1. Page Title + Quick Action Bar
         Grid topHeaderBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 12,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -119,6 +119,19 @@ public sealed partial class SalesLeadsPage : UserControl
             out TextBlock titleTb,
             out TextBlock descTb);
 
+        Button exportCsvBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnExportCsv"],
+            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
+            {
+                string? savePath = await this.PickSaveCsvFileAsync(this._i18n["Leads.BtnExportCsv"]).ConfigureAwait(true);
+                if (!string.IsNullOrWhiteSpace(savePath))
+                {
+                    await this._vm.ExportFilteredLeadsToCsvAsync(savePath).ConfigureAwait(true);
+                }
+            }),
+            VectorIcons.Clipboard);
+
         Button scrapeNowBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n["Leads.BtnScanPosts"],
@@ -126,8 +139,10 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Sync);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(scrapeNowBtn, 1);
+        Grid.SetColumn(exportCsvBtn, 1);
+        Grid.SetColumn(scrapeNowBtn, 2);
         topHeaderBar.Children.Add(header);
+        topHeaderBar.Children.Add(exportCsvBtn);
         topHeaderBar.Children.Add(scrapeNowBtn);
         Grid.SetRow(topHeaderBar, 0);
         tabGrid.Children.Add(topHeaderBar);
@@ -273,8 +288,23 @@ public sealed partial class SalesLeadsPage : UserControl
             this._vm.SetLeadCustomerTagFilters,
             allowMultiple: true);
 
+        FilterCategoryDefinition sortCategory = new(
+            "sort",
+            this._i18n["Leads.FilterCatSort"],
+            VectorIcons.History,
+            () =>
+            [
+                new FilterOptionItem("intent_desc", this._i18n["Leads.SortIntentDesc"]),
+                new FilterOptionItem("newest_first", this._i18n["Leads.SortNewestFirst"]),
+                new FilterOptionItem("engagement_desc", this._i18n["Leads.SortEngagementDesc"]),
+                new FilterOptionItem("uncommented_first", this._i18n["Leads.SortUncommentedFirst"])
+            ],
+            selectedIds => this._vm.SetLeadSortOrder(selectedIds.Count > 0 ? selectedIds[0] : null),
+            allowMultiple: false);
+
         searchFilterBar.SetFilterCategories(
             [
+                sortCategory,
                 statusCategory,
                 intentCategory,
                 competitionCategory,
@@ -401,7 +431,8 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.SalesComment);
         quickReplyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        Button copyPhoneBtn = AppButton.CreateSecondary(
+        Button copyPhoneBtn = null!;
+        copyPhoneBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnCopyPhone"],
             new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
@@ -410,11 +441,19 @@ public sealed partial class SalesLeadsPage : UserControl
                 if (!string.IsNullOrWhiteSpace(primaryPhone) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
                 {
                     await clipboard.SetTextAsync(primaryPhone).ConfigureAwait(true);
+                    AppButton.SetText(copyPhoneBtn, $"{this._i18n["Leads.PhoneCopiedShort"]}: {primaryPhone}");
                 }
             }),
             VectorIcons.Clipboard);
         copyPhoneBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
         copyPhoneBtn.IsVisible = false;
+
+        Button markContactedBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnMarkContacted"],
+            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(() => this._vm.ToggleLeadContactedStatusAsync(this._vm.SelectedScrapedPost)),
+            VectorIcons.CheckCircle);
+        markContactedBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         Button inspectOpenBrowserBtn = AppButton.CreateSecondary(
             this._theme,
@@ -426,6 +465,7 @@ public sealed partial class SalesLeadsPage : UserControl
         detailBtnStack.Children.Add(askAiConsultBtn);
         detailBtnStack.Children.Add(quickReplyBtn);
         detailBtnStack.Children.Add(copyPhoneBtn);
+        detailBtnStack.Children.Add(markContactedBtn);
         detailBtnStack.Children.Add(inspectOpenBrowserBtn);
         Grid.SetRow(detailBtnStack, 2);
         detailCardGrid.Children.Add(detailBtnStack);
@@ -514,6 +554,9 @@ public sealed partial class SalesLeadsPage : UserControl
 
             // Status, Intent & Engagement Pill Wrap Row
             bool commented = this._vm.IsPostCommented(post.PostId);
+            AppButton.SetText(
+                markContactedBtn,
+                commented ? this._i18n["Leads.BtnMarkPending"] : this._i18n["Leads.BtnMarkContacted"]);
             Border statusPill = StatusPill.Create(
                 this._theme,
                 commented ? this._i18n["Leads.StatusCommented"] : this._i18n["Leads.StatusPending"],
@@ -589,12 +632,19 @@ public sealed partial class SalesLeadsPage : UserControl
                 height: 54);
             notesBox.FontSize = 11.5;
 
+            StackPanel notesField = FormField.CreateLabeled(
+                this._theme,
+                this._i18n["Leads.NotesLabel"],
+                notesBox,
+                out TextBlock notesLabelTb);
+
             async Task CommitNotesAsync()
             {
                 string updatedNotes = (notesBox.Text ?? string.Empty).Trim();
                 if (!string.Equals(post.Notes, updatedNotes, StringComparison.Ordinal))
                 {
                     await this._vm.UpdateLeadPostNotesAsync(post, updatedNotes).ConfigureAwait(true);
+                    notesLabelTb.Text = $"{this._i18n["Leads.NotesLabel"]}  ({this._i18n["Leads.NotesSavedHint"]})";
                 }
             }
 
@@ -608,11 +658,6 @@ public sealed partial class SalesLeadsPage : UserControl
                 }
             };
 
-            StackPanel notesField = FormField.CreateLabeled(
-                this._theme,
-                this._i18n["Leads.NotesLabel"],
-                notesBox,
-                out _);
             contentStack.Children.Add(notesField);
 
             // Large Media Preview (if post has photo or video)
@@ -726,11 +771,13 @@ public sealed partial class SalesLeadsPage : UserControl
         {
             titleTb.Text = this._i18n["Leads.Header"];
             descTb.Text = this._i18n["Leads.Desc"];
+            AppButton.SetText(exportCsvBtn, this._i18n["Leads.BtnExportCsv"]);
             AppButton.SetText(scrapeNowBtn, this._i18n["Leads.BtnScanPosts"]);
             detailCardTitleTb.Text = this._i18n["Leads.DetailCardTitle"];
             AppButton.SetText(askAiConsultBtn, this._i18n["Leads.BtnAskAiConsult"]);
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
+            sortCategory.Title = this._i18n["Leads.FilterCatSort"];
             statusCategory.Title = this._i18n["Leads.ColStatus"];
             intentCategory.Title = this._i18n["Leads.FilterCatIntent"];
             competitionCategory.Title = this._i18n["Leads.FilterCatCompetition"];
@@ -774,5 +821,30 @@ public sealed partial class SalesLeadsPage : UserControl
         }).ConfigureAwait(true);
 
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
+    private async Task<string?> PickSaveCsvFileAsync(string title)
+    {
+        IStorageProvider? storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null)
+        {
+            return null;
+        }
+
+        IStorageFile? file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            DefaultExtension = "csv",
+            SuggestedFileName = $"facebook_leads_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("CSV Files (*.csv)")
+                {
+                    Patterns = ["*.csv"]
+                }
+            ]
+        }).ConfigureAwait(true);
+
+        return file?.TryGetLocalPath();
     }
 }

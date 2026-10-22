@@ -111,6 +111,10 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactPublishedPost { get; set; } = true;
 
+    /// <summary>Gets or sets the live campaign progress text displayed during multi-group publishing or reposting.</summary>
+    [ObservableProperty]
+    public partial string CampaignProgressText { get; set; } = string.Empty;
+
     private readonly List<string> _recentPublishedPostIds = new();
 
     private string _lastDefaultPostSpintax = string.Empty;
@@ -241,6 +245,33 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             _context.Localization["Publisher.TemplatesTitle"],
             _context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Updates an existing <see cref="CampaignTemplate"/> title and Spintax content in-place and persists it to SQLite.
+    /// </summary>
+    public async Task UpdateTemplateContentAsync(CampaignTemplate template, string newTitle, string newSpintaxContent)
+    {
+        if (template is null || string.IsNullOrWhiteSpace(newSpintaxContent))
+        {
+            return;
+        }
+
+        string resolvedTitle = string.IsNullOrWhiteSpace(newTitle) ? template.Title : newTitle.Trim();
+        CampaignTemplate updated = template with
+        {
+            Title = resolvedTitle,
+            SpintaxContent = newSpintaxContent.Trim()
+        };
+
+        await _context.AccountStore.UpsertCampaignTemplateAsync(updated).ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            _context.Localization["Publisher.TemplatesTitle"],
+            _context.Localization.Format("Log.TemplateSaved", updated.Title)).ConfigureAwait(true);
     }
 
     private async Task<List<string>?> UploadMediaFilesParallelAsync(
@@ -446,6 +477,7 @@ public sealed partial class ShellViewModel
                 }
 
                 SavedTargetGroup group = targets[i];
+                this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Info,
@@ -461,10 +493,9 @@ public sealed partial class ShellViewModel
                     ? postId
                     : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
 
-                successCount++;
-
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
+                    successCount++;
                     _recentPublishedPostIds.Add(postId);
                     if (this.AutoReactPublishedPost)
                     {
@@ -536,6 +567,7 @@ public sealed partial class ShellViewModel
         }
         finally
         {
+            this.CampaignProgressText = string.Empty;
             this.EndTaskScope();
         }
     }
@@ -741,6 +773,7 @@ public sealed partial class ShellViewModel
                 }
 
                 SavedTargetGroup group = targets[i];
+                this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 string groupText = ResolveDynamicCommentVariables(rawSpintax, accountName, group.GroupName);
 
                 _ = await this.LogAuditAsync(
@@ -831,6 +864,7 @@ public sealed partial class ShellViewModel
         }
         finally
         {
+            this.CampaignProgressText = string.Empty;
             this.EndTaskScope();
         }
     }

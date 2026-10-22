@@ -96,6 +96,7 @@ public sealed partial class ShellViewModel
     internal IReadOnlySet<string> CommentedPostIds => _commentedPostIds;
 
     private readonly List<PostSummary> _allScrapedPosts = new();
+    private readonly Dictionary<string, int> _scrapedPostIndex = new(StringComparer.Ordinal);
     private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _leadIntentFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
@@ -105,6 +106,7 @@ public sealed partial class ShellViewModel
     private string? _leadCompetitionFilter;
     private string? _leadTimeRangeFilter;
     private string? _leadMediaFilter;
+    private string? _leadSortOrder;
     private CancellationTokenSource? _backgroundScrapeCts;
     private int _nextScrapeGroupOffset;
 
@@ -228,12 +230,26 @@ public sealed partial class ShellViewModel
         this.RebuildLeadTagIndex();
 
         IReadOnlyList<PostSummary> dbPosts = await _context.AccountStore
-            .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
+            .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 500, ct: ct)
             .ConfigureAwait(true);
 
         _allScrapedPosts.Clear();
         _allScrapedPosts.AddRange(dbPosts);
+        this.RebuildScrapedPostIndex();
         this.FilterCachedPostsFromDb();
+    }
+
+    private void RebuildScrapedPostIndex()
+    {
+        _scrapedPostIndex.Clear();
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        {
+            string postId = _allScrapedPosts[i].PostId;
+            if (!string.IsNullOrWhiteSpace(postId))
+            {
+                _scrapedPostIndex[postId] = i;
+            }
+        }
     }
 
     /// <summary>
@@ -289,6 +305,15 @@ public sealed partial class ShellViewModel
     public void SetLeadMediaFilter(string? filterId)
     {
         _leadMediaFilter = string.IsNullOrWhiteSpace(filterId) ? null : filterId.Trim();
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the lead table sort order (<c>intent_desc</c>, <c>newest_first</c>, <c>engagement_desc</c>, <c>uncommented_first</c>, or <see langword="null"/>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadSortOrder(string? sortId)
+    {
+        _leadSortOrder = string.IsNullOrWhiteSpace(sortId) ? null : sortId.Trim();
         this.FilterCachedPostsFromDb();
     }
 
@@ -494,11 +519,21 @@ public sealed partial class ShellViewModel
 
     private PostSummary GetLatestCachedPost(PostSummary fallback)
     {
-        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        if (!string.IsNullOrWhiteSpace(fallback.PostId))
         {
-            if (string.Equals(_allScrapedPosts[i].PostId, fallback.PostId, StringComparison.Ordinal))
+            if (_scrapedPostIndex.Count == _allScrapedPosts.Count &&
+                _scrapedPostIndex.TryGetValue(fallback.PostId, out int idx) &&
+                idx >= 0 &&
+                idx < _allScrapedPosts.Count &&
+                string.Equals(_allScrapedPosts[idx].PostId, fallback.PostId, StringComparison.Ordinal))
             {
-                return _allScrapedPosts[i];
+                return _allScrapedPosts[idx];
+            }
+
+            this.RebuildScrapedPostIndex();
+            if (_scrapedPostIndex.TryGetValue(fallback.PostId, out int rebuiltIdx))
+            {
+                return _allScrapedPosts[rebuiltIdx];
             }
         }
 
@@ -521,14 +556,141 @@ public sealed partial class ShellViewModel
         _ = this.AiAssistant.RequestLeadAnalysisAndConsultationAsync(post);
     }
 
+    /// <summary>
+    /// Manually toggles a scraped post's Contacted/Commented state so users who reach out via Phone/Zalo/DM can mark the lead as handled.
+    /// </summary>
+    public async Task ToggleLeadContactedStatusAsync(PostSummary? post, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId))
+        {
+            return;
+        }
+
+        bool wasContacted = _commentedPostIds.Contains(post.PostId);
+        if (wasContacted)
+        {
+            _ = _commentedPostIds.Remove(post.PostId);
+        }
+        else
+        {
+            _ = _commentedPostIds.Add(post.PostId);
+            string accountUid = this.SelectedAccount?.Uid ?? "manual";
+            await _context.AccountStore.RecordActionAsync(
+                new ActionHistoryEntry(
+                    accountUid,
+                    "COMMENT",
+                    post.PostId,
+                    "manual_contacted",
+                    DateTimeOffset.UtcNow),
+                ct).ConfigureAwait(true);
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Exports all currently filtered <see cref="ScrapedPosts"/> to a UTF-8 with BOM CSV file for Excel/CRM usage.
+    /// </summary>
+    public async Task ExportFilteredLeadsToCsvAsync(string filePath, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return;
+        }
+
+        static string EscapeCsv(string? val)
+        {
+            if (string.IsNullOrEmpty(val))
+            {
+                return "\"\"";
+            }
+
+            string cleaned = val.Replace("\"", "\"\"", StringComparison.Ordinal)
+                                .Replace('\r', ' ')
+                                .Replace('\n', ' ');
+            return $"\"{cleaned}\"";
+        }
+
+        System.Text.StringBuilder sb = new((this.ScrapedPosts.Count * 160) + 128);
+        _ = sb.AppendLine("CreatedAt,AuthorName,PhoneNumbers,GroupName,IntentScore,Status,Tags,Notes,MessageText,PermalinkUrl");
+
+        for (int i = 0; i < this.ScrapedPosts.Count; i++)
+        {
+            PostSummary p = this.ScrapedPosts[i];
+            string createdStr = p.CreatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            string phonesStr = string.Join(" | ", this.ExtractAllPostPhoneNumbers(p));
+            int score = CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
+            string statusStr = this.IsPostCommented(p.PostId)
+                ? _context.Localization["Leads.StatusCommented"]
+                : _context.Localization["Leads.StatusPending"];
+
+            IReadOnlyList<GroupTag> tags = this.ResolveLeadTags(p);
+            List<string> tagNames = new(tags.Count);
+            for (int t = 0; t < tags.Count; t++)
+            {
+                tagNames.Add(tags[t].Name);
+            }
+
+            string tagsStr = string.Join(" | ", tagNames);
+
+            _ = sb.Append(EscapeCsv(createdStr)).Append(',')
+                  .Append(EscapeCsv(p.AuthorName)).Append(',')
+                  .Append(EscapeCsv(phonesStr)).Append(',')
+                  .Append(EscapeCsv(p.GroupName)).Append(',')
+                  .Append(score.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                  .Append(EscapeCsv(statusStr)).Append(',')
+                  .Append(EscapeCsv(tagsStr)).Append(',')
+                  .Append(EscapeCsv(p.Notes)).Append(',')
+                  .Append(EscapeCsv(p.MessageText)).Append(',')
+                  .AppendLine(EscapeCsv(p.PermalinkUrl));
+        }
+
+        await File.WriteAllTextAsync(filePath, sb.ToString(), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true), ct).ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.Scrape"],
+            _context.Localization.Format("Log.LeadsExportedCsv", this.ScrapedPosts.Count, Path.GetFileName(filePath))).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Generates a live resolved preview of <see cref="SalesCommentSpintaxText"/> using <see cref="SelectedScrapedPost"/> context.
+    /// </summary>
+    public string GenerateSalesCommentPreview()
+    {
+        PostSummary? post = this.SelectedScrapedPost;
+        string sampleAuthor = !string.IsNullOrWhiteSpace(post?.AuthorName)
+            ? post.AuthorName
+            : _context.Localization["Leads.DefaultAuthor"];
+        string sampleGroup = !string.IsNullOrWhiteSpace(post?.GroupName)
+            ? post.GroupName
+            : _context.Localization["Audit.Cat.Group"];
+
+        string resolvedVars = ResolveDynamicCommentVariables(this.SalesCommentSpintaxText, sampleAuthor, sampleGroup);
+        string spun = PayloadBuilder.SpinText(resolvedVars);
+        return $"{_context.Localization["Leads.CommentPreviewPrefix"]} {spun}";
+    }
+
     private void ReplaceScrapedPostInPlace(PostSummary updatedPost)
     {
-        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        if (!string.IsNullOrWhiteSpace(updatedPost.PostId))
         {
-            if (string.Equals(_allScrapedPosts[i].PostId, updatedPost.PostId, StringComparison.Ordinal))
+            if (_scrapedPostIndex.Count == _allScrapedPosts.Count &&
+                _scrapedPostIndex.TryGetValue(updatedPost.PostId, out int fastIdx) &&
+                fastIdx >= 0 &&
+                fastIdx < _allScrapedPosts.Count &&
+                string.Equals(_allScrapedPosts[fastIdx].PostId, updatedPost.PostId, StringComparison.Ordinal))
             {
-                _allScrapedPosts[i] = updatedPost;
-                break;
+                _allScrapedPosts[fastIdx] = updatedPost;
+            }
+            else
+            {
+                this.RebuildScrapedPostIndex();
+                if (_scrapedPostIndex.TryGetValue(updatedPost.PostId, out int rebuiltIdx))
+                {
+                    _allScrapedPosts[rebuiltIdx] = updatedPost;
+                }
             }
         }
 
@@ -806,24 +968,63 @@ public sealed partial class ShellViewModel
             }
         }
 
-        if (keywords.Length > 0 && matched.Count > 1)
+        if (matched.Count > 1)
         {
-            (PostSummary Post, int Score)[] scored = new (PostSummary Post, int Score)[matched.Count];
-            for (int i = 0; i < matched.Count; i++)
+            if (string.Equals(_leadSortOrder, "newest_first", StringComparison.OrdinalIgnoreCase))
             {
-                PostSummary p = matched[i];
-                scored[i] = (p, _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords));
+                matched.Sort(static (a, b) => Nullable.Compare(b.CreatedAt, a.CreatedAt));
             }
-
-            Array.Sort(scored, static (a, b) => b.Score.CompareTo(a.Score));
-            for (int i = 0; i < scored.Length; i++)
+            else if (string.Equals(_leadSortOrder, "engagement_desc", StringComparison.OrdinalIgnoreCase))
             {
-                matched[i] = scored[i].Post;
+                matched.Sort(static (a, b) => (b.ReactionCount + (b.CommentCount * 2)).CompareTo(a.ReactionCount + (a.CommentCount * 2)));
+            }
+            else if (string.Equals(_leadSortOrder, "uncommented_first", StringComparison.OrdinalIgnoreCase))
+            {
+                matched.Sort((a, b) =>
+                {
+                    bool aDone = this.IsPostCommented(a.PostId);
+                    bool bDone = this.IsPostCommented(b.PostId);
+                    int cmp = aDone.CompareTo(bDone);
+                    return cmp != 0 ? cmp : Nullable.Compare(b.CreatedAt, a.CreatedAt);
+                });
+            }
+            else if (keywords.Length > 0 || string.Equals(_leadSortOrder, "intent_desc", StringComparison.OrdinalIgnoreCase))
+            {
+                (PostSummary Post, int Score)[] scored = new (PostSummary Post, int Score)[matched.Count];
+                for (int i = 0; i < matched.Count; i++)
+                {
+                    PostSummary p = matched[i];
+                    scored[i] = (p, _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords));
+                }
+
+                Array.Sort(scored, static (a, b) => b.Score.CompareTo(a.Score));
+                for (int i = 0; i < scored.Length; i++)
+                {
+                    matched[i] = scored[i].Post;
+                }
             }
         }
 
+        string? previousSelectedId = this.SelectedScrapedPost?.PostId;
         this.ScrapedPosts.ReplaceAll(matched);
-        this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        if (!string.IsNullOrWhiteSpace(previousSelectedId))
+        {
+            PostSummary? preserved = null;
+            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            {
+                if (string.Equals(this.ScrapedPosts[i].PostId, previousSelectedId, StringComparison.Ordinal))
+                {
+                    preserved = this.ScrapedPosts[i];
+                    break;
+                }
+            }
+
+            this.SelectedScrapedPost = preserved ?? (this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null);
+        }
+        else
+        {
+            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        }
     }
 
     private void SyncBackgroundScraperLoop()
@@ -1037,8 +1238,10 @@ public sealed partial class ShellViewModel
                     for (int i = chunkCollected.Count - 1; i >= 0; i--)
                     {
                         PostSummary incoming = chunkCollected[i];
-                        int existingIdx = _allScrapedPosts.FindIndex(p => string.Equals(p.PostId, incoming.PostId, StringComparison.Ordinal));
-                        if (existingIdx >= 0)
+                        if (_scrapedPostIndex.TryGetValue(incoming.PostId, out int existingIdx) &&
+                            existingIdx >= 0 &&
+                            existingIdx < _allScrapedPosts.Count &&
+                            string.Equals(_allScrapedPosts[existingIdx].PostId, incoming.PostId, StringComparison.Ordinal))
                         {
                             _allScrapedPosts[existingIdx] = incoming;
                         }
@@ -1048,6 +1251,7 @@ public sealed partial class ShellViewModel
                         }
                     }
 
+                    this.RebuildScrapedPostIndex();
                     this.FilterCachedPostsFromDb();
                 }
             }

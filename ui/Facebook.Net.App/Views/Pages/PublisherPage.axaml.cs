@@ -344,9 +344,23 @@ public sealed partial class PublisherPage : UserControl
         previewInnerGrid.Children.Add(clearPhotoBtn);
         photoPreviewContainer.Child = previewInnerGrid;
 
+        static void DisposeStripBitmaps(Panel strip)
+        {
+            for (int i = 0; i < strip.Children.Count; i++)
+            {
+                if (strip.Children[i] is Border { Child: Image img } && img.Source is IDisposable disp)
+                {
+                    img.Source = null;
+                    disp.Dispose();
+                }
+            }
+
+            strip.Children.Clear();
+        }
+
         void RefreshPhotoPreview()
         {
-            thumbnailStrip.Children.Clear();
+            DisposeStripBitmaps(thumbnailStrip);
             List<string> files = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
             if (files.Count > 0)
             {
@@ -376,6 +390,16 @@ public sealed partial class PublisherPage : UserControl
                     {
                         // Ignore unreadable bitmap
                     }
+                }
+
+                if (files.Count > maxThumbs)
+                {
+                    Border overflowBadge = StatusPill.Create(
+                        this._theme,
+                        this._i18n.Format("Publisher.PhotosOverflowBadge", files.Count - maxThumbs),
+                        AuditSeverity.Info);
+                    overflowBadge.VerticalAlignment = VerticalAlignment.Center;
+                    thumbnailStrip.Children.Add(overflowBadge);
                 }
 
                 if (validBitmaps > 0)
@@ -521,12 +545,14 @@ public sealed partial class PublisherPage : UserControl
                 }
             }
 
-            string dynamicBtnLabel = this._vm.PublishTargetMode switch
-            {
-                0 => this._i18n.Format("Publisher.BtnPublishFeedDynamic", accName),
-                2 => this._i18n.Format("Publisher.BtnPublishBothDynamic", enabledGroups),
-                _ => this._i18n.Format("Publisher.BtnPublishGroupsDynamic", enabledGroups)
-            };
+            string dynamicBtnLabel = !string.IsNullOrWhiteSpace(this._vm.CampaignProgressText)
+                ? this._vm.CampaignProgressText
+                : (this._vm.PublishTargetMode switch
+                {
+                    0 => this._i18n.Format("Publisher.BtnPublishFeedDynamic", accName),
+                    2 => this._i18n.Format("Publisher.BtnPublishBothDynamic", enabledGroups),
+                    _ => this._i18n.Format("Publisher.BtnPublishGroupsDynamic", enabledGroups)
+                });
             AppButton.SetText(publishBtn, dynamicBtnLabel);
         }
 
@@ -658,6 +684,14 @@ public sealed partial class PublisherPage : UserControl
         };
         fbPostCardStack.Children.Add(fbMediaFrame);
 
+        StackPanel fbExtraPhotosStrip = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            IsVisible = false
+        };
+        fbPostCardStack.Children.Add(fbExtraPhotosStrip);
+
         TextBlock fbReactionSummaryTb = SectionHeader.CreateLabel(
             this._theme,
             $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}",
@@ -717,7 +751,7 @@ public sealed partial class PublisherPage : UserControl
             string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
             fbPreviewAvatarHost.Content = AvatarBadge.Create(this._theme, accName, 44, this._vm.SelectedAccount?.AvatarUrl);
 
-            string sampleGroupName = "Cộng đồng Facebook";
+            string sampleGroupName = this._i18n["Publisher.DefaultSampleGroupName"];
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
                 if (this._vm.TargetGroups[i].IsEnabled)
@@ -748,6 +782,14 @@ public sealed partial class PublisherPage : UserControl
             fbBodyContentTb.Text = resolvedBody;
             fbReactionSummaryTb.IsVisible = this._vm.AutoReactPublishedPost;
 
+            if (fbFullPreviewImage.Source is IDisposable oldPreviewBmp)
+            {
+                fbFullPreviewImage.Source = null;
+                oldPreviewBmp.Dispose();
+            }
+
+            DisposeStripBitmaps(fbExtraPhotosStrip);
+
             List<string> previewMediaFiles = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
             if (previewMediaFiles.Count > 0)
             {
@@ -760,10 +802,67 @@ public sealed partial class PublisherPage : UserControl
                 {
                     fbMediaFrame.IsVisible = false;
                 }
+
+                if (previewMediaFiles.Count > 1)
+                {
+                    int maxExtra = Math.Min(previewMediaFiles.Count, 6);
+                    for (int i = 0; i < maxExtra; i++)
+                    {
+                        try
+                        {
+                            string path = previewMediaFiles[i];
+                            Image extraImg = new()
+                            {
+                                Width = 88,
+                                Height = 66,
+                                Stretch = Stretch.UniformToFill,
+                                Source = new Bitmap(path)
+                            };
+                            Border extraBorder = new()
+                            {
+                                CornerRadius = new CornerRadius(8),
+                                ClipToBounds = true,
+                                BorderThickness = new Thickness(1),
+                                BorderBrush = this._theme.Palette.SubtleBorder,
+                                Cursor = new Cursor(StandardCursorType.Hand),
+                                Child = extraImg
+                            };
+                            extraBorder.PointerPressed += (_, _) =>
+                            {
+                                try
+                                {
+                                    if (fbFullPreviewImage.Source is IDisposable prevBmp)
+                                    {
+                                        fbFullPreviewImage.Source = null;
+                                        prevBmp.Dispose();
+                                    }
+
+                                    fbFullPreviewImage.Source = new Bitmap(path);
+                                }
+                                catch
+                                {
+                                    // Ignore unreadable bitmap
+                                }
+                            };
+                            fbExtraPhotosStrip.Children.Add(extraBorder);
+                        }
+                        catch
+                        {
+                            // Ignore unreadable bitmap
+                        }
+                    }
+
+                    fbExtraPhotosStrip.IsVisible = fbExtraPhotosStrip.Children.Count > 1;
+                }
+                else
+                {
+                    fbExtraPhotosStrip.IsVisible = false;
+                }
             }
             else
             {
                 fbMediaFrame.IsVisible = false;
+                fbExtraPhotosStrip.IsVisible = false;
             }
         }
 
@@ -791,7 +890,8 @@ public sealed partial class PublisherPage : UserControl
                 RefreshPhotoPreview();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal) ||
-                     string.Equals(e.PropertyName, nameof(ShellViewModel.PublishTargetMode), StringComparison.Ordinal))
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.PublishTargetMode), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.CampaignProgressText), StringComparison.Ordinal))
             {
                 UpdatePublishButtonAndIdentity();
             }
