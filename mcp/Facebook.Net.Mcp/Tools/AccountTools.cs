@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
@@ -41,7 +40,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             is_active = string.Equals(acc.Uid, _manager.ActiveAccountUid, StringComparison.Ordinal)
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             active_account_uid = _manager.ActiveAccountUid,
             total_count = accounts.Count,
@@ -67,7 +66,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
                 ct: ct).ConfigureAwait(false);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             success = switched is not null,
             active_uid = switched?.Uid ?? _manager.ActiveAccountUid,
@@ -137,7 +136,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP imported account session '{profile.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = profile.Uid,
@@ -200,7 +199,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP verified session health for '{updated.DisplayName}' (healthy={isHealthy}, status={updated.Status}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             is_healthy = isHealthy,
             uid = updated.Uid,
@@ -239,7 +238,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
                 $"MCP cleared proxy for account '{cleared.DisplayName}'.",
                 ct: ct).ConfigureAwait(false);
 
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "success",
                 uid = cleared.Uid,
@@ -250,7 +249,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         string proxyId = $"proxy_{current.Uid}";
         if (!UniversalSessionImporter.TryParseProxySpec(trimmed, proxyId, out ProxyConfig? parsed) || parsed is null)
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "error",
                 message = "Invalid proxy format. Expected host:port or host:port:user:pass."
@@ -270,7 +269,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP assigned {parsed.Protocol} proxy '{parsed.Host}:{parsed.Port}' to '{updated.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = updated.Uid,
@@ -295,7 +294,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         AccountProfile? existing = await _manager.AccountStore.GetAccountByUidAsync(cleanUid, ct).ConfigureAwait(false);
         if (existing is null)
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "not_found",
                 uid = cleanUid,
@@ -355,7 +354,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP deleted account '{existing.DisplayName}' ({existing.Uid}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = deleted ? "deleted" : "failed",
             uid = existing.Uid,
@@ -438,7 +437,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP warmed up account '{updated.DisplayName}' ({newsFeed.Items.Count} feed posts loaded, {reactedCount} reactions).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = updated.Uid,
@@ -591,7 +590,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP opened interactive browser login for '{updated.DisplayName}' (authenticated={isAuthenticated}, syncedNewGroups={syncedGroupsCount}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = isAuthenticated ? "authenticated" : "browser_opened_pending_login",
             uid = updated.Uid,
@@ -628,7 +627,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             };
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             effective_browser_kind = effectiveKind.ToString(),
             profiles_root_directory = _manager.ProfilesRootDirectory,
@@ -699,7 +698,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP bound browser profile '{friendlyLabel}' to account '{targetAccount.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = targetAccount.Uid,
@@ -726,7 +725,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
 
         if (!_manager.StorageUsage.IsProfileInsideManagedRoot(targetDir, _manager.ProfilesRootDirectory))
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "forbidden",
                 directory_path = targetDir,
@@ -736,7 +735,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
 
         if (!Directory.Exists(targetDir))
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "not_found",
                 directory_path = targetDir
@@ -763,7 +762,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP deleted managed browser profile folder '{Path.GetFileName(targetDir)}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "deleted",
             directory_path = targetDir
@@ -899,7 +898,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             });
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             active_account_uid = _manager.ActiveAccountUid,

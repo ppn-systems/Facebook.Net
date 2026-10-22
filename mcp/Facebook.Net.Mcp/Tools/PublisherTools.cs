@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
@@ -104,7 +103,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             permalink,
             ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             post_id = recordedPostId,
@@ -271,7 +270,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP published campaign batch ({publishedResults.Count} posts across {targetGroups.Count} target groups using {rotationUids.Count} account(s)).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = primaryAccount.Uid,
@@ -337,7 +336,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP synced {records.Count} personal timeline posts.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -458,7 +457,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP reposted '{cleanSourceId}' to {reposted.Count}/{targetGroups.Count} groups.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             source_post_id = cleanSourceId,
@@ -494,7 +493,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 .ConfigureAwait(false);
             if (alreadyDone)
             {
-                return JsonSerializer.Serialize(new
+                return McpJson.Serialize(new
                 {
                     status = "skipped_duplicate",
                     post_id = cleanPostId,
@@ -548,7 +547,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP posted comment on post '{cleanPostId}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             post_id = cleanPostId,
@@ -586,7 +585,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP reacted '{parsedReaction}' on post '{postId.Trim()}' (ok={ok}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = ok ? "success" : "failed",
             post_id = postId.Trim(),
@@ -607,7 +606,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .GetPublishedPostsAsync(accountUid, Math.Clamp(limit, 1, 200), ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             count = posts.Count,
             posts = posts.Select(p => new
@@ -646,7 +645,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 ct: ct).ConfigureAwait(false);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",
             post_id = postId.Trim()
@@ -662,7 +661,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .GetAllCampaignTemplatesAsync(ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             count = templates.Count,
             templates = templates.Select(t => new
@@ -700,7 +699,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP saved campaign template '{tpl.Title}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             id = tpl.Id,
@@ -737,7 +736,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 ct: ct).ConfigureAwait(false);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",
             template_id = targetId,
@@ -810,13 +809,161 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             $"MCP bumped {bumpedPosts.Count}/{eligible.Count} recent group posts.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
             eligible_count = eligible.Count,
             bumped_count = bumpedPosts.Count,
             bumped_posts = bumpedPosts
+        });
+    }
+
+    [McpServerTool(Name = "fb_share_post_to_groups_batch")]
+    [Description("Native GraphQL Share Campaign: share an existing Facebook post ('postId' from a Fanpage, Personal Timeline, or Group) into multiple target groups via 'SharePostAsync' while preserving original post engagement, with Spintax caption, anti-checkpoint random delay, and optional multi-account round-robin rotation ('accountUidsCsv').")]
+    public async Task<string> SharePostToGroupsBatchAsync(
+        [Description("Target Facebook Post ID to share natively into groups")] string postId,
+        [Description("Optional Spintax commentary/caption added above the shared post (supports {group_name}, {date}, {time}, {random_id})")] string? messageSpintax = null,
+        [Description("Optional comma- or semicolon-separated target group IDs. Leave empty to use enabled target groups or filterByTagIdOrName.")] string? groupIdsCsv = null,
+        [Description("Optional group color tag ID or name filter when groupIdsCsv is omitted")] string? filterByTagIdOrName = null,
+        [Description("Maximum number of target groups to share into (1..50, default 10)")] int maxGroups = 10,
+        [Description("Minimum anti-checkpoint delay in seconds between group shares (default 8)")] int minDelaySeconds = 8,
+        [Description("Maximum anti-checkpoint delay in seconds between group shares (default 18)")] int maxDelaySeconds = 18,
+        [Description("Optional comma-separated Facebook account UIDs (or 'all' / 'smart') for coolest-first multi-account rotation across groups.")] string? accountUidsCsv = null,
+        [Description("Target Facebook account UID when not rotating (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        string cleanPostId = postId.Trim();
+        int cap = Math.Clamp(maxGroups, 1, 50);
+        int minSec = Math.Clamp(minDelaySeconds, 1, 600);
+        int maxSec = Math.Max(minSec, Math.Clamp(maxDelaySeconds, 1, 600));
+
+        List<SavedTargetGroup> targetGroups = [];
+        if (!string.IsNullOrWhiteSpace(groupIdsCsv))
+        {
+            string[] rawIds = groupIdsCsv.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            IReadOnlyList<SavedTargetGroup> savedGroups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
+            Dictionary<string, SavedTargetGroup> savedById = new(StringComparer.Ordinal);
+            for (int i = 0; i < savedGroups.Count; i++)
+            {
+                savedById[savedGroups[i].GroupId] = savedGroups[i];
+            }
+
+            for (int i = 0; i < rawIds.Length && targetGroups.Count < cap; i++)
+            {
+                string gid = rawIds[i];
+                if (savedById.TryGetValue(gid, out SavedTargetGroup? existing))
+                {
+                    targetGroups.Add(existing);
+                }
+                else
+                {
+                    targetGroups.Add(new SavedTargetGroup(gid, $"Group {gid}", IsEnabled: true));
+                }
+            }
+        }
+        else
+        {
+            targetGroups = await this.ResolveCampaignTargetGroupsAsync(filterByTagIdOrName, cap, ct).ConfigureAwait(false);
+        }
+
+        if (targetGroups.Count == 0)
+        {
+            return McpJson.Serialize(new
+            {
+                status = "no_target_groups",
+                post_id = cleanPostId,
+                message = "No matching target groups found to share the post into."
+            });
+        }
+
+        IReadOnlyList<string> rotationUids = await _manager
+            .ResolveRotationAccountUidsAsync(accountUidsCsv, accountUid, ct)
+            .ConfigureAwait(false);
+
+        int succeeded = 0;
+        int failed = 0;
+        List<object> results = [];
+
+        for (int i = 0; i < targetGroups.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            SavedTargetGroup group = targetGroups[i];
+            string currentUid = rotationUids[i % rotationUids.Count];
+
+            (AccountProfile account, IBrowserSession session) = await _manager
+                .AcquireBrowserSessionAsync(currentUid, forceVisible: false, ct)
+                .ConfigureAwait(false);
+
+            string resolvedCaption = string.IsNullOrWhiteSpace(messageSpintax)
+                ? string.Empty
+                : PayloadBuilder.SpinText(
+                    _manager.CampaignPublisher.ResolveDynamicVariables(
+                        messageSpintax,
+                        account.DisplayName,
+                        group.GroupName));
+
+            string? sharedStoryId = await _manager.CometClient.SharePostAsync(
+                session,
+                cleanPostId,
+                resolvedCaption,
+                targetGroupId: group.GroupId,
+                ct: ct).ConfigureAwait(false);
+
+            bool ok = !string.IsNullOrWhiteSpace(sharedStoryId);
+            if (ok)
+            {
+                succeeded++;
+                await _manager.AccountStore.RecordActionAsync(
+                    new ActionHistoryEntry(
+                        account.Uid,
+                        "POST",
+                        group.GroupId,
+                        $"Shared post {cleanPostId} to {group.GroupName}",
+                        DateTimeOffset.UtcNow),
+                    ct).ConfigureAwait(false);
+            }
+            else
+            {
+                failed++;
+            }
+
+            results.Add(new
+            {
+                group_id = group.GroupId,
+                group_name = group.GroupName,
+                account_uid = account.Uid,
+                success = ok,
+                shared_story_id = sharedStoryId
+            });
+
+            if (i < targetGroups.Count - 1)
+            {
+                int delayMs = Random.Shared.Next(minSec * 1000, (maxSec * 1000) + 1);
+                await Task.Delay(delayMs, ct).ConfigureAwait(false);
+            }
+        }
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Post,
+            succeeded > 0 ? AuditSeverity.Success : AuditSeverity.Warning,
+            account: null,
+            cleanPostId,
+            $"MCP shared post '{cleanPostId}' across {targetGroups.Count} group(s) (succeeded={succeeded}, failed={failed}, accounts={rotationUids.Count}).",
+            ct: ct).ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = failed == 0 ? "success" : (succeeded > 0 ? "partial_success" : "failed"),
+            source_post_id = cleanPostId,
+            accounts_rotated = rotationUids.Count,
+            total_groups = targetGroups.Count,
+            succeeded,
+            failed,
+            results
         });
     }
 

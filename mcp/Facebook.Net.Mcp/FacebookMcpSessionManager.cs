@@ -29,6 +29,8 @@ public sealed class FacebookMcpSessionManager : IDisposable
 {
     private readonly ILogger<FacebookMcpSessionManager>? _logger;
     private readonly TaskCompletionSource _bootstrapCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly string _settingsFilePath;
+    private DateTime _lastSettingsWriteTimeUtc;
     private int _bootstrapStarted;
     private string? _activeAccountUid;
 
@@ -51,7 +53,11 @@ public sealed class FacebookMcpSessionManager : IDisposable
         this.ProfilesRootDirectory = Path.Combine(rootDir, "Profiles");
         _ = Directory.CreateDirectory(this.ProfilesRootDirectory);
 
-        this.Settings = new AppSettingsService(Path.Combine(rootDir, "appsettings.json"));
+        _settingsFilePath = Path.Combine(rootDir, "appsettings.json");
+        this.Settings = new AppSettingsService(_settingsFilePath);
+        _lastSettingsWriteTimeUtc = File.Exists(_settingsFilePath)
+            ? File.GetLastWriteTimeUtc(_settingsFilePath)
+            : DateTime.MinValue;
         this.AccountStore = new SqliteAccountStore(Path.Combine(rootDir, "facebook_net.db"));
         this.AuditStore = new SqliteAuditLogStore(Path.Combine(rootDir, "facebook_audit.db"));
         this.AiMemoryStore = new SqliteAiMemoryStore(Path.Combine(rootDir, "facebook_ai_memory.db"));
@@ -199,10 +205,18 @@ public sealed class FacebookMcpSessionManager : IDisposable
             }
         }
 
-        AppConfig reloaded = this.Settings.Reload();
-        if (!string.IsNullOrWhiteSpace(reloaded.LastSelectedAccountUid))
+        if (File.Exists(_settingsFilePath))
         {
-            _activeAccountUid = reloaded.LastSelectedAccountUid;
+            DateTime currentWriteUtc = File.GetLastWriteTimeUtc(_settingsFilePath);
+            if (currentWriteUtc != _lastSettingsWriteTimeUtc)
+            {
+                _lastSettingsWriteTimeUtc = currentWriteUtc;
+                AppConfig reloaded = this.Settings.Reload();
+                if (!string.IsNullOrWhiteSpace(reloaded.LastSelectedAccountUid))
+                {
+                    _activeAccountUid = reloaded.LastSelectedAccountUid;
+                }
+            }
         }
     }
 
@@ -220,6 +234,11 @@ public sealed class FacebookMcpSessionManager : IDisposable
 
         _activeAccountUid = account.Uid;
         this.Settings.Save(this.Settings.Current with { LastSelectedAccountUid = account.Uid });
+        if (File.Exists(_settingsFilePath))
+        {
+            _lastSettingsWriteTimeUtc = File.GetLastWriteTimeUtc(_settingsFilePath);
+        }
+
         return account;
     }
 
@@ -252,8 +271,10 @@ public sealed class FacebookMcpSessionManager : IDisposable
     }
 
     /// <summary>
-    /// Resolves one or more account UIDs for multi-account round-robin rotation in batch campaigns.
-    /// If <paramref name="accountUidsCsv"/> is <c>"all"</c> or <c>"*"</c>, returns all non-disabled accounts in the vault.
+    /// Resolves one or more account UIDs for multi-account round-robin rotation in batch campaigns,
+    /// automatically sorting accounts from coolest (lowest anti-checkpoint heat score) to warmest
+    /// and excluding overheated (<c>heatScore &gt;= 80</c>) accounts whenever cooler accounts exist.
+    /// If <paramref name="accountUidsCsv"/> is <c>"all"</c>, <c>"*"</c>, or <c>"smart"</c>, evaluates all non-disabled accounts in the vault.
     /// </summary>
     public async Task<IReadOnlyList<string>> ResolveRotationAccountUidsAsync(
         string? accountUidsCsv = null,
@@ -265,46 +286,94 @@ public sealed class FacebookMcpSessionManager : IDisposable
         {
             string trimmed = accountUidsCsv.Trim();
             IReadOnlyList<AccountProfile> allAccounts = await this.AccountStore.GetAllAccountsAsync(ct).ConfigureAwait(false);
+            List<string> candidateUids = [];
 
             if (string.Equals(trimmed, "all", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(trimmed, "*", StringComparison.Ordinal))
+                string.Equals(trimmed, "*", StringComparison.Ordinal) ||
+                string.Equals(trimmed, "smart", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "auto_safe", StringComparison.OrdinalIgnoreCase))
             {
-                List<string> activeUids = [];
                 for (int i = 0; i < allAccounts.Count; i++)
                 {
-                    if (allAccounts[i].Status is not (AccountStatus.Disabled or AccountStatus.Checkpoint))
+                    if (allAccounts[i].Status is not (AccountStatus.Disabled or AccountStatus.Checkpoint or AccountStatus.CookieExpired))
                     {
-                        activeUids.Add(allAccounts[i].Uid);
+                        candidateUids.Add(allAccounts[i].Uid);
                     }
-                }
-
-                if (activeUids.Count > 0)
-                {
-                    return activeUids;
                 }
             }
             else
             {
                 string[] requested = trimmed.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 HashSet<string> validVaultUids = new(allAccounts.Select(a => a.Uid), StringComparer.Ordinal);
-                List<string> matched = [];
                 for (int i = 0; i < requested.Length; i++)
                 {
-                    if (validVaultUids.Contains(requested[i]) && !matched.Contains(requested[i], StringComparer.Ordinal))
+                    if (validVaultUids.Contains(requested[i]) && !candidateUids.Contains(requested[i], StringComparer.Ordinal))
                     {
-                        matched.Add(requested[i]);
+                        candidateUids.Add(requested[i]);
                     }
                 }
+            }
 
-                if (matched.Count > 0)
+            if (candidateUids.Count > 1)
+            {
+                Dictionary<string, int> heatByUid = await this.CalculateAccountHeatScoresAsync(ct).ConfigureAwait(false);
+                candidateUids.Sort((a, b) =>
                 {
-                    return matched;
-                }
+                    int heatA = heatByUid.GetValueOrDefault(a, 0);
+                    int heatB = heatByUid.GetValueOrDefault(b, 0);
+                    return heatA.CompareTo(heatB);
+                });
+
+                List<string> safeCandidates = candidateUids
+                    .Where(uid => heatByUid.GetValueOrDefault(uid, 0) < 80)
+                    .ToList();
+
+                return safeCandidates.Count > 0 ? safeCandidates : candidateUids;
+            }
+
+            if (candidateUids.Count == 1)
+            {
+                return candidateUids;
             }
         }
 
         AccountProfile single = await this.ResolveAccountAsync(fallbackSingleAccountUid, ct).ConfigureAwait(false);
         return [single.Uid];
+    }
+
+    /// <summary>
+    /// Computes the live anti-checkpoint activity heat score (0..100+) for each account based on 1h and 24h action history.
+    /// </summary>
+    public async Task<Dictionary<string, int>> CalculateAccountHeatScoresAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<ActionHistoryEntry> recentActions = await this.AccountStore.GetRecentActionsAsync(500, ct).ConfigureAwait(false);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset oneHourAgo = now.AddHours(-1);
+        DateTimeOffset twentyFourHoursAgo = now.AddHours(-24);
+
+        Dictionary<string, int> heatByUid = new(StringComparer.Ordinal);
+        for (int i = 0; i < recentActions.Count; i++)
+        {
+            ActionHistoryEntry entry = recentActions[i];
+            if (string.IsNullOrWhiteSpace(entry.AccountUid) || entry.ExecutedAt < twentyFourHoursAgo)
+            {
+                continue;
+            }
+
+            bool inLastHour = entry.ExecutedAt >= oneHourAgo;
+            int weight = entry.ActionKind.ToUpperInvariant() switch
+            {
+                "POST" => inLastHour ? 8 : 2,
+                "COMMENT" or "BUMP_COMMENT" => inLastHour ? 5 : 1,
+                "JOIN_GROUP" => inLastHour ? 7 : 2,
+                "FRIEND_REQUEST" => inLastHour ? 4 : 1,
+                _ => inLastHour ? 2 : 1
+            };
+
+            heatByUid[entry.AccountUid] = heatByUid.GetValueOrDefault(entry.AccountUid, 0) + weight;
+        }
+
+        return heatByUid;
     }
 
     /// <summary>

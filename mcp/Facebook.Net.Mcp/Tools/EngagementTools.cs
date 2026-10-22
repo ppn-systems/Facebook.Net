@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Protocol;
@@ -67,7 +66,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             filtered.Add(item);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -132,7 +131,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             }
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -166,7 +165,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             })
             .ToList();
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -253,7 +252,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             $"MCP watched {seenCount} stories and replied to {repliedCount} stories.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -319,7 +318,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             $"MCP published Facebook Story (success={created}, hasPhoto={photoId is not null}, hasVideo={videoId is not null}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = created ? "success" : "failed",
             account_uid = account.Uid,
@@ -343,7 +342,7 @@ public sealed class EngagementTools(FacebookMcpSessionManager manager)
             .GetManagedPagesAsync(session, ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,

@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Meta.UI.Core.Audit;
 using Meta.UI.Core.Configuration;
 using Meta.UI.Core.Localization;
@@ -27,7 +26,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
         AppConfig cfg = _manager.Settings.Current;
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             theme = cfg.Theme.ToString(),
             language = cfg.Language.ToString(),
@@ -139,7 +138,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             $"MCP updated application settings (delay={updated.MinDelaySeconds}s..{updated.MaxDelaySeconds}s, scrapeDelay={updated.ScrapeDelayMinSeconds}s..{updated.ScrapeDelayMaxSeconds}s, autoScrape={updated.AutoBackgroundScrapeEnabled}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             settings = new
@@ -173,7 +172,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             _manager.DataDirectory,
             _manager.ProfilesRootDirectory);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_used_formatted = _manager.StorageUsage.FormatByteSize(snap.TotalUsedBytes),
             total_used_bytes = snap.TotalUsedBytes,
@@ -218,7 +217,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             $"MCP cleaned Chromium profile caches (freed {freedFormatted}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             freed_bytes = freedBytes,
@@ -270,7 +269,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
             logs.Add(rec);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             count = logs.Count,
             logs = logs.Select(l => new
@@ -295,7 +294,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
         await _manager.AuditStore.ClearAllAsync(ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "cleared"
         });
@@ -308,7 +307,7 @@ public sealed class SystemSettingsTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
         AppReleaseCheckResult result = await _manager.AppRelease.CheckForUpdatesAsync(ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             is_update_available = result.IsUpdateAvailable,
             current_version = result.CurrentVersion,

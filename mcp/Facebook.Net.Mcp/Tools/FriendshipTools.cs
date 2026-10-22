@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
@@ -36,7 +35,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             .GetIncomingFriendRequestsAsync(session, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -67,7 +66,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             .GetOutgoingFriendRequestsAsync(session, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -98,7 +97,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             .GetFriendSuggestionsAsync(session, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -130,7 +129,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             .GetProfileFollowersAsync(session, effectiveTargetUid, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -227,7 +226,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             $"MCP executed '{normAction}' on {processed.Count} friend request(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -341,7 +340,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             $"MCP sent {sentResults.Count} friend request(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -398,7 +397,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             $"MCP executed '{normMode}' on {results.Count} user(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -452,7 +451,7 @@ public sealed class FriendshipTools(FacebookMcpSessionManager manager)
             $"MCP poked {pokedCount}/{uids.Length} user(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,

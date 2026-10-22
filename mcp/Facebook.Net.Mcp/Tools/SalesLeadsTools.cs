@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
@@ -87,7 +86,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP scraped {matched.Count} posts from '{resolvedGroupName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             group_id = cleanGroupId,
@@ -238,7 +237,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP batch-scraped {allMatchedPosts.Count} posts across {selectedGroups.Count} groups ({totalWithPhone} with phone).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -400,7 +399,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP auto-commented on {commentedResults.Count} high-intent leads across {rotationUids.Count} account(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = primaryAccount.Uid,
@@ -435,7 +434,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP cleared {deletedCount} scraped lead posts from SQLite.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             group_id = cleanGroupId,
@@ -512,7 +511,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             created_at = p.CreatedAt?.ToString("o")
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_matched = filtered.Count,
             leads = items
@@ -541,7 +540,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             }
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_tags = leadTags.Count,
             total_scraped_posts = allPosts.Count,
@@ -635,7 +634,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP created/updated {createdTags.Count} customer/lead tags in batch.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             created_count = createdTags.Count,
@@ -717,7 +716,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP {(assign ? "assigned" : "removed")} lead tag '{resolvedTag.Name}' on {modifiedPostIds.Count} customer post(s).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag = new
@@ -854,7 +853,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP auto-tagged {newlyTaggedCount} customer leads (matched {matchedSummary.Count}) with tag '{resolvedTag.Name}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag = new
@@ -1047,7 +1046,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             created_at = x.Post.CreatedAt?.ToString("o")
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_matched = matched.Count,
             leads = items
@@ -1084,7 +1083,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP updated CRM notes on lead post '{cleanId}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             post_id = cleanId,
@@ -1143,7 +1142,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             $"MCP deleted/cleared lead tag '{targetTag?.Name ?? cleanTarget}' (cleared {clearedCount} posts, deletedDefinition={deletedDef}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag_id = effectiveTagId,
@@ -1176,7 +1175,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             buyerKeywords);
         string formattedSummary = _manager.LeadScoring.FormatAnalyticsReportForAi(report);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             formatted_summary = formattedSummary,
             report = new
@@ -1222,7 +1221,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             commenters = c.Items;
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             post,
             reactors,
@@ -1247,7 +1246,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             .GetPostCommentersAsync(session, cleanId, ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -1282,7 +1281,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             .GetPostReactorsAsync(session, cleanId, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -1296,6 +1295,87 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 avatar_uri = u.AvatarUri,
                 friendship_state = u.Friendship.ToString()
             })
+        });
+    }
+
+    [McpServerTool(Name = "fb_scrape_news_feed")]
+    [Description("Scrape posts from the active Facebook account's home News Feed ('CometNewsFeedPaginationQuery'), automatically score buyer intent, extract obfuscated Vietnamese phone numbers, and optionally save high-intent leads into the local SQLite database.")]
+    public async Task<string> ScrapeNewsFeedAsync(
+        [Description("Number of News Feed posts to fetch from Facebook (1..50, default 15)")] int count = 15,
+        [Description("Optional comma-separated buyer-intent keywords to filter and score posts")] string? keywords = null,
+        [Description("If true, only return posts containing extracted Vietnamese phone numbers (default false)")] bool onlyWithPhone = false,
+        [Description("If true, persists scraped News Feed posts into the local SQLite scraped_posts vault (default true)")] bool saveToVault = true,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        int clampedCount = Math.Clamp(count, 1, 50);
+        PagedResult<PostSummary> feed = await _manager.CometClient
+            .GetNewsFeedAsync(session, count: clampedCount, ct: ct)
+            .ConfigureAwait(false);
+
+        if (saveToVault && feed.Items.Count > 0)
+        {
+            await _manager.AccountStore.UpsertScrapedPostsAsync(feed.Items, ct).ConfigureAwait(false);
+        }
+
+        string[] kwArray = string.IsNullOrWhiteSpace(keywords)
+            ? []
+            : keywords.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        List<(int Score, object Item)> scored = [];
+        for (int i = 0; i < feed.Items.Count; i++)
+        {
+            PostSummary post = feed.Items[i];
+            if (kwArray.Length > 0 && !_manager.LeadScoring.MatchesPostOrAuthorKeywords(post, kwArray))
+            {
+                continue;
+            }
+
+            IReadOnlyList<string> phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(post.MessageText);
+            if (onlyWithPhone && phones.Count == 0)
+            {
+                continue;
+            }
+
+            int score = _manager.LeadScoring.CalculateBuyerIntentScore(post.MessageText, keywords);
+            scored.Add((score, new
+            {
+                post_id = post.PostId,
+                group_id = post.GroupId,
+                group_name = post.GroupName,
+                author_uid = post.AuthorUid,
+                author_name = post.AuthorName,
+                buyer_intent_score = score,
+                extracted_phones = phones,
+                message_text = post.MessageText,
+                reaction_count = post.ReactionCount,
+                comment_count = post.CommentCount,
+                created_at = post.CreatedAt?.ToString("o"),
+                permalink = post.PermalinkUrl
+            }));
+        }
+
+        scored.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Success,
+            account,
+            "News Feed",
+            $"MCP scraped {feed.Items.Count} News Feed post(s) (matched={scored.Count}).",
+            ct: ct).ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            total_fetched = feed.Items.Count,
+            matched_count = scored.Count,
+            posts = scored.Select(s => s.Item)
         });
     }
 

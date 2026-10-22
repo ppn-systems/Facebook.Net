@@ -57,7 +57,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             })
             .ToList();
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_count = filtered.Count,
             available_tags = allTags.Select(t => new { id = t.Id, name = t.Name, color_hex = t.ColorHex }),
@@ -108,7 +108,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP synced {result.Items.Count} joined groups.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             account_uid = account.Uid,
             fetched_count = result.Items.Count,
@@ -140,7 +140,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             .SearchGroupsAsync(session, keyword.Trim(), count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             account_uid = account.Uid,
             keyword = keyword.Trim(),
@@ -204,7 +204,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP requested to join group '{groupName ?? cleanGroupId}' -> {state}.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             group_id = cleanGroupId,
@@ -311,7 +311,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP batch-joined {candidates.Count} groups ({joinedMemberCount} joined, {requestedApprovalCount} pending approval).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -353,7 +353,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP saved target group '{group.GroupName}' ({group.GroupId}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             group_id = group.GroupId,
@@ -391,7 +391,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP removed {removedCount} target groups from local list.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             removed_count = removedCount,
@@ -440,7 +440,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP configured target groups selection (mode='{mode}', enabled={enabledCount}, disabled={disabledCount}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             mode = mode.Trim().ToLowerInvariant(),
@@ -487,7 +487,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             };
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_tags = allTags.Count,
             total_target_groups = groups.Count,
@@ -516,7 +516,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP created group tag '{tag.Name}' ({tag.ColorHex}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             id = tag.Id,
@@ -571,7 +571,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP {(assign ? "assigned" : "removed")} group tag '{tagId.Trim()}' across {updatedBatch.Count} target groups.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag_id = tagId.Trim(),
@@ -659,7 +659,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP created/updated {createdTags.Count} group tags in batch.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             created_count = createdTags.Count,
@@ -782,7 +782,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP auto-tagged {matchedGroupsSummary.Count} groups (removed from {removedFromNonMatchingCount}) for tag '{targetTag.Name}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag = new
@@ -850,7 +850,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP deleted/cleared group tag '{targetTag?.Name ?? cleanTarget}' (cleared {updatedGroups.Count} groups, deletedDefinition={deletedDef}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag_id = effectiveTagId,
@@ -893,7 +893,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP cleaned and classified {groups.Count} groups ({modifiedGroups.Count} updated).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             total_groups = groups.Count,
@@ -919,7 +919,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             .GetGroupQuestionsAsync(session, cleanGroupId, ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -1017,7 +1017,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
 
         if (answers.Count == 0)
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "no_questions_found",
                 account_uid = account.Uid,
@@ -1038,7 +1038,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP submitted {answers.Count} membership approval answer(s) for group '{cleanGroupId}' -> {state}.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -1066,7 +1066,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             .GetGroupNewMembersAsync(session, cleanGroupId, count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -1112,7 +1112,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP invited {friendUids.Length} friend(s) to group '{cleanGroupId}' (success={ok}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = ok ? "success" : "failed",
             account_uid = account.Uid,

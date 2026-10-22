@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Models;
 using Meta.UI.Core.AiAssistant;
 using Meta.UI.Core.Audit;
@@ -53,7 +52,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
             $"MCP saved AI context memory [{record.Category}] '{record.Key}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "saved",
             id = record.Id,
@@ -89,7 +88,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
             limit: Math.Clamp(limit, 1, 200),
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             count = memories.Count,
             memories = memories.Select(m => new
@@ -126,7 +125,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
                 ct: ct).ConfigureAwait(false);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",
             target = idOrKey.Trim()
@@ -159,7 +158,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
         IReadOnlyList<CampaignTemplate> templates = await _manager.AccountStore.GetAllCampaignTemplatesAsync(ct).ConfigureAwait(false);
         AppConfig cfg = _manager.Settings.Current;
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             active_account = activeAccount is null
                 ? null
