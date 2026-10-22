@@ -2,6 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -20,6 +22,8 @@ namespace Facebook.Net.UI.ViewModels.Shell;
 /// </summary>
 public sealed partial class ShellViewModel
 {
+    private readonly HashSet<string> _inFlightFriendOps = new(StringComparer.Ordinal);
+
     /// <summary>Gets the collection of incoming friend requests received by the active account.</summary>
     public BulkObservableCollection<UserSummary> IncomingFriendRequests { get; }
 
@@ -134,7 +138,7 @@ public sealed partial class ShellViewModel
     private async Task ConfirmSelectedFriendRequestAsync()
     {
         UserSummary? selected = this.SelectedIncomingRequest;
-        if (selected is null)
+        if (selected is null || string.IsNullOrWhiteSpace(selected.Uid) || !_inFlightFriendOps.Add(selected.Uid))
         {
             return;
         }
@@ -144,10 +148,9 @@ public sealed partial class ShellViewModel
         _ = this.IncomingFriendRequests.Remove(selected);
         this.SelectedIncomingRequest = null;
 
-        CancellationToken ct = this.BeginTaskScope();
         try
         {
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(CancellationToken.None).ConfigureAwait(true);
             if (session is null)
             {
                 this.RollbackIncoming(selected, originalIndex);
@@ -155,7 +158,7 @@ public sealed partial class ShellViewModel
             }
 
             FriendshipState result = await _context.CometClient
-                .ConfirmFriendRequestAsync(session, selected.Uid, ct: ct)
+                .ConfirmFriendRequestAsync(session, selected.Uid, ct: CancellationToken.None)
                 .ConfigureAwait(true);
 
             if (result != FriendshipState.AreFriends && result != FriendshipState.Unknown)
@@ -184,14 +187,14 @@ public sealed partial class ShellViewModel
         }
         finally
         {
-            this.EndTaskScope();
+            _ = _inFlightFriendOps.Remove(selected.Uid);
         }
     }
 
     private async Task DeleteSelectedFriendRequestAsync()
     {
         UserSummary? selected = this.SelectedIncomingRequest;
-        if (selected is null)
+        if (selected is null || string.IsNullOrWhiteSpace(selected.Uid) || !_inFlightFriendOps.Add(selected.Uid))
         {
             return;
         }
@@ -201,10 +204,9 @@ public sealed partial class ShellViewModel
         _ = this.IncomingFriendRequests.Remove(selected);
         this.SelectedIncomingRequest = null;
 
-        CancellationToken ct = this.BeginTaskScope();
         try
         {
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(CancellationToken.None).ConfigureAwait(true);
             if (session is null)
             {
                 this.RollbackIncoming(selected, originalIndex);
@@ -212,7 +214,7 @@ public sealed partial class ShellViewModel
             }
 
             _ = await _context.CometClient
-                .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: true, ct: ct)
+                .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: true, ct: CancellationToken.None)
                 .ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
@@ -236,14 +238,14 @@ public sealed partial class ShellViewModel
         }
         finally
         {
-            this.EndTaskScope();
+            _ = _inFlightFriendOps.Remove(selected.Uid);
         }
     }
 
     private async Task CancelSelectedOutgoingRequestAsync()
     {
         UserSummary? selected = this.SelectedOutgoingRequest;
-        if (selected is null)
+        if (selected is null || string.IsNullOrWhiteSpace(selected.Uid) || !_inFlightFriendOps.Add(selected.Uid))
         {
             return;
         }
@@ -253,10 +255,9 @@ public sealed partial class ShellViewModel
         _ = this.OutgoingFriendRequests.Remove(selected);
         this.SelectedOutgoingRequest = null;
 
-        CancellationToken ct = this.BeginTaskScope();
         try
         {
-            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(CancellationToken.None).ConfigureAwait(true);
             if (session is null)
             {
                 this.RollbackOutgoing(selected, originalIndex);
@@ -264,7 +265,7 @@ public sealed partial class ShellViewModel
             }
 
             _ = await _context.CometClient
-                .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: false, ct: ct)
+                .DeleteFriendRequestAsync(session, selected.Uid, isIncoming: false, ct: CancellationToken.None)
                 .ConfigureAwait(true);
 
             _ = await this.LogAuditAsync(
@@ -288,7 +289,173 @@ public sealed partial class ShellViewModel
         }
         finally
         {
+            _ = _inFlightFriendOps.Remove(selected.Uid);
+        }
+    }
+
+    /// <summary>
+    /// Batch-accepts all incoming friend requests with safe anti-checkpoint pacing delays.
+    /// </summary>
+    [RelayCommand]
+    public async Task AcceptAllIncomingRequestsAsync()
+    {
+        if (this.IncomingFriendRequests.Count == 0)
+        {
+            return;
+        }
+
+        CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            List<UserSummary> snapshot = [.. this.IncomingFriendRequests];
+            int acceptedCount = 0;
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                UserSummary user = snapshot[i];
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync(user.Name, ct).ConfigureAwait(true);
+                }
+
+                FriendshipState result = await _context.CometClient
+                    .ConfirmFriendRequestAsync(session, user.Uid, ct: ct)
+                    .ConfigureAwait(true);
+
+                if (result == FriendshipState.AreFriends || result == FriendshipState.Unknown)
+                {
+                    _ = this.IncomingFriendRequests.Remove(user);
+                    acceptedCount++;
+                }
+            }
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Success,
+                _context.Localization["Personal.IncomingHeader"],
+                _context.Localization.Format("Log.FriendBatchAccepted", acceptedCount, snapshot.Count)).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Warning,
+                _context.Localization["Personal.IncomingHeader"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Error,
+                _context.Localization["Personal.IncomingHeader"],
+                _context.Localization.Format("Log.FriendRequestFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
             this.EndTaskScope();
+        }
+    }
+
+    /// <summary>
+    /// Batch-cancels all outgoing friend requests with safe anti-checkpoint pacing delays.
+    /// </summary>
+    [RelayCommand]
+    public async Task CancelAllOutgoingRequestsAsync()
+    {
+        if (this.OutgoingFriendRequests.Count == 0)
+        {
+            return;
+        }
+
+        CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            List<UserSummary> snapshot = [.. this.OutgoingFriendRequests];
+            int cancelledCount = 0;
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                UserSummary user = snapshot[i];
+                if (i > 0)
+                {
+                    await this.WaitAntiCheckpointDelayAsync(user.Name, ct).ConfigureAwait(true);
+                }
+
+                FriendshipState state = await _context.CometClient
+                    .DeleteFriendRequestAsync(session, user.Uid, isIncoming: false, ct: ct)
+                    .ConfigureAwait(true);
+
+                if (state != FriendshipState.OutgoingRequest)
+                {
+                    _ = this.OutgoingFriendRequests.Remove(user);
+                    cancelledCount++;
+                }
+            }
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Warning,
+                _context.Localization["Personal.OutgoingHeader"],
+                _context.Localization.Format("Log.FriendBatchCancelled", cancelledCount, snapshot.Count)).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Warning,
+                _context.Localization["Personal.OutgoingHeader"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Error,
+                _context.Localization["Personal.OutgoingHeader"],
+                _context.Localization.Format("Log.FriendRequestFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+
+    /// <summary>
+    /// Opens the specified <paramref name="user"/>'s Facebook profile page in the system default browser.
+    /// </summary>
+    public void OpenFriendProfileInBrowser(UserSummary? user)
+    {
+        if (user is null || string.IsNullOrWhiteSpace(user.Uid))
+        {
+            return;
+        }
+
+        _ = _context;
+        string url = $"https://www.facebook.com/{user.Uid}";
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore shell launch failures in headless environments.
         }
     }
 

@@ -88,6 +88,10 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
+    /// <summary>Gets or sets the live progress text while auto-commenting matched lead posts (<c>i / total</c>).</summary>
+    [ObservableProperty]
+    public partial string AutoCommentProgressText { get; set; } = string.Empty;
+
     /// <summary>Gets the collection of user-defined or AI-created color-coded customer/lead tags.</summary>
     public BulkObservableCollection<GroupTag> LeadTags { get; } = new();
 
@@ -98,6 +102,7 @@ public sealed partial class ShellViewModel
     private readonly List<PostSummary> _allScrapedPosts = new();
     private readonly Dictionary<string, int> _scrapedPostIndex = new(StringComparer.Ordinal);
     private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _dismissedPostIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _leadIntentFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadCustomerTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
@@ -774,6 +779,11 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < _allScrapedPosts.Count; i++)
         {
             PostSummary post = _allScrapedPosts[i];
+            if (!string.IsNullOrWhiteSpace(post.PostId) && _dismissedPostIds.Contains(post.PostId))
+            {
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(this.FilterScrapedGroupId) &&
                 !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
             {
@@ -1392,9 +1402,18 @@ public sealed partial class ShellViewModel
                 for (int i = 0; i < postsToComment.Count; i++)
                 {
                     ct.ThrowIfCancellationRequested();
+                    string authorName = !string.IsNullOrWhiteSpace(postsToComment[i].AuthorName)
+                        ? postsToComment[i].AuthorName!
+                        : _context.Localization["Leads.DefaultAuthor"];
+                    this.AutoCommentProgressText = _context.Localization.Format(
+                        "Leads.AutoCommentProgressFormat",
+                        i + 1,
+                        postsToComment.Count,
+                        authorName);
+
                     if (i > 0)
                     {
-                        await this.WaitAntiCheckpointDelayAsync(postsToComment[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
+                        await this.WaitAntiCheckpointDelayAsync(authorName, ct).ConfigureAwait(true);
                     }
 
                     await this.ExecuteSingleSalesCommentAsync(
@@ -1407,6 +1426,7 @@ public sealed partial class ShellViewModel
             }
             finally
             {
+                this.AutoCommentProgressText = string.Empty;
                 this.FilterCachedPostsFromDb();
             }
         }
@@ -1488,6 +1508,81 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             this.SelectedScrapedPost.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
             _context.Localization["Log.PostOpenedInBrowser"]).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Dismisses/removes a scraped lead post from the active list and records an audit log entry.
+    /// </summary>
+    /// <param name="post">Post to dismiss, or <c>null</c> to dismiss <see cref="SelectedScrapedPost"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task DeleteScrapedPostAsync(PostSummary? post, CancellationToken ct = default)
+    {
+        PostSummary? target = post ?? this.SelectedScrapedPost;
+        if (target is null || string.IsNullOrWhiteSpace(target.PostId))
+        {
+            return;
+        }
+
+        _ = _dismissedPostIds.Add(target.PostId);
+        for (int i = _allScrapedPosts.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_allScrapedPosts[i].PostId, target.PostId, StringComparison.Ordinal))
+            {
+                _allScrapedPosts.RemoveAt(i);
+            }
+        }
+
+        this.RebuildScrapedPostIndex();
+        for (int i = this.ScrapedPosts.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(this.ScrapedPosts[i].PostId, target.PostId, StringComparison.Ordinal))
+            {
+                this.ScrapedPosts.RemoveAt(i);
+            }
+        }
+
+        if (this.SelectedScrapedPost is not null &&
+            string.Equals(this.SelectedScrapedPost.PostId, target.PostId, StringComparison.Ordinal))
+        {
+            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        }
+
+        string author = !string.IsNullOrWhiteSpace(target.AuthorName)
+            ? target.AuthorName
+            : _context.Localization["Leads.DefaultAuthor"];
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Info,
+            author,
+            _context.Localization.Format("Log.LeadPostDeleted", author)).ConfigureAwait(true);
+        _ = ct;
+    }
+
+    /// <summary>
+    /// Saves the current <see cref="SalesCommentSpintaxText"/> as a reusable comment template in SQLite.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task SaveSalesCommentAsTemplateAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(this.SalesCommentSpintaxText))
+        {
+            return;
+        }
+
+        CampaignTemplate template = _context.CampaignPublisher.CreateTemplate(
+            title: string.Empty,
+            spintaxContent: this.SalesCommentSpintaxText,
+            mediaFilePath: string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) ? null : this.SalesCommentPhotoPath.Trim(),
+            isCommentTemplate: true);
+
+        await _context.AccountStore.UpsertCampaignTemplateAsync(template, ct).ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.SalesComment,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.SalesComment"],
+            _context.Localization.Format("Log.TemplateSaved", template.Title)).ConfigureAwait(true);
     }
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)

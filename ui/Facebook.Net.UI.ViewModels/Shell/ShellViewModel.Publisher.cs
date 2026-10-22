@@ -360,7 +360,16 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Info,
                     _context.Localization["Audit.Cat.Post"],
                     _context.Localization.Format("Log.CampaignScheduled", waitMins)).ConfigureAwait(true);
-                await Task.Delay(TimeSpan.FromMinutes(waitMins), ct).ConfigureAwait(true);
+
+                TimeSpan remaining = TimeSpan.FromMinutes(waitMins);
+                while (remaining > TimeSpan.Zero)
+                {
+                    this.CampaignProgressText = _context.Localization.Format(
+                        "Publisher.ScheduleCountdownFormat",
+                        remaining.ToString(@"mm\:ss", System.Globalization.CultureInfo.InvariantCulture));
+                    await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(true);
+                    remaining -= TimeSpan.FromSeconds(1);
+                }
             }
 
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
@@ -907,6 +916,95 @@ public sealed partial class ShellViewModel
         }
 
         await session.NavigateAsync(this.SelectedPublishedPost.PermalinkUrl).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Clones a published post's text and local media path (if still present on disk) into the Publisher Composer.
+    /// </summary>
+    /// <param name="post">Published post record to clone, or <c>null</c> to use <see cref="ShellViewModel.SelectedPublishedPost"/>.</param>
+    public void ClonePublishedPostToComposer(PublishedPostRecord? post)
+    {
+        PublishedPostRecord? target = post ?? this.SelectedPublishedPost;
+        if (target is null)
+        {
+            return;
+        }
+
+        this.PostSpintaxText = target.MessageText;
+        List<string> existingMedia = ParseExistingMediaFilePaths(target.LocalMediaFilePath);
+        this.PostMediaFilePath = existingMedia.Count > 0 ? string.Join(";", existingMedia) : string.Empty;
+        this.GenerateSpintaxPreview();
+    }
+
+    /// <summary>
+    /// Immediately bumps a single published post with a comment using the active account session.
+    /// </summary>
+    /// <param name="post">Published post record to bump, or <c>null</c> to use <see cref="ShellViewModel.SelectedPublishedPost"/>.</param>
+    public async Task BumpSinglePublishedPostAsync(PublishedPostRecord? post)
+    {
+        PublishedPostRecord? target = post ?? this.SelectedPublishedPost;
+        if (target is null || string.IsNullOrWhiteSpace(target.PostId))
+        {
+            return;
+        }
+
+        CancellationToken scopeCt = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(scopeCt).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            string bumpText = !string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText)
+                ? this.BumpCommentSpintaxText
+                : _context.Localization["Publisher.DefaultBumpSpintax"];
+
+            string resolvedBumpText = ResolveDynamicCommentVariables(
+                bumpText,
+                this.SelectedAccount?.DisplayName,
+                target.TargetGroupName);
+
+            _ = await _context.CometClient
+                .CreateCommentAsync(session, target.PostId, resolvedBumpText, null, ct: scopeCt)
+                .ConfigureAwait(true);
+
+            PublishedPostRecord updated = target with
+            {
+                CommentCount = target.CommentCount + 1
+            };
+            await _context.AccountStore.UpsertPublishedPostAsync(updated, scopeCt).ConfigureAwait(true);
+            await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+            this.SelectedPublishedPost = updated;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Success,
+                target.TargetGroupName ?? _context.Localization["Publisher.TabBump"],
+                _context.Localization.Format("Log.PostBumpedSuccess", 1, 1),
+                target.PermalinkUrl).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Warning,
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Error,
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization.Format("Log.PostBumpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
     }
 
     private async Task BumpRecentPostsAsync()

@@ -73,6 +73,10 @@ public sealed partial class AiChatBubbleItem : ObservableObject
     [ObservableProperty]
     public partial string Content { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets a value indicating whether the assistant is currently streaming or generating this message.</summary>
+    [ObservableProperty]
+    public partial bool IsLoading { get; set; }
+
     /// <summary>Gets or sets the optional proposed batch action attached to this assistant message.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasProposedAction))]
@@ -101,6 +105,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
     private readonly UiServiceContext _context;
     private readonly Func<Task>? _onMcpDatabaseUpdated;
     private readonly Action<AgyProposedAction>? _onExecuteProposedActionInShell;
+    private Action? _cancelActiveChat;
     private bool _hasActiveConversation;
     private bool _isMemoryStoreInitialized;
     private bool _suppressConversationSelectionChange;
@@ -153,6 +158,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         this.SubmitManualOAuthCodeCommand = new AsyncRelayCommand(this.SubmitManualOAuthCodeAsync);
         this.VerifyAuthStateCommand = new AsyncRelayCommand(this.VerifyAuthStateAsync);
         this.SendMessageCommand = new AsyncRelayCommand(this.SendMessageAsync);
+        this.StopGenerationCommand = new RelayCommand(this.StopGeneration);
         this.SendQuickPromptCommand = new AsyncRelayCommand<string>(this.SendQuickPromptAsync);
         this.ExecuteProposedActionCommand = new AsyncRelayCommand<AiChatBubbleItem>(this.ExecuteProposedActionAsync);
         this.EditProposedActionCommand = new RelayCommand<AiChatBubbleItem>(this.EditProposedAction);
@@ -385,6 +391,47 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
     /// <summary>Gets the command to toggle a smart workspace context pack.</summary>
     public IRelayCommand<string> ToggleContextPackCommand { get; }
+
+    /// <summary>Gets the command to stop the currently running AI generation stream.</summary>
+    public IRelayCommand StopGenerationCommand { get; }
+
+    /// <summary>
+    /// Cancels the active AI prompt generation if one is currently running.
+    /// </summary>
+    public void StopGeneration() => _cancelActiveChat?.Invoke();
+
+    /// <summary>
+    /// Sends the specified assistant reply text into the Publisher Spintax composer and switches to the Publisher page.
+    /// </summary>
+    /// <param name="text">Text content to load into the Publisher composer.</param>
+    public void SendTextToPublisherComposer(string? text)
+    {
+        if (this.Shell is null || string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string? extracted = TryExtractQuotedText(text);
+        this.Shell.PostSpintaxText = !string.IsNullOrWhiteSpace(extracted) ? extracted : text.Trim();
+        this.Shell.GenerateSpintaxPreview();
+        this.Shell.CurrentSection = Facebook.Net.UI.ViewModels.Shell.NavigationSection.Publisher;
+    }
+
+    /// <summary>
+    /// Sends the specified assistant reply text into the Sales &amp; Leads Comment composer and switches to the Sales &amp; Leads page.
+    /// </summary>
+    /// <param name="text">Text content to load into the Sales Comment composer.</param>
+    public void SendTextToSalesCommentComposer(string? text)
+    {
+        if (this.Shell is null || string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string? extracted = TryExtractQuotedText(text);
+        this.Shell.SalesCommentSpintaxText = !string.IsNullOrWhiteSpace(extracted) ? extracted : text.Trim();
+        this.Shell.CurrentSection = Facebook.Net.UI.ViewModels.Shell.NavigationSection.SalesLeads;
+    }
 
     /// <summary>
     /// Checks whether the specified context pack is currently enabled.
@@ -836,6 +883,19 @@ public sealed partial class AiAssistantViewModel : ObservableObject
         this.InputPromptText = string.Empty;
         this.IsBusy = true;
         this.StatusBannerText = _context.Localization["Ai.StatusThinking"];
+        AiChatBubbleItem? streamingBubble = null;
+        using CancellationTokenSource chatCts = new();
+        _cancelActiveChat = () =>
+        {
+            try
+            {
+                chatCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore if already disposed.
+            }
+        };
 
         try
         {
@@ -884,11 +944,12 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                 CultureInfo.InvariantCulture,
                 $"{baseContext}\n\n{workspaceSnapshot}");
 
-            AiChatBubbleItem streamingBubble = new()
+            streamingBubble = new AiChatBubbleItem
             {
                 Id = 0,
                 Role = "assistant",
                 Content = "...",
+                IsLoading = true,
                 TimestampText = DateTimeOffset.Now.ToString("HH:mm", CultureInfo.InvariantCulture)
             };
             this.Messages.Add(streamingBubble);
@@ -909,7 +970,8 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                     streamingProgress: streamingProgress,
                     model: this.SelectedAiModel,
                     effort: this.SelectedAiEffort,
-                    agyConversationId: this.ActiveAgyConversationId)
+                    agyConversationId: this.ActiveAgyConversationId,
+                    ct: chatCts.Token)
                 .ConfigureAwait(true);
 
             string finalResponseText = result.IsSuccess && !string.IsNullOrWhiteSpace(result.ResponseText)
@@ -1011,6 +1073,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject
             streamingBubble.TimestampText = assistantRec.TimestampUtc.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
             streamingBubble.ProposedAction = proposedAction;
             streamingBubble.IsActionExecuted = false;
+            streamingBubble.IsLoading = false;
             streamingBubble.Content = finalResponseText;
 
             if (!this.Messages.Contains(streamingBubble))
@@ -1028,8 +1091,22 @@ public sealed partial class AiAssistantViewModel : ObservableObject
 
             this.StatusBannerText = _context.Localization["Ai.StatusReady"];
         }
+        catch (OperationCanceledException)
+        {
+            if (streamingBubble is not null)
+            {
+                streamingBubble.IsLoading = false;
+                if (string.Equals(streamingBubble.Content, "...", StringComparison.Ordinal))
+                {
+                    _ = this.Messages.Remove(streamingBubble);
+                }
+            }
+
+            this.StatusBannerText = _context.Localization["Log.TaskStoppedByUser"];
+        }
         finally
         {
+            _cancelActiveChat = null;
             this.IsBusy = false;
         }
     }
@@ -1866,8 +1943,40 @@ public sealed partial class AiAssistantViewModel : ObservableObject
                 GroupKeyword: null);
         }
 
+        if (this.Shell?.SelectedScrapedPost is { } selectedLead &&
+            !string.IsNullOrWhiteSpace(selectedLead.PostId) &&
+            IsCommentLeadPromptIntent(userPrompt) &&
+            !IsClarifyingQuestionResponse(assistantResponse))
+        {
+            string? quotedReply = TryExtractQuotedText(assistantResponse);
+            string replyContent = !string.IsNullOrWhiteSpace(quotedReply)
+                ? quotedReply
+                : assistantResponse.Trim();
+
+            return new AgyProposedAction(
+                ActionKind: "COMMENT_LEAD",
+                SummaryText: _context.Localization["Ai.ActionCommentLead"],
+                ContentText: replyContent,
+                TargetGroupCount: 0,
+                MinDelaySeconds: minDelay,
+                MaxDelaySeconds: maxDelay,
+                GroupKeyword: null,
+                TargetId: selectedLead.PostId);
+        }
+
         return null;
     }
+
+    private static bool IsCommentLeadPromptIntent(string text) =>
+        !string.IsNullOrWhiteSpace(text) &&
+        (text.Contains("bình luận", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("comment", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("tư vấn", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("phản hồi", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("trả lời", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("chốt khách", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("reply", StringComparison.OrdinalIgnoreCase) ||
+         text.Contains("lead", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsClarifyingQuestionResponse(string assistantResponse) =>
         !string.IsNullOrWhiteSpace(assistantResponse) &&

@@ -99,7 +99,7 @@ public sealed partial class GroupsPage : UserControl
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -117,24 +117,36 @@ public sealed partial class GroupsPage : UserControl
             this._vm.SyncJoinedGroupsCommand,
             VectorIcons.Sync);
 
+        Button selectRandomTargetsBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Groups.BtnSelectRandom"],
+            null,
+            VectorIcons.Sync);
+        selectRandomTargetsBtn.Click += async (_, _) =>
+        {
+            await this._vm.SelectRandomTargetGroupsAsync(10).ConfigureAwait(true);
+        };
+
         Button selectAllTargetsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnSelectAllTargets"],
-            this._vm.EnableAllTargetGroupsCommand,
+            null,
             VectorIcons.CheckCircle);
 
         Button deselectAllTargetsBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Groups.BtnDeselectAllTargets"],
-            this._vm.DisableAllTargetGroupsCommand,
+            null,
             VectorIcons.StopCircle);
 
         Grid.SetColumn(header, 0);
         Grid.SetColumn(syncAllJoinedBtn, 1);
-        Grid.SetColumn(selectAllTargetsBtn, 2);
-        Grid.SetColumn(deselectAllTargetsBtn, 3);
+        Grid.SetColumn(selectRandomTargetsBtn, 2);
+        Grid.SetColumn(selectAllTargetsBtn, 3);
+        Grid.SetColumn(deselectAllTargetsBtn, 4);
         topHeaderRow.Children.Add(header);
         topHeaderRow.Children.Add(syncAllJoinedBtn);
+        topHeaderRow.Children.Add(selectRandomTargetsBtn);
         topHeaderRow.Children.Add(selectAllTargetsBtn);
         topHeaderRow.Children.Add(deselectAllTargetsBtn);
         Grid.SetRow(topHeaderRow, 0);
@@ -144,6 +156,47 @@ public sealed partial class GroupsPage : UserControl
         string? targetStateFilter = null; // "enabled", "disabled", or null
         string? selectedTagFilterId = null; // tag.Id, "__untagged__", or null
         SearchFilterBar targetSearchBar = null!;
+
+        bool IsTargetFilterActive() =>
+            !string.IsNullOrWhiteSpace(targetSearchBar?.SearchTextBox.Text) ||
+            !string.IsNullOrEmpty(targetStateFilter) ||
+            !string.IsNullOrEmpty(selectedTagFilterId);
+
+        selectAllTargetsBtn.Click += async (_, _) =>
+        {
+            if (IsTargetFilterActive())
+            {
+                List<string> ids = new(filteredTargets.Count);
+                for (int i = 0; i < filteredTargets.Count; i++)
+                {
+                    ids.Add(filteredTargets[i].GroupId);
+                }
+
+                await this._vm.SetTargetGroupsEnabledBatchAsync(ids, isEnabled: true).ConfigureAwait(true);
+            }
+            else if (this._vm.EnableAllTargetGroupsCommand.CanExecute(null))
+            {
+                await this._vm.EnableAllTargetGroupsCommand.ExecuteAsync(null).ConfigureAwait(true);
+            }
+        };
+
+        deselectAllTargetsBtn.Click += async (_, _) =>
+        {
+            if (IsTargetFilterActive())
+            {
+                List<string> ids = new(filteredTargets.Count);
+                for (int i = 0; i < filteredTargets.Count; i++)
+                {
+                    ids.Add(filteredTargets[i].GroupId);
+                }
+
+                await this._vm.SetTargetGroupsEnabledBatchAsync(ids, isEnabled: false).ConfigureAwait(true);
+            }
+            else if (this._vm.DisableAllTargetGroupsCommand.CanExecute(null))
+            {
+                await this._vm.DisableAllTargetGroupsCommand.ExecuteAsync(null).ConfigureAwait(true);
+            }
+        };
 
         void UpdateHeaderStats()
         {
@@ -193,7 +246,7 @@ public sealed partial class GroupsPage : UserControl
                 }
 
                 if (!string.IsNullOrEmpty(q) &&
-                    !tg.GroupName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    !this._vm.MatchesTextAccentInsensitive(tg.GroupName, q))
                 {
                     continue;
                 }
@@ -374,6 +427,7 @@ public sealed partial class GroupsPage : UserControl
             targetListDesc.Text = this._i18n["Groups.Desc"];
             emptyTargetsTb.Text = this._i18n["Empty.TargetGroups"];
             AppButton.SetText(syncAllJoinedBtn, this._i18n["Groups.BtnSyncJoined"]);
+            AppButton.SetText(selectRandomTargetsBtn, this._i18n["Groups.BtnSelectRandom"]);
             AppButton.SetText(selectAllTargetsBtn, this._i18n["Groups.BtnSelectAllTargets"]);
             AppButton.SetText(deselectAllTargetsBtn, this._i18n["Groups.BtnDeselectAllTargets"]);
         };
@@ -391,7 +445,7 @@ public sealed partial class GroupsPage : UserControl
 
         Grid topHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -402,6 +456,12 @@ public sealed partial class GroupsPage : UserControl
             this._i18n["Groups.Desc"],
             out TextBlock titleTb,
             out TextBlock descTb);
+
+        Button addFilteredToTargetsBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n.Format("Groups.BtnAddFilteredToTargets", 0),
+            null,
+            VectorIcons.Plus);
 
         Button autoJoinHeaderBtn = AppButton.CreateSecondary(
             this._theme,
@@ -423,10 +483,12 @@ public sealed partial class GroupsPage : UserControl
             VectorIcons.Sync);
 
         Grid.SetColumn(header, 0);
-        Grid.SetColumn(autoJoinHeaderBtn, 1);
-        Grid.SetColumn(searchFbBtn, 2);
-        Grid.SetColumn(syncJoinedBtn, 3);
+        Grid.SetColumn(addFilteredToTargetsBtn, 1);
+        Grid.SetColumn(autoJoinHeaderBtn, 2);
+        Grid.SetColumn(searchFbBtn, 3);
+        Grid.SetColumn(syncJoinedBtn, 4);
         topHeaderRow.Children.Add(header);
+        topHeaderRow.Children.Add(addFilteredToTargetsBtn);
         topHeaderRow.Children.Add(autoJoinHeaderBtn);
         topHeaderRow.Children.Add(searchFbBtn);
         topHeaderRow.Children.Add(syncJoinedBtn);
@@ -437,6 +499,17 @@ public sealed partial class GroupsPage : UserControl
         string? membershipFilter = null; // "unjoined", "joined", or null
         string? selectedTagFilterId = null; // tag.Id, "__untagged__", or null
         SearchFilterBar searchFilterBar = null!;
+
+        addFilteredToTargetsBtn.Click += async (_, _) =>
+        {
+            if (filteredCatalog.Count == 0)
+            {
+                return;
+            }
+
+            List<GroupSummary> snapshot = [.. filteredCatalog];
+            await this._vm.AddDiscoveredGroupsBatchToTargetsAsync(snapshot).ConfigureAwait(true);
+        };
 
         void RefreshCatalogFilter()
         {
@@ -483,7 +556,7 @@ public sealed partial class GroupsPage : UserControl
                     }
                 }
 
-                if (!string.IsNullOrEmpty(kw) && !g.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(kw) && !this._vm.MatchesTextAccentInsensitive(g.Name, kw))
                 {
                     continue;
                 }
@@ -492,6 +565,8 @@ public sealed partial class GroupsPage : UserControl
             }
 
             autoJoinHeaderBtn.IsVisible = unjoinedCount > 0;
+            addFilteredToTargetsBtn.IsEnabled = list.Count > 0;
+            AppButton.SetText(addFilteredToTargetsBtn, this._i18n.Format("Groups.BtnAddFilteredToTargets", list.Count));
             titleTb.Text = $"{this._i18n["Groups.Header"]} — {joinedCount} {this._i18n["Groups.FilterSegJoined"]} • {unjoinedCount} {this._i18n["Groups.FilterSegUnjoined"]}";
             filteredCatalog.ReplaceAll(list);
         }

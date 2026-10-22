@@ -3,6 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -107,16 +111,22 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
     {
         DateTimeOffset? fromTime = ResolveFromTime(this.SelectedTimeRange);
         bool hasKeyword = !string.IsNullOrWhiteSpace(this.SearchKeyword);
+        string? keyword = hasKeyword ? this.SearchKeyword.Trim() : null;
 
         AuditLogFilter filter = new(
             Category: this.SelectedCategory,
             Severity: this.SelectedSeverity,
             AccountUid: this.SelectedAccountUid,
             FromTime: fromTime,
-            SearchKeyword: null,
+            SearchKeyword: keyword,
             Limit: hasKeyword ? 600 : 250);
 
         List<AuditLogRecord> records = await _context.AuditStore.QueryAsync(filter).ConfigureAwait(true);
+        if (hasKeyword && records.Count == 0)
+        {
+            records = await _context.AuditStore.QueryAsync(filter with { SearchKeyword = null }).ConfigureAwait(true);
+        }
+
         List<AuditLogRecord> matched = new(Math.Min(records.Count, 250));
 
         int ok = 0;
@@ -163,6 +173,69 @@ public sealed partial class AuditLogDrawerViewModel : ObservableObject, IDisposa
         {
             this.LatestTickerText = _context.Localization["Audit.ReadyTicker"];
         }
+    }
+
+    /// <summary>
+    /// Exports the currently displayed <see cref="FilteredLogs"/> to a UTF-8 with BOM CSV file and records an audit entry.
+    /// </summary>
+    /// <param name="filePath">Target file path on disk.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The number of exported rows.</returns>
+    public async Task<int> ExportFilteredLogsToCsvAsync(string filePath, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return 0;
+        }
+
+        List<AuditLogRecord> snapshot = new(this.FilteredLogs.Count);
+        for (int i = 0; i < this.FilteredLogs.Count; i++)
+        {
+            snapshot.Add(this.FilteredLogs[i]);
+        }
+
+        StringBuilder sb = new(capacity: (snapshot.Count + 1) * 128);
+        _ = sb.AppendLine("Timestamp,Severity,Category,Account,Target,Message,PermalinkUrl");
+
+        for (int i = 0; i < snapshot.Count; i++)
+        {
+            AuditLogRecord rec = snapshot[i];
+            _ = sb.Append(EscapeCsvField(rec.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))).Append(',')
+                  .Append(EscapeCsvField(rec.Severity.ToString())).Append(',')
+                  .Append(EscapeCsvField(_context.Localization.FormatAuditCategory(rec.Category))).Append(',')
+                  .Append(EscapeCsvField(rec.AccountDisplayName)).Append(',')
+                  .Append(EscapeCsvField(rec.TargetName)).Append(',')
+                  .Append(EscapeCsvField(rec.Message)).Append(',')
+                  .AppendLine(EscapeCsvField(rec.PermalinkUrl ?? string.Empty));
+        }
+
+        UTF8Encoding utf8Bom = new(encoderShouldEmitUTF8Identifier: true);
+        await File.WriteAllTextAsync(filePath, sb.ToString(), utf8Bom, ct).ConfigureAwait(true);
+
+        int count = snapshot.Count;
+        string fileName = Path.GetFileName(filePath);
+        _ = await _context.AuditStore.AppendAsync(
+            AuditCategory.System,
+            AuditSeverity.Success,
+            "system",
+            _context.Localization["Audit.Cat.System"],
+            _context.Localization["Audit.TaskbarTitle"],
+            _context.Localization.Format("Log.AuditExportedCsv", count, fileName),
+            null,
+            ct).ConfigureAwait(true);
+
+        return count;
+    }
+
+    private static string EscapeCsvField(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "\"\"";
+        }
+
+        string escaped = value.Replace("\"", "\"\"", StringComparison.Ordinal);
+        return $"\"{escaped}\"";
     }
 
     private static DateTimeOffset? ResolveFromTime(AuditTimeRange range) =>

@@ -14,6 +14,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -962,15 +963,33 @@ public sealed class AiAssistantPanel : Border
             Background = _theme.Palette.BrandPrimary,
             Content = sendIcon,
             Command = _aiVm.SendMessageCommand,
+            IsVisible = !_aiVm.IsBusy,
             Cursor = new Cursor(StandardCursorType.Hand)
         };
         ToolTip.SetTip(sendBtn, _i18n["Ai.BtnSend"]);
         AutomationProperties.SetName(sendBtn, _i18n["Ai.BtnSend"]);
 
+        Button stopBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnStopGeneration"],
+            _aiVm.StopGenerationCommand,
+            VectorIcons.StopCircle);
+        stopBtn.Height = 38;
+        stopBtn.VerticalAlignment = VerticalAlignment.Bottom;
+        stopBtn.IsVisible = _aiVm.IsBusy;
+
+        StackPanel actionBtnHost = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Children = { stopBtn, sendBtn }
+        };
+
         Grid.SetColumn(promptBox, 0);
-        Grid.SetColumn(sendBtn, 1);
+        Grid.SetColumn(actionBtnHost, 1);
         inputRow.Children.Add(promptBox);
-        inputRow.Children.Add(sendBtn);
+        inputRow.Children.Add(actionBtnHost);
 
         // ── Active Context Pills + (+ Nạp Context ▾) & (Kịch bản mẫu ▾) Toolbar ──
         WrapPanel activeContextPillsWrap = new()
@@ -1168,6 +1187,11 @@ public sealed class AiAssistantPanel : Border
                     updatingPrompt = false;
                 }
             }
+            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.IsBusy), StringComparison.Ordinal))
+            {
+                sendBtn.IsVisible = !_aiVm.IsBusy;
+                stopBtn.IsVisible = _aiVm.IsBusy;
+            }
         };
 
         RebuildMessageBubbles();
@@ -1182,6 +1206,8 @@ public sealed class AiAssistantPanel : Border
             inputBarBorder.Background = p.ElevatedSurface;
             inputBarBorder.BorderBrush = p.SubtleBorder;
             sendBtn.Background = p.BrandPrimary;
+            sendBtn.IsVisible = !_aiVm.IsBusy;
+            stopBtn.IsVisible = _aiVm.IsBusy;
             VectorIcons.SetForeground(sendIcon, Brushes.White);
             RebuildMessageBubbles();
         };
@@ -1197,6 +1223,7 @@ public sealed class AiAssistantPanel : Border
             ToolTip.SetTip(promptBox, _i18n["Ai.InputPlaceholder"]);
             ToolTip.SetTip(sendBtn, _i18n["Ai.BtnSend"]);
             AutomationProperties.SetName(sendBtn, _i18n["Ai.BtnSend"]);
+            AppButton.SetText(stopBtn, _i18n["Ai.BtnStopGeneration"]);
             RebuildMessageBubbles();
         };
 
@@ -1689,8 +1716,56 @@ public sealed class AiAssistantPanel : Border
         actionStack.Children.Add(executedBadge);
         actionCard.Child = actionStack;
 
+        WrapPanel assistantActionsRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 5,
+            LineSpacing = 4,
+            Margin = new Thickness(0, 2, 0, 0),
+            IsVisible = !isUser && !item.IsLoading && !string.IsNullOrWhiteSpace(item.Content) && !string.Equals(item.Content, "...", StringComparison.Ordinal)
+        };
+
+        Button copyReplyBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnCopyReply"],
+            command: null,
+            iconSvg: VectorIcons.Clipboard);
+        copyReplyBtn.Padding = new Thickness(7, 3);
+        copyReplyBtn.MinHeight = 24;
+        copyReplyBtn.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard && !string.IsNullOrWhiteSpace(item.Content))
+            {
+                await clipboard.SetTextAsync(item.Content).ConfigureAwait(true);
+                AppButton.SetText(copyReplyBtn, _i18n["Ai.BtnCopiedReply"]);
+            }
+        };
+
+        Button toPublisherBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnToPublisher"],
+            command: null,
+            iconSvg: VectorIcons.Publish);
+        toPublisherBtn.Padding = new Thickness(7, 3);
+        toPublisherBtn.MinHeight = 24;
+        toPublisherBtn.Click += (_, _) => _aiVm.SendTextToPublisherComposer(item.Content);
+
+        Button toLeadCommentBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnToLeadComment"],
+            command: null,
+            iconSvg: VectorIcons.SalesComment);
+        toLeadCommentBtn.Padding = new Thickness(7, 3);
+        toLeadCommentBtn.MinHeight = 24;
+        toLeadCommentBtn.Click += (_, _) => _aiVm.SendTextToSalesCommentComposer(item.Content);
+
+        assistantActionsRow.Children.Add(copyReplyBtn);
+        assistantActionsRow.Children.Add(toPublisherBtn);
+        assistantActionsRow.Children.Add(toLeadCommentBtn);
+
         bubbleStack.Children.Add(metaRow);
         bubbleStack.Children.Add(innerContentTb);
+        bubbleStack.Children.Add(assistantActionsRow);
         bubbleStack.Children.Add(actionCard);
 
         Border bubbleBorder = new()
@@ -1777,6 +1852,13 @@ public sealed class AiAssistantPanel : Border
 
             actionButtonsRow.IsVisible = hasAction && !item.IsActionExecuted;
             executedBadge.IsVisible = hasAction && item.IsActionExecuted;
+            assistantActionsRow.IsVisible = !isUser &&
+                                            !item.IsLoading &&
+                                            !string.IsNullOrWhiteSpace(item.Content) &&
+                                            !string.Equals(item.Content, "...", StringComparison.Ordinal);
+            AppButton.SetText(copyReplyBtn, _i18n["Ai.BtnCopyReply"]);
+            AppButton.SetText(toPublisherBtn, _i18n["Ai.BtnToPublisher"]);
+            AppButton.SetText(toLeadCommentBtn, _i18n["Ai.BtnToLeadComment"]);
         };
 
         refreshBubble();

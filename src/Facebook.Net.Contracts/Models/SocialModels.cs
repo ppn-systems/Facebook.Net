@@ -137,13 +137,25 @@ public sealed record SavedTargetGroup(
     string? AvatarUrl = null,
     string? TagsCsv = null)
 {
+    private (string? RawCsv, string[]? ParsedIds) _cachedTags;
+
     /// <summary>
     /// Returns the list of assigned <see cref="GroupTag.Id"/> identifiers on this group.
     /// </summary>
-    public System.Collections.Generic.IReadOnlyList<string> GetTagIds() =>
-        string.IsNullOrWhiteSpace(this.TagsCsv)
+    public System.Collections.Generic.IReadOnlyList<string> GetTagIds()
+    {
+        if (this._cachedTags.ParsedIds is not null &&
+            string.Equals(this._cachedTags.RawCsv, this.TagsCsv, StringComparison.Ordinal))
+        {
+            return this._cachedTags.ParsedIds;
+        }
+
+        string[] parsed = string.IsNullOrWhiteSpace(this.TagsCsv)
             ? Array.Empty<string>()
             : this.TagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        this._cachedTags = (this.TagsCsv, parsed);
+        return parsed;
+    }
 
     /// <summary>
     /// Checks whether this target group is assigned the specified <paramref name="tagId"/>.
@@ -155,8 +167,8 @@ public sealed record SavedTargetGroup(
             return false;
         }
 
-        string[] parts = this.TagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        for (int i = 0; i < parts.Length; i++)
+        System.Collections.Generic.IReadOnlyList<string> parts = this.GetTagIds();
+        for (int i = 0; i < parts.Count; i++)
         {
             if (string.Equals(parts[i], tagId, StringComparison.OrdinalIgnoreCase))
             {

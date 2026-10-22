@@ -41,6 +41,9 @@ public sealed partial class ShellViewModel
     public partial string AccountFilterText { get; set; } = string.Empty;
 
     private readonly List<AccountProfile> _allAccounts = new();
+    private string? _lastAccountSearchKeyword;
+    private string? _lastAccountStatusFilterMode;
+    private bool? _lastAccountHasProxyFilter;
 
     /// <summary>
     /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, optional status, and optional proxy assignment.
@@ -54,6 +57,12 @@ public sealed partial class ShellViewModel
                 _allAccounts.Add(this.Accounts[i]);
             }
         }
+
+        _lastAccountSearchKeyword = filterText;
+        _lastAccountStatusFilterMode = statusFilter == AccountStatus.Active
+            ? "active"
+            : (statusFilter is not null ? "attention" : null);
+        _lastAccountHasProxyFilter = hasProxyFilter;
 
         this.AccountFilterText = filterText ?? string.Empty;
         string kw = this.AccountFilterText.Trim();
@@ -77,6 +86,74 @@ public sealed partial class ShellViewModel
             {
                 bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
                 if (hasProxyFilter.Value != hasProxy)
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !_context.LeadScoring.MatchesAccentInsensitive(acc.DisplayName, kw))
+            {
+                continue;
+            }
+
+            filtered.Add(acc);
+        }
+
+        this.Accounts.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, status mode (<c>"all"</c>, <c>"active"</c>, <c>"attention"</c>), and optional proxy assignment.
+    /// </summary>
+    public void ApplyLocalAccountFilterByMode(string? keyword, string? mode, bool? hasProxyFilter = null)
+    {
+        if (_allAccounts.Count == 0 && this.Accounts.Count > 0)
+        {
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                _allAccounts.Add(this.Accounts[i]);
+            }
+        }
+
+        _lastAccountSearchKeyword = keyword;
+        _lastAccountStatusFilterMode = mode;
+        if (hasProxyFilter is not null || mode is null)
+        {
+            _lastAccountHasProxyFilter = hasProxyFilter;
+        }
+
+        bool? effectiveProxyFilter = hasProxyFilter ?? _lastAccountHasProxyFilter;
+        this.AccountFilterText = keyword ?? string.Empty;
+        string kw = this.AccountFilterText.Trim();
+        string normalizedMode = (mode ?? string.Empty).Trim();
+        bool isActiveMode = string.Equals(normalizedMode, "active", StringComparison.OrdinalIgnoreCase);
+        bool isAttentionMode = string.Equals(normalizedMode, "attention", StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(kw) && !isActiveMode && !isAttentionMode && effectiveProxyFilter is null)
+        {
+            this.Accounts.ReplaceAll(_allAccounts);
+            return;
+        }
+
+        List<AccountProfile> filtered = new(_allAccounts.Count);
+        for (int i = 0; i < _allAccounts.Count; i++)
+        {
+            AccountProfile acc = _allAccounts[i];
+            if (isActiveMode && acc.Status != AccountStatus.Active)
+            {
+                continue;
+            }
+
+            if (isAttentionMode && acc.Status == AccountStatus.Active)
+            {
+                continue;
+            }
+
+            if (effectiveProxyFilter is not null)
+            {
+                bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
+                if (effectiveProxyFilter.Value != hasProxy)
                 {
                     continue;
                 }
@@ -195,7 +272,16 @@ public sealed partial class ShellViewModel
 
         _allAccounts.Clear();
         _allAccounts.AddRange(normalizedAccounts);
-        this.Accounts.ReplaceAll(normalizedAccounts);
+        if (!string.IsNullOrWhiteSpace(_lastAccountSearchKeyword) ||
+            !string.IsNullOrWhiteSpace(_lastAccountStatusFilterMode) ||
+            _lastAccountHasProxyFilter is not null)
+        {
+            this.ApplyLocalAccountFilterByMode(_lastAccountSearchKeyword, _lastAccountStatusFilterMode, _lastAccountHasProxyFilter);
+        }
+        else
+        {
+            this.Accounts.ReplaceAll(normalizedAccounts);
+        }
 
         AccountProfile? matched = null;
         for (int i = 0; i < normalizedAccounts.Count; i++)
@@ -449,10 +535,14 @@ public sealed partial class ShellViewModel
                 current.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
                 current.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
 
+            string formattedDefaultName = _context.Localization.Format("Accounts.DefaultImportedName", suffix);
+            string fallbackDefaultName = formattedDefaultName.Contains(suffix, StringComparison.Ordinal)
+                ? formattedDefaultName
+                : $"{formattedDefaultName} {suffix}";
             string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
                 ? material.DisplayName
                 : (isDefaultPlaceholder && isHealthy
-                    ? $"Tài khoản {suffix}"
+                    ? fallbackDefaultName
                     : current.DisplayName);
 
             AccountProfile checkedProfile = current with

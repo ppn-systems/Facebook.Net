@@ -51,6 +51,13 @@ public sealed partial class ShellViewModel
     private GroupMembershipState? _activeStateFilter;
 
     /// <summary>
+    /// Checks whether <paramref name="source"/> contains <paramref name="keyword"/> using Vietnamese accent-insensitive matching.
+    /// </summary>
+    public bool MatchesTextAccentInsensitive(string? source, string? keyword) =>
+        string.IsNullOrWhiteSpace(keyword) ||
+        (!string.IsNullOrWhiteSpace(source) && _context.LeadScoring.MatchesAccentInsensitive(source, keyword));
+
+    /// <summary>
     /// Filters the displayed <see cref="JoinedGroups"/> catalog locally by <see cref="GroupFilterText"/>,
     /// optional membership state, and optional tag filter.
     /// </summary>
@@ -604,6 +611,111 @@ public sealed partial class ShellViewModel
             isEnabled
                 ? _context.Localization.Format("Log.TargetGroupsEnabledAll", this.TargetGroups.Count)
                 : _context.Localization.Format("Log.TargetGroupsDisabledAll", this.TargetGroups.Count)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Batch-enables or disables the specified subset of target groups by <paramref name="groupIds"/> and persists changes to SQLite.
+    /// </summary>
+    public async Task SetTargetGroupsEnabledBatchAsync(System.Collections.Generic.IReadOnlyList<string> groupIds, bool isEnabled)
+    {
+        if (groupIds is null || groupIds.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.HashSet<string> idSet = new(groupIds.Count, StringComparer.Ordinal);
+        for (int i = 0; i < groupIds.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(groupIds[i]))
+            {
+                _ = idSet.Add(groupIds[i]);
+            }
+        }
+
+        if (idSet.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> modified = new(idSet.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (idSet.Contains(tg.GroupId) && tg.IsEnabled != isEnabled)
+            {
+                modified.Add(tg with { IsEnabled = isEnabled });
+            }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            this.ApplyModifiedTargetGroupsInMemory(modified);
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            _context.Localization["Audit.Cat.Group"],
+            isEnabled
+                ? _context.Localization.Format("Log.TargetGroupsEnabledAll", idSet.Count)
+                : _context.Localization.Format("Log.TargetGroupsDisabledAll", idSet.Count)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Batch-adds the specified discovered <paramref name="groups"/> into the saved campaign target groups and persists them to SQLite.
+    /// </summary>
+    public async Task AddDiscoveredGroupsBatchToTargetsAsync(System.Collections.Generic.IReadOnlyList<GroupSummary> groups)
+    {
+        if (groups is null || groups.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> toUpsert = new(groups.Count);
+        for (int i = 0; i < groups.Count; i++)
+        {
+            GroupSummary grp = groups[i];
+            if (grp is null || string.IsNullOrWhiteSpace(grp.GroupId))
+            {
+                continue;
+            }
+
+            SavedTargetGroup? existing = this.FindTargetGroupById(grp.GroupId);
+            if (existing is null)
+            {
+                toUpsert.Add(new SavedTargetGroup(
+                    grp.GroupId,
+                    grp.Name,
+                    IsEnabled: true,
+                    Notes: null,
+                    AvatarUrl: grp.AvatarUrl,
+                    TagsCsv: null));
+            }
+            else if (!existing.IsEnabled)
+            {
+                toUpsert.Add(existing with
+                {
+                    GroupName = !string.IsNullOrWhiteSpace(grp.Name) ? grp.Name : existing.GroupName,
+                    AvatarUrl = grp.AvatarUrl ?? existing.AvatarUrl,
+                    IsEnabled = true
+                });
+            }
+        }
+
+        if (toUpsert.Count == 0)
+        {
+            return;
+        }
+
+        await _context.AccountStore.UpsertTargetGroupsBatchAsync(toUpsert).ConfigureAwait(true);
+        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.Group"],
+            _context.Localization.Format("Log.TargetGroupsEnabledAll", toUpsert.Count)).ConfigureAwait(true);
     }
 
     private void ApplyModifiedTargetGroupsInMemory(System.Collections.Generic.IReadOnlyList<SavedTargetGroup> modified)

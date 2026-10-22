@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -10,6 +11,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.ViewModels.Shell;
 
 namespace Facebook.Net.App.Views.Pages;
@@ -25,24 +27,83 @@ public sealed partial class AccountsPage
     {
         Grid pane = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,*"),
             RowSpacing = 10
         };
 
-        // ── Row 0: Incoming section header + Sync button ────────────────────────
+        BulkObservableCollection<UserSummary> filteredIncoming = new();
+        BulkObservableCollection<UserSummary> filteredOutgoing = new();
+
+        // ── Row 0: Unified SearchFilterBar ──────────────────────────────────────
+        string? directionFilter = null;
+        SearchFilterBar friendSearchBar = null!;
+        Action refreshFilteredRequests = null!;
+
+        FilterCategoryDefinition directionCategory = new(
+            "direction",
+            this._i18n["Accounts.FilterCatStatus"],
+            VectorIcons.Personal,
+            optionsProvider: () =>
+            [
+                new FilterOptionItem("incoming", this._i18n["Personal.IncomingHeader"]),
+                new FilterOptionItem("outgoing", this._i18n["Personal.OutgoingHeader"])
+            ],
+            onApplied: selectedIds =>
+            {
+                directionFilter = selectedIds.Count > 0 ? selectedIds[0] : null;
+                refreshFilteredRequests?.Invoke();
+            },
+            allowMultiple: false);
+
+        friendSearchBar = new SearchFilterBar(
+            this._theme,
+            this._i18n["Common.FilterButton"],
+            this._i18n["Personal.SearchRequestsPlaceholder"],
+            string.Empty);
+        friendSearchBar.SetFilterCategories(
+            [directionCategory],
+            this._i18n["Common.SearchInList"],
+            this._i18n["Common.BtnApplyFilter"]);
+        Grid.SetRow(friendSearchBar, 0);
+        pane.Children.Add(friendSearchBar);
+
+        // ── Row 1: Incoming section header + Accept All + Sync button ───────────
         Grid incomingHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
 
         Grid incomingHeader = SectionHeader.Create(
             this._theme,
-            this._i18n["Personal.IncomingHeader"],
+            $"{this._i18n["Personal.IncomingHeader"]} (0)",
             this._i18n["Personal.IncomingDesc"],
             out TextBlock incomingTitleTb,
             out TextBlock incomingDescTb);
+
+        Button acceptAllBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Personal.BtnAcceptAll"],
+            null,
+            VectorIcons.CheckCircle);
+        acceptAllBtn.Click += (_, _) =>
+        {
+            if (this._vm.IncomingFriendRequests.Count == 0)
+            {
+                return;
+            }
+
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Personal.BtnAcceptAll"],
+                this._i18n.Format("Personal.ConfirmAcceptAllMsg", this._vm.IncomingFriendRequests.Count),
+                this._i18n["Personal.BtnAcceptAll"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                () => this._vm.AcceptAllIncomingRequestsAsync(),
+                VectorIcons.CheckCircle);
+        };
 
         Button syncIncomingBtn = AppButton.CreatePrimary(
             this._theme,
@@ -51,16 +112,18 @@ public sealed partial class AccountsPage
             VectorIcons.Sync);
 
         Grid.SetColumn(incomingHeader, 0);
-        Grid.SetColumn(syncIncomingBtn, 1);
+        Grid.SetColumn(acceptAllBtn, 1);
+        Grid.SetColumn(syncIncomingBtn, 2);
         incomingHeaderRow.Children.Add(incomingHeader);
+        incomingHeaderRow.Children.Add(acceptAllBtn);
         incomingHeaderRow.Children.Add(syncIncomingBtn);
-        Grid.SetRow(incomingHeaderRow, 0);
+        Grid.SetRow(incomingHeaderRow, 1);
         pane.Children.Add(incomingHeaderRow);
 
-        // ── Row 1: Incoming requests list ───────────────────────────────────────
+        // ── Row 2: Incoming requests list ───────────────────────────────────────
         ListBox incomingList = FormField.CreateListBox<UserSummary>(
             this._theme,
-            this._vm.IncomingFriendRequests,
+            filteredIncoming,
             user => this.CreateFriendRow(
                 user,
                 acceptCommand: () => { this._vm.SelectedIncomingRequest = user; _ = this._vm.ConfirmFriendRequestCommand.ExecuteAsync(null); },
@@ -68,7 +131,7 @@ public sealed partial class AccountsPage
                 acceptLabel: this._i18n["Personal.BtnAccept"],
                 rejectLabel: this._i18n["Personal.BtnReject"]),
             selectedItem: this._vm.SelectedIncomingRequest,
-            isVisible: this._vm.IncomingFriendRequests.Count > 0);
+            isVisible: false);
 
         incomingList.SelectionChanged += (_, _) =>
         {
@@ -83,17 +146,10 @@ public sealed partial class AccountsPage
             this._i18n["Empty.IncomingRequests"],
             VectorIcons.ThumbUp,
             out TextBlock emptyIncomingTb);
-        emptyIncoming.IsVisible = this._vm.IncomingFriendRequests.Count == 0;
-
-        this._vm.IncomingFriendRequests.CollectionChanged += (_, _) =>
-        {
-            bool isEmpty = this._vm.IncomingFriendRequests.Count == 0;
-            emptyIncoming.IsVisible = isEmpty;
-            incomingList.IsVisible = !isEmpty;
-        };
+        emptyIncoming.IsVisible = true;
 
         Grid incomingHost = EmptyStateBanner.CreateHost(incomingList, emptyIncoming);
-        Grid.SetRow(incomingHost, 1);
+        Grid.SetRow(incomingHost, 2);
         pane.Children.Add(incomingHost);
 
         this._vm.PropertyChanged += (_, e) =>
@@ -105,10 +161,10 @@ public sealed partial class AccountsPage
             }
         };
 
-        // ── Row 2: Outgoing section header + Sync button ────────────────────────
+        // ── Row 3: Outgoing section header + Cancel All + Sync button ───────────
         Grid outgoingHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 8, 0, 0)
@@ -116,10 +172,33 @@ public sealed partial class AccountsPage
 
         Grid outgoingHeader = SectionHeader.Create(
             this._theme,
-            this._i18n["Personal.OutgoingHeader"],
+            $"{this._i18n["Personal.OutgoingHeader"]} (0)",
             this._i18n["Personal.OutgoingDesc"],
             out TextBlock outgoingTitleTb,
             out TextBlock outgoingDescTb);
+
+        Button cancelAllOutgoingBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Personal.BtnCancelAllOutgoing"],
+            null,
+            VectorIcons.StopCircle);
+        cancelAllOutgoingBtn.Click += (_, _) =>
+        {
+            if (this._vm.OutgoingFriendRequests.Count == 0)
+            {
+                return;
+            }
+
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Personal.BtnCancelAllOutgoing"],
+                this._i18n.Format("Personal.ConfirmCancelAllMsg", this._vm.OutgoingFriendRequests.Count),
+                this._i18n["Personal.BtnCancelAllOutgoing"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                () => this._vm.CancelAllOutgoingRequestsAsync(),
+                VectorIcons.StopCircle);
+        };
 
         Button syncOutgoingBtn = AppButton.CreateSecondary(
             this._theme,
@@ -128,22 +207,24 @@ public sealed partial class AccountsPage
             VectorIcons.Sync);
 
         Grid.SetColumn(outgoingHeader, 0);
-        Grid.SetColumn(syncOutgoingBtn, 1);
+        Grid.SetColumn(cancelAllOutgoingBtn, 1);
+        Grid.SetColumn(syncOutgoingBtn, 2);
         outgoingHeaderRow.Children.Add(outgoingHeader);
+        outgoingHeaderRow.Children.Add(cancelAllOutgoingBtn);
         outgoingHeaderRow.Children.Add(syncOutgoingBtn);
-        Grid.SetRow(outgoingHeaderRow, 2);
+        Grid.SetRow(outgoingHeaderRow, 3);
         pane.Children.Add(outgoingHeaderRow);
 
-        // ── Row 3: Outgoing requests list ───────────────────────────────────────
+        // ── Row 4: Outgoing requests list ───────────────────────────────────────
         ListBox outgoingList = FormField.CreateListBox<UserSummary>(
             this._theme,
-            this._vm.OutgoingFriendRequests,
+            filteredOutgoing,
             user => this.CreateFriendRow(
                 user,
                 cancelCommand: () => { this._vm.SelectedOutgoingRequest = user; _ = this._vm.CancelFriendRequestCommand.ExecuteAsync(null); },
                 cancelLabel: this._i18n["Personal.BtnCancel"]),
             selectedItem: this._vm.SelectedOutgoingRequest,
-            isVisible: this._vm.OutgoingFriendRequests.Count > 0);
+            isVisible: false);
 
         outgoingList.SelectionChanged += (_, _) =>
         {
@@ -158,18 +239,68 @@ public sealed partial class AccountsPage
             this._i18n["Empty.OutgoingRequests"],
             VectorIcons.Sync,
             out TextBlock emptyOutgoingTb);
-        emptyOutgoing.IsVisible = this._vm.OutgoingFriendRequests.Count == 0;
-
-        this._vm.OutgoingFriendRequests.CollectionChanged += (_, _) =>
-        {
-            bool isEmpty = this._vm.OutgoingFriendRequests.Count == 0;
-            emptyOutgoing.IsVisible = isEmpty;
-            outgoingList.IsVisible = !isEmpty;
-        };
+        emptyOutgoing.IsVisible = true;
 
         Grid outgoingHost = EmptyStateBanner.CreateHost(outgoingList, emptyOutgoing);
-        Grid.SetRow(outgoingHost, 3);
+        Grid.SetRow(outgoingHost, 4);
         pane.Children.Add(outgoingHost);
+
+        void RefreshFilteredRequests()
+        {
+            string query = (friendSearchBar.SearchTextBox.Text ?? string.Empty).Trim();
+            bool showIncoming = !string.Equals(directionFilter, "outgoing", StringComparison.OrdinalIgnoreCase);
+            bool showOutgoing = !string.Equals(directionFilter, "incoming", StringComparison.OrdinalIgnoreCase);
+
+            List<UserSummary> inMatches = new(this._vm.IncomingFriendRequests.Count);
+            if (showIncoming)
+            {
+                for (int i = 0; i < this._vm.IncomingFriendRequests.Count; i++)
+                {
+                    UserSummary u = this._vm.IncomingFriendRequests[i];
+                    if (this._vm.MatchesTextAccentInsensitive(u.Name, query))
+                    {
+                        inMatches.Add(u);
+                    }
+                }
+            }
+
+            filteredIncoming.ReplaceAll(inMatches);
+
+            List<UserSummary> outMatches = new(this._vm.OutgoingFriendRequests.Count);
+            if (showOutgoing)
+            {
+                for (int i = 0; i < this._vm.OutgoingFriendRequests.Count; i++)
+                {
+                    UserSummary u = this._vm.OutgoingFriendRequests[i];
+                    if (this._vm.MatchesTextAccentInsensitive(u.Name, query))
+                    {
+                        outMatches.Add(u);
+                    }
+                }
+            }
+
+            filteredOutgoing.ReplaceAll(outMatches);
+
+            incomingTitleTb.Text = $"{this._i18n["Personal.IncomingHeader"]} ({filteredIncoming.Count})";
+            outgoingTitleTb.Text = $"{this._i18n["Personal.OutgoingHeader"]} ({filteredOutgoing.Count})";
+            acceptAllBtn.IsEnabled = this._vm.IncomingFriendRequests.Count > 0;
+            cancelAllOutgoingBtn.IsEnabled = this._vm.OutgoingFriendRequests.Count > 0;
+
+            bool isIncomingEmpty = filteredIncoming.Count == 0;
+            emptyIncoming.IsVisible = isIncomingEmpty;
+            incomingList.IsVisible = !isIncomingEmpty;
+
+            bool isOutgoingEmpty = filteredOutgoing.Count == 0;
+            emptyOutgoing.IsVisible = isOutgoingEmpty;
+            outgoingList.IsVisible = !isOutgoingEmpty;
+        }
+
+        refreshFilteredRequests = RefreshFilteredRequests;
+        friendSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredRequests();
+        friendSearchBar.SearchButton.Click += (_, _) => RefreshFilteredRequests();
+        this._vm.IncomingFriendRequests.CollectionChanged += (_, _) => RefreshFilteredRequests();
+        this._vm.OutgoingFriendRequests.CollectionChanged += (_, _) => RefreshFilteredRequests();
+        RefreshFilteredRequests();
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -183,14 +314,21 @@ public sealed partial class AccountsPage
         // ── i18n refresh ────────────────────────────────────────────────────────
         refreshI18n = () =>
         {
-            incomingTitleTb.Text = this._i18n["Personal.IncomingHeader"];
+            directionCategory.Title = this._i18n["Accounts.FilterCatStatus"];
+            friendSearchBar.UpdateLocalization(
+                this._i18n["Common.FilterButton"],
+                this._i18n["Personal.SearchRequestsPlaceholder"],
+                this._i18n["Common.SearchInList"],
+                this._i18n["Common.BtnApplyFilter"]);
             incomingDescTb.Text = this._i18n["Personal.IncomingDesc"];
             emptyIncomingTb.Text = this._i18n["Empty.IncomingRequests"];
+            AppButton.SetText(acceptAllBtn, this._i18n["Personal.BtnAcceptAll"]);
             AppButton.SetText(syncIncomingBtn, this._i18n["Personal.BtnSyncIncoming"]);
-            outgoingTitleTb.Text = this._i18n["Personal.OutgoingHeader"];
             outgoingDescTb.Text = this._i18n["Personal.OutgoingDesc"];
             emptyOutgoingTb.Text = this._i18n["Empty.OutgoingRequests"];
+            AppButton.SetText(cancelAllOutgoingBtn, this._i18n["Personal.BtnCancelAllOutgoing"]);
             AppButton.SetText(syncOutgoingBtn, this._i18n["Personal.BtnSyncOutgoing"]);
+            RefreshFilteredRequests();
         };
 
         return pane;
@@ -207,7 +345,7 @@ public sealed partial class AccountsPage
     {
         Grid row = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 8,
             Margin = new Thickness(4, 3),
             VerticalAlignment = VerticalAlignment.Center
@@ -226,6 +364,15 @@ public sealed partial class AccountsPage
         row.Children.Add(nameTb);
 
         int colIndex = 2;
+
+        Button openProfileBtn = AppButton.CreateRowIcon(
+            this._theme,
+            VectorIcons.Browser,
+            this._i18n["Personal.BtnOpenProfile"],
+            () => this._vm.OpenFriendProfileInBrowser(user),
+            AuditSeverity.Info);
+        Grid.SetColumn(openProfileBtn, colIndex++);
+        row.Children.Add(openProfileBtn);
 
         if (acceptCommand is not null)
         {

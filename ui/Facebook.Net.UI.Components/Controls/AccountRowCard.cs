@@ -145,11 +145,18 @@ public static class AccountRowCard
             }
         }
 
-        i18n.LanguageChanged += (_, _) =>
+        void OnLangChanged(object? sender, AppLanguage lang)
         {
             subInfo.Text = FormatSubInfo();
             StatusPill.SetText(statusPill, i18n.FormatAccountStatus(item.Status));
+        }
+
+        row.AttachedToVisualTree += (_, _) =>
+        {
+            i18n.LanguageChanged -= OnLangChanged;
+            i18n.LanguageChanged += OnLangChanged;
         };
+        row.DetachedFromVisualTree += (_, _) => i18n.LanguageChanged -= OnLangChanged;
 
         row.Children.Add(avatar);
         row.Children.Add(info);

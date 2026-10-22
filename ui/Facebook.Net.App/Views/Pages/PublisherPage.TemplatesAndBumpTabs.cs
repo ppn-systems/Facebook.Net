@@ -25,7 +25,7 @@ namespace Facebook.Net.App.Views.Pages;
 /// </summary>
 public sealed partial class PublisherPage
 {
-    private Control BuildPublishedPostsAndRepostTab(out Action refreshI18n)
+    private Control BuildPublishedPostsAndRepostTab(Action? onSwitchToComposeTab, out Action refreshI18n)
     {
         Grid tabGrid = new()
         {
@@ -360,7 +360,7 @@ public sealed partial class PublisherPage
         // Right Column: Repost Selected Post to Groups / Colored Tags
         Grid repostCardGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
             RowSpacing = 8
         };
 
@@ -430,6 +430,38 @@ public sealed partial class PublisherPage
         Grid.SetRow(embeddedGroupTagPicker, 2);
         repostCardGrid.Children.Add(embeddedGroupTagPicker);
 
+        Grid quickPostActionsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 8
+        };
+
+        Button cloneToComposerBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnCloneToComposer"],
+            command: null,
+            iconSvg: VectorIcons.Edit);
+        cloneToComposerBtn.Click += (_, _) =>
+        {
+            this._vm.ClonePublishedPostToComposer(this._vm.SelectedPublishedPost);
+            onSwitchToComposeTab?.Invoke();
+        };
+
+        Button bumpSingleNowBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnBumpSelectedNow"],
+            command: null,
+            iconSvg: VectorIcons.SalesComment);
+        bumpSingleNowBtn.Click += async (_, _) =>
+            await this._vm.BumpSinglePublishedPostAsync(this._vm.SelectedPublishedPost).ConfigureAwait(true);
+
+        Grid.SetColumn(cloneToComposerBtn, 0);
+        Grid.SetColumn(bumpSingleNowBtn, 1);
+        quickPostActionsRow.Children.Add(cloneToComposerBtn);
+        quickPostActionsRow.Children.Add(bumpSingleNowBtn);
+        Grid.SetRow(quickPostActionsRow, 3);
+        repostCardGrid.Children.Add(quickPostActionsRow);
+
         repostNowBtn = AppButton.CreatePrimary(
             this._theme,
             this._i18n.Format("Publisher.BtnRepostToGroupsDynamic", 0),
@@ -438,7 +470,7 @@ public sealed partial class PublisherPage
         repostNowBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
         UpdateRepostButtonLabel();
 
-        Grid.SetRow(repostNowBtn, 3);
+        Grid.SetRow(repostNowBtn, 4);
         repostCardGrid.Children.Add(repostNowBtn);
 
         Border rightRepostCard = SurfaceCard.Create(this._theme, repostCardGrid, new Thickness(14));
@@ -485,6 +517,8 @@ public sealed partial class PublisherPage
             emptyPostsTb.Text = this._i18n["Empty.PublishedPosts"];
             repostHeaderTb.Text = this._i18n["Publisher.RepostPanelTitle"];
             repostCaptionBox.PlaceholderText = this._i18n["Publisher.RepostCaptionPlaceholder"];
+            AppButton.SetText(cloneToComposerBtn, this._i18n["Publisher.BtnCloneToComposer"]);
+            AppButton.SetText(bumpSingleNowBtn, this._i18n["Publisher.BtnBumpSelectedNow"]);
             rebuildRepostVars();
             refreshRepostPicker();
             RefreshFilteredPosts();

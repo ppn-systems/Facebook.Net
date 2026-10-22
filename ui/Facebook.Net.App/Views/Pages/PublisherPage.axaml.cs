@@ -71,7 +71,7 @@ public sealed partial class PublisherPage : UserControl
     {
         SubTabBar? subTabBar = null;
         Control tab1View = this.BuildComposeTab(out TextBox contentBox, out TextBox photoBox, out Action refreshTab1);
-        Control tab2View = this.BuildPublishedPostsAndRepostTab(out Action refreshTab2);
+        Control tab2View = this.BuildPublishedPostsAndRepostTab(() => subTabBar?.SelectTab(0), out Action refreshTab2);
         Control tab3View = this.BuildTemplatesAndBumpCombinedTab(
             contentBox,
             photoBox,
@@ -450,11 +450,11 @@ public sealed partial class PublisherPage : UserControl
         composerGrid.Children.Add(mediaStack);
         photoBox = localPhotoBox;
 
-        // Row 4: Auto-React + Schedule Delay Row
+        // Row 4: Auto-React + Schedule Delay Row + Quick Presets
         Grid optionsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,78"),
-            ColumnSpacing = 10,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,64,Auto"),
+            ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -485,12 +485,46 @@ public sealed partial class PublisherPage : UserControl
             }
         };
 
+        StackPanel schedulePresetsRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Button CreateSchedulePresetBtn(string i18nKey, int minutes)
+        {
+            Button btn = AppButton.CreateSecondary(this._theme, this._i18n[i18nKey]);
+            btn.Padding = new Thickness(7, 4);
+            btn.MinHeight = 26;
+            btn.Click += (_, _) =>
+            {
+                this._vm.ScheduleDelayMinutes = minutes;
+                scheduleDelayBox.Text = minutes.ToString(CultureInfo.InvariantCulture);
+            };
+            return btn;
+        }
+
+        Button presetNowBtn = CreateSchedulePresetBtn("Publisher.PresetNow", 0);
+        Button preset15mBtn = CreateSchedulePresetBtn("Publisher.Preset15m", 15);
+        Button preset30mBtn = CreateSchedulePresetBtn("Publisher.Preset30m", 30);
+        Button preset1hBtn = CreateSchedulePresetBtn("Publisher.Preset1h", 60);
+        Button preset2hBtn = CreateSchedulePresetBtn("Publisher.Preset2h", 120);
+
+        schedulePresetsRow.Children.Add(presetNowBtn);
+        schedulePresetsRow.Children.Add(preset15mBtn);
+        schedulePresetsRow.Children.Add(preset30mBtn);
+        schedulePresetsRow.Children.Add(preset1hBtn);
+        schedulePresetsRow.Children.Add(preset2hBtn);
+
         Grid.SetColumn(autoReactOwnPostCheck, 0);
         Grid.SetColumn(scheduleDelayLbl, 1);
         Grid.SetColumn(scheduleDelayBox, 2);
+        Grid.SetColumn(schedulePresetsRow, 3);
         optionsRow.Children.Add(autoReactOwnPostCheck);
         optionsRow.Children.Add(scheduleDelayLbl);
         optionsRow.Children.Add(scheduleDelayBox);
+        optionsRow.Children.Add(schedulePresetsRow);
         Grid.SetRow(optionsRow, 4);
         composerGrid.Children.Add(optionsRow);
 
@@ -908,6 +942,11 @@ public sealed partial class PublisherPage : UserControl
 
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
+            AppButton.SetText(presetNowBtn, this._i18n["Publisher.PresetNow"]);
+            AppButton.SetText(preset15mBtn, this._i18n["Publisher.Preset15m"]);
+            AppButton.SetText(preset30mBtn, this._i18n["Publisher.Preset30m"]);
+            AppButton.SetText(preset1hBtn, this._i18n["Publisher.Preset1h"]);
+            AppButton.SetText(preset2hBtn, this._i18n["Publisher.Preset2h"]);
             localContentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             rebuildComposeVars();
             AppButton.SetText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);

@@ -2,10 +2,14 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
+using Avalonia.Layout;
 using Avalonia.Media;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
@@ -20,7 +24,7 @@ public static class AuditLogTableRow
     /// <summary>
     /// Column width specification shared between <see cref="DataTableView{T}"/> headers and <see cref="Create"/> rows.
     /// </summary>
-    public const string ColumnLayout = "66,115,105,130,*";
+    public const string ColumnLayout = "96,115,105,130,*";
 
     /// <summary>
     /// Creates a reusable 5-column row for an <see cref="AuditLogRecord"/> entry.
@@ -43,7 +47,7 @@ public static class AuditLogTableRow
 
         TextBlock tsTb = SectionHeader.CreateLabel(
             theme,
-            rec.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+            rec.Timestamp.ToLocalTime().ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture),
             11,
             FontWeight.Normal,
             isSecondary: true);
@@ -60,22 +64,98 @@ public static class AuditLogTableRow
             theme,
             i18n.FormatAuditCategory(rec.Category),
             rec.Severity);
-        i18n.LanguageChanged += (_, _) =>
-            StatusPill.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
         Grid.SetColumn(catPill, 2);
         logRow.Children.Add(catPill);
 
         TextBlock targetTb = SectionHeader.CreateLabel(theme, rec.TargetName, 11, FontWeight.Normal, isSecondary: true);
         targetTb.TextTrimming = TextTrimming.CharacterEllipsis;
         targetTb.TextWrapping = TextWrapping.NoWrap;
+        ToolTip.SetTip(targetTb, rec.TargetName);
         Grid.SetColumn(targetTb, 3);
         logRow.Children.Add(targetTb);
+
+        Grid msgCellGrid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         TextBlock msgTb = SectionHeader.CreateLabel(theme, rec.Message, 12);
         msgTb.TextWrapping = TextWrapping.NoWrap;
         msgTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        Grid.SetColumn(msgTb, 4);
-        logRow.Children.Add(msgTb);
+        ToolTip.SetTip(msgTb, rec.Message);
+        Grid.SetColumn(msgTb, 0);
+        msgCellGrid.Children.Add(msgTb);
+
+        StackPanel actionBtns = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Button copyMsgBtn = AppButton.CreateRowIcon(
+            theme,
+            VectorIcons.Clipboard,
+            i18n["Audit.BtnCopyMessage"],
+            async () =>
+            {
+                if (TopLevel.GetTopLevel(logRow)?.Clipboard is { } clipboard && !string.IsNullOrEmpty(rec.Message))
+                {
+                    await clipboard.SetTextAsync(rec.Message).ConfigureAwait(true);
+                }
+            });
+        actionBtns.Children.Add(copyMsgBtn);
+
+        Button? openLinkBtn = null;
+        if (!string.IsNullOrWhiteSpace(rec.PermalinkUrl))
+        {
+            string url = rec.PermalinkUrl;
+            openLinkBtn = AppButton.CreateRowIcon(
+                theme,
+                VectorIcons.Browser,
+                i18n["Audit.BtnOpenPermalink"],
+                () =>
+                {
+                    try
+                    {
+                        _ = Process.Start(new ProcessStartInfo
+                        {
+                            FileName = url,
+                            UseShellExecute = true
+                        });
+                    }
+                    catch
+                    {
+                        // Ignore browser launch errors
+                    }
+                });
+            actionBtns.Children.Add(openLinkBtn);
+        }
+
+        Grid.SetColumn(actionBtns, 1);
+        msgCellGrid.Children.Add(actionBtns);
+
+        Grid.SetColumn(msgCellGrid, 4);
+        logRow.Children.Add(msgCellGrid);
+
+        void OnLangChanged(object? sender, AppLanguage lang)
+        {
+            StatusPill.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
+            ToolTip.SetTip(copyMsgBtn, i18n["Audit.BtnCopyMessage"]);
+            if (openLinkBtn is not null)
+            {
+                ToolTip.SetTip(openLinkBtn, i18n["Audit.BtnOpenPermalink"]);
+            }
+        }
+
+        logRow.AttachedToVisualTree += (_, _) =>
+        {
+            i18n.LanguageChanged -= OnLangChanged;
+            i18n.LanguageChanged += OnLangChanged;
+        };
+        logRow.DetachedFromVisualTree += (_, _) => i18n.LanguageChanged -= OnLangChanged;
 
         return logRow;
     }
@@ -112,14 +192,21 @@ public static class AuditLogTableRow
             theme,
             i18n.FormatAuditCategory(rec.Category),
             rec.Severity);
-        i18n.LanguageChanged += (_, _) =>
+        void OnCompactLangChanged(object? sender, AppLanguage lang) =>
             StatusPill.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
+        logRow.AttachedToVisualTree += (_, _) =>
+        {
+            i18n.LanguageChanged -= OnCompactLangChanged;
+            i18n.LanguageChanged += OnCompactLangChanged;
+        };
+        logRow.DetachedFromVisualTree += (_, _) => i18n.LanguageChanged -= OnCompactLangChanged;
         Grid.SetColumn(catPill, 1);
         logRow.Children.Add(catPill);
 
         TextBlock msgTb = SectionHeader.CreateLabel(theme, rec.Message, 11);
         msgTb.TextWrapping = TextWrapping.NoWrap;
         msgTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTip.SetTip(msgTb, rec.Message);
         Grid.SetColumn(msgTb, 2);
         logRow.Children.Add(msgTb);
 

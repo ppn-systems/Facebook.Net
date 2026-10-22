@@ -462,11 +462,19 @@ public sealed partial class SalesLeadsPage : UserControl
             VectorIcons.Browser);
         inspectOpenBrowserBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+        Button deleteLeadPostBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnDeleteLeadPost"],
+            new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(() => this._vm.DeleteScrapedPostAsync(this._vm.SelectedScrapedPost)),
+            VectorIcons.Trash);
+        deleteLeadPostBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+
         detailBtnStack.Children.Add(askAiConsultBtn);
         detailBtnStack.Children.Add(quickReplyBtn);
         detailBtnStack.Children.Add(copyPhoneBtn);
         detailBtnStack.Children.Add(markContactedBtn);
         detailBtnStack.Children.Add(inspectOpenBrowserBtn);
+        detailBtnStack.Children.Add(deleteLeadPostBtn);
         Grid.SetRow(detailBtnStack, 2);
         detailCardGrid.Children.Add(detailBtnStack);
 
@@ -777,6 +785,7 @@ public sealed partial class SalesLeadsPage : UserControl
             AppButton.SetText(askAiConsultBtn, this._i18n["Leads.BtnAskAiConsult"]);
             AppButton.SetText(quickReplyBtn, this._i18n["Leads.BtnQuickReplyTab"]);
             AppButton.SetText(inspectOpenBrowserBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
+            AppButton.SetText(deleteLeadPostBtn, this._i18n["Leads.BtnDeleteLeadPost"]);
             sortCategory.Title = this._i18n["Leads.FilterCatSort"];
             statusCategory.Title = this._i18n["Leads.ColStatus"];
             intentCategory.Title = this._i18n["Leads.FilterCatIntent"];
