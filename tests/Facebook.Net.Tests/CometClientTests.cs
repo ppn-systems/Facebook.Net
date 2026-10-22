@@ -21,7 +21,7 @@ namespace Facebook.Net.Tests;
 public sealed class CometClientTests
 {
     [Fact]
-    public void SpinText_ResolvesNestedAndFlatSpintaxOptions()
+    public void SpinText_ResolvesNestedBlocks_StrayBraces_And_DynamicMacros()
     {
         string input = "{Xin chào|Chào bạn|Hello} {inbox|nhắn tin} báo giá {nhé|nha}!";
         string spun = PayloadBuilder.SpinText(input);
@@ -30,6 +30,23 @@ public sealed class CometClientTests
         Assert.DoesNotContain("}", spun, StringComparison.Ordinal);
         Assert.DoesNotContain("|", spun, StringComparison.Ordinal);
         Assert.EndsWith("!", spun, StringComparison.Ordinal);
+
+        string nested = PayloadBuilder.SpinText("{A|{B|B}}");
+        Assert.True(nested is "A" or "B");
+
+        string strayClosingBeforeBlock = PayloadBuilder.SpinText("Price: } 100k {deal|sale}");
+        Assert.True(strayClosingBeforeBlock is "Price: } 100k deal" or "Price: } 100k sale");
+
+        string emptyBraces = PayloadBuilder.SpinText("Hello {}world");
+        Assert.Equal("Hello world", emptyBraces);
+
+        string macroInput = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";
+        string macroSpun = PayloadBuilder.SpinText(macroInput);
+        Assert.DoesNotContain("{date}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{time}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{day}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{random_id}", macroSpun, StringComparison.Ordinal);
+        Assert.Contains("#", macroSpun, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -160,19 +177,6 @@ public sealed class CometClientTests
         Assert.Equal("998877665544", post.PostId);
         Assert.Equal("Nguyễn Hoàng", post.AuthorName);
         Assert.Equal("Cần mua màn hình 27 inch 2K tại Hà Nội", post.MessageText);
-    }
-
-    [Fact]
-    public void SpinText_ExpandsDynamicMacros_Date_Time_Day_And_RandomId()
-    {
-        string input = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";
-        string spun = PayloadBuilder.SpinText(input);
-
-        Assert.DoesNotContain("{date}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{time}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{day}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{random_id}", spun, StringComparison.Ordinal);
-        Assert.Contains("#", spun, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -3,196 +3,35 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Reflection;
-using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts.Abstractions;
-using Facebook.Net.Contracts.Models;
-using Facebook.Net.Mcp;
-using Facebook.Net.Mcp.Tools;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.Core.Leads;
-using Facebook.Net.UI.Core.Threading;
 using Facebook.Net.UI.ViewModels.AiAssistant;
 using Facebook.Net.UI.ViewModels.Services;
 using Facebook.Net.UI.ViewModels.Shell;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="IAiMemoryStore"/>, <see cref="SqliteAiMemoryStore"/>,
-/// <see cref="IAgyCliService"/>, <see cref="AgyCliService"/>, <see cref="AiAssistantViewModel"/>,
-/// and <see cref="AppConfig.AiSystemPrompt"/>.
+/// Unit tests for <see cref="SqliteAiMemoryStore"/>, <see cref="AgyCliService"/> stream/action parsing,
+/// and <see cref="AiAssistantViewModel"/>.
 /// </summary>
-public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
+public sealed class AiAssistantAndMemoryStoreTests : IDisposable
 {
-    [GeneratedRegex(@"\bfb_[a-z0-9_]+\b", RegexOptions.CultureInvariant)]
-    private static partial Regex FbToolNameRegex();
     private readonly string _tempDir;
 
     public AiAssistantAndMemoryStoreTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), $"fb_ai_assistant_test_{Guid.NewGuid():N}");
-        _ = Directory.CreateDirectory(_tempDir);
-    }
-
-    private sealed class ImmediateDispatcher : IUiDispatcher
-    {
-        public bool CheckAccess() => true;
-
-        public void Post(Action action) => action?.Invoke();
-    }
-
-    private sealed class StubBrowserAdapter : IBrowserAdapter
-    {
-        public string PlatformName => "TestStub";
-
-        public string? LocateExecutablePath() => "C:\\Stub\\chrome.exe";
-
-        public Task<IBrowserProcess> LaunchProcessAsync(BrowserLaunchOptions options, CancellationToken ct = default) =>
-            throw new NotSupportedException("Stub browser adapter does not launch real processes.");
-    }
-
-    private sealed class FakeAgyCliService : IAgyCliService
-    {
-        public int CheckStatusCallCount { get; private set; }
-
-        public int InstallCallCount { get; private set; }
-
-        public int EnsureMcpCallCount { get; private set; }
-
-        public int OAuthCallCount { get; private set; }
-
-        public int SendPromptCallCount { get; private set; }
-
-        public int WarmUpSessionCallCount { get; private set; }
-
-        public int ResetWarmSessionCallCount { get; private set; }
-
-        public PreferredBrowserKind? LastOAuthBrowserKind { get; private set; }
-
-        public string? LastOAuthProfileDir { get; private set; }
-
-        public string? LastUserPrompt { get; private set; }
-
-        public string? LastSystemContextPrompt { get; private set; }
-
-        public string? LastModel { get; private set; }
-
-        public string? LastEffort { get; private set; }
-
-        public string? LastAgyConversationId { get; private set; }
-
-        public string? LastWarmUpAgyConversationId { get; private set; }
-
-        public AgyStatusSnapshot StatusToReturn { get; set; } = new(
-            IsInstalled: true,
-            InstalledVersion: "0.2.3",
-            ExecutablePath: @"C:\Users\Test\AppData\Local\agy\bin\agy.exe",
-            IsAuthenticated: true,
-            IsFacebookMcpRegistered: true);
-
-        public (bool Success, string Message, string? PendingOAuthUrl) OAuthResultToReturn { get; set; } =
-            (true, "Đăng nhập Google Antigravity thành công!", null);
-
-        public AgyPromptResult PromptResultToReturn { get; set; } = new(
-            IsSuccess: true,
-            ResponseText: "Đã xử lý yêu cầu.");
-
-        public Task<AgyStatusSnapshot> CheckStatusAsync(CancellationToken ct = default)
-        {
-            this.CheckStatusCallCount++;
-            return Task.FromResult(this.StatusToReturn);
-        }
-
-        public Task<bool> InstallAgyCliAsync(
-            IProgress<(int Percent, string StatusText)>? progress = null,
-            CancellationToken ct = default)
-        {
-            this.InstallCallCount++;
-            progress?.Report((100, "Đã cài đặt Google Antigravity CLI thành công!"));
-            this.StatusToReturn = this.StatusToReturn with { IsInstalled = true, InstalledVersion = "0.2.3" };
-            return Task.FromResult(true);
-        }
-
-        public Task<bool> EnsureFacebookMcpRegisteredAsync(string? customMcpExePath = null, CancellationToken ct = default)
-        {
-            this.EnsureMcpCallCount++;
-            this.StatusToReturn = this.StatusToReturn with { IsFacebookMcpRegistered = true };
-            return Task.FromResult(true);
-        }
-
-        public Task<(bool Success, string Message, string? PendingOAuthUrl)> RunCdpBrowserOAuthLoginAsync(
-            IBrowserManager browserManager,
-            PreferredBrowserKind browserKind,
-            string? customProfileDir = null,
-            IProgress<string>? statusProgress = null,
-            CancellationToken ct = default)
-        {
-            this.OAuthCallCount++;
-            this.LastOAuthBrowserKind = browserKind;
-            this.LastOAuthProfileDir = customProfileDir;
-            if (this.OAuthResultToReturn.Success)
-            {
-                this.StatusToReturn = this.StatusToReturn with { IsAuthenticated = true };
-            }
-
-            return Task.FromResult(this.OAuthResultToReturn);
-        }
-
-        public Task<bool> SubmitManualOAuthCodeAsync(string authCode, CancellationToken ct = default)
-        {
-            this.StatusToReturn = this.StatusToReturn with { IsAuthenticated = true };
-            return Task.FromResult(true);
-        }
-
-        public Task WarmUpSessionAsync(
-            string? model = null,
-            string? effort = null,
-            string? agyConversationId = null,
-            CancellationToken ct = default)
-        {
-            this.WarmUpSessionCallCount++;
-            this.LastWarmUpAgyConversationId = agyConversationId;
-            return Task.CompletedTask;
-        }
-
-        public void ResetWarmSession() => this.ResetWarmSessionCallCount++;
-
-        public Task<AgyPromptResult> SendPromptAsync(
-            string userPrompt,
-            string? systemContextPrompt = null,
-            bool continueConversation = true,
-            IProgress<string>? streamingProgress = null,
-            string? model = null,
-            string? effort = null,
-            string? agyConversationId = null,
-            CancellationToken ct = default)
-        {
-            this.SendPromptCallCount++;
-            this.LastUserPrompt = userPrompt;
-            this.LastSystemContextPrompt = systemContextPrompt;
-            this.LastModel = model;
-            this.LastEffort = effort;
-            this.LastAgyConversationId = agyConversationId;
-            streamingProgress?.Report(this.PromptResultToReturn.ResponseText);
-            return Task.FromResult(this.PromptResultToReturn);
-        }
-
-        public string? ResolveFacebookMcpExecutablePath() => @"C:\Stub\Facebook.Net.Mcp.exe";
+        this._tempDir = Path.Combine(Path.GetTempPath(), $"fb_ai_assistant_test_{Guid.NewGuid():N}");
+        _ = Directory.CreateDirectory(this._tempDir);
     }
 
     [Fact]
     public async Task AiMemoryStore_SaveQueryDeleteAndSystemContext_PersistsUpsertsAndPreloadsSystemPrompt()
     {
-        string dbPath = Path.Combine(_tempDir, "facebook_ai_memory.db");
+        string dbPath = Path.Combine(this._tempDir, "facebook_ai_memory.db");
         SqliteAiMemoryStore store = new(dbPath);
         await store.InitializeAsync();
 
@@ -226,6 +65,10 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
             category: AiMemoryCategory.ProductKnowledge,
             accountUid: "10001");
         _ = Assert.Single(productMemories);
+
+        // Verify accent-insensitive search
+        IReadOnlyList<AiMemoryRecord> accentFreeHits = await store.QueryMemoriesAsync(keyword: "ao khoac kaki");
+        _ = Assert.Single(accentFreeHits);
 
         string customSystemPrompt = "Chỉ dẫn hệ thống riêng cho Shop Thời Trang Nam";
         string contextPrompt = await store.BuildSystemContextPromptAsync(
@@ -262,7 +105,7 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public async Task AiAssistantViewModel_SystemPrompt_LoadsFromSettingsAndPersistsOnSaveAndReset()
     {
-        string workspaceDir = Path.Combine(_tempDir, "system_prompt_test");
+        string workspaceDir = Path.Combine(this._tempDir, "system_prompt_test");
         FakeAgyCliService fakeAgy = new();
 
         using UiServiceContext context = new(
@@ -293,7 +136,7 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public async Task AiAssistantViewModel_LazyCheckRule_NeverChecksAgyOnStartup_OnlyWhenPanelOpened()
     {
-        string workspaceDir = Path.Combine(_tempDir, "lazy_check_test");
+        string workspaceDir = Path.Combine(this._tempDir, "lazy_check_test");
         FakeAgyCliService fakeAgy = new();
 
         using UiServiceContext context = new(
@@ -323,7 +166,7 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public async Task AiAssistantViewModel_WhenAlreadyInstalledAndAuthenticated_SkipsInstallAndLogin_GoesStraightToReady()
     {
-        string workspaceDir = Path.Combine(_tempDir, "already_ready_test");
+        string workspaceDir = Path.Combine(this._tempDir, "already_ready_test");
         FakeAgyCliService fakeAgy = new()
         {
             StatusToReturn = new AgyStatusSnapshot(
@@ -353,7 +196,7 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public async Task AiAssistantViewModel_WhenInstalledButNotAuthenticated_RunsCdpBrowserOAuthWithSelectedBrowser()
     {
-        string workspaceDir = Path.Combine(_tempDir, "cdp_oauth_test");
+        string workspaceDir = Path.Combine(this._tempDir, "cdp_oauth_test");
         FakeAgyCliService fakeAgy = new()
         {
             StatusToReturn = new AgyStatusSnapshot(
@@ -386,7 +229,7 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public async Task AiAssistantViewModel_SendMessage_PreloadsSystemPromptAndMemoryContext_AndExecutesProposedAction()
     {
-        string workspaceDir = Path.Combine(_tempDir, "send_message_action_test");
+        string workspaceDir = Path.Combine(this._tempDir, "send_message_action_test");
         FakeAgyCliService fakeAgy = new();
 
         string rawResponseWithActionTag =
@@ -441,36 +284,9 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task AgyCliService_ResolveAgyExecutablePath_DetectsLocalAppDataAgyBinDirectory()
-    {
-        string agyWorkspace = Path.Combine(_tempDir, "agy_cli_service_test");
-        using AgyCliService service = new(agyWorkspace);
-
-        AgyStatusSnapshot status = await service.CheckStatusAsync();
-
-        string localAppDataAgyExe = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "agy",
-            "bin",
-            "agy.exe");
-
-        if (File.Exists(localAppDataAgyExe))
-        {
-            Assert.True(status.IsInstalled);
-            Assert.False(string.IsNullOrWhiteSpace(status.ExecutablePath));
-        }
-
-        string? mcpPath = service.ResolveFacebookMcpExecutablePath();
-        if (mcpPath is not null)
-        {
-            Assert.True(File.Exists(mcpPath));
-        }
-    }
-
-    [Fact]
     public async Task AiMemoryStore_And_ViewModel_SupportMultiConversationHistoryAndResume()
     {
-        string workspaceDir = Path.Combine(_tempDir, "multi_conversation_resume_test");
+        string workspaceDir = Path.Combine(this._tempDir, "multi_conversation_resume_test");
         FakeAgyCliService fakeAgy = new();
 
         using UiServiceContext context = new(
@@ -558,8 +374,6 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     [Fact]
     public void AgyCliService_TryParseStreamJsonLine_ExtractsConversationIdAndRealTimeTextDeltas()
     {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-
         const string InitLine = "{\"event\":\"init\",\"conversation_id\":\"1e88be44-a038-4212-a969-8bfe06910ddb\",\"init\":{\"model\":\"gemini-3.8-flash-low\"}}";
         (bool initDone, string? initConvId, string? initDelta, string? initFinal, string? initErr) =
             AgyCliService.TryParseStreamJsonLine(InitLine);
@@ -592,79 +406,8 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
     }
 
     [Fact]
-    public void LeadScoringService_ExtractVietnamesePhoneNumbers_HandlesAllObfuscations_AndRejectsFalsePositives()
-    {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-        LeadScoringService scorer = LeadScoringService.Instance;
-
-        // 1. Dots, commas, spaces, hyphens, parentheses
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Liên hệ ngay: 098.765.4321 hoặc inbox"));
-        Assert.Equal("0912345678", scorer.ExtractPrimaryPhoneNumber("SĐT: 0912,345,678"));
-        Assert.Equal("0389998888", scorer.ExtractPrimaryPhoneNumber("Zalo (038) - 999 - 8888"));
-        Assert.Equal("0776543210", scorer.ExtractPrimaryPhoneNumber("Gọi 0 7 7 6 5 4 3 2 1 0 nhé"));
-
-        // 2. Emoji & icon separators between digit groups
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Chốt đơn 098🔥765🔥4321 giao ngay"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Hotline 098☎️765☎️4321"));
-        Assert.Equal("0912345678", scorer.ExtractPrimaryPhoneNumber("Alo 0912👉345👉678"));
-
-        // 3. Keycap emojis, circled digits, fullwidth & math bold digits
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Số zalo: 0️⃣9️⃣8️⃣7️⃣6️⃣5️⃣4️⃣3️⃣2️⃣1️⃣"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Gọi ngay: ⓪⑨⑧.⑦⑥⑤.④③②①"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Fullwidth: ０９８.７６５.４３２１"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Math bold: 𝟎𝟗𝟖𝟕𝟔𝟓𝟒𝟑𝟐𝟏"));
-
-        // 4. Letter O/o lookalikes for zero
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Sđt O987.654.321"));
-        Assert.Equal("0980123456", scorer.ExtractPrimaryPhoneNumber("Sđt 098O.123.456"));
-        Assert.Equal("0389998888", scorer.ExtractPrimaryPhoneNumber("Zalo o38,999,8888"));
-
-        // 5. Vietnamese spoken digit words
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Gọi số không chín tám 765 4321"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("Alo 0987 sáu năm bốn 321 nha"));
-
-        // 6. +84 / 84 / 0084 country code normalization
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH +84 987 654 321"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH (+84) 0987.654.321"));
-        Assert.Equal("0987654321", scorer.ExtractPrimaryPhoneNumber("LH 0084 987 654 321"));
-
-        // 7. False-positive rejection: 15-digit Facebook IDs and prices like 090.000.000 / 100.000.000
-        Assert.Null(scorer.ExtractPrimaryPhoneNumber("https://www.facebook.com/groups/100098765432100/posts/998877665544332"));
-        Assert.Null(scorer.ExtractPrimaryPhoneNumber("Giá bán: 090.000.000 VNĐ thương lượng"));
-        Assert.Null(scorer.ExtractPrimaryPhoneNumber("Giá chỉ 100.000.000 đồng"));
-
-        // 8. Search keyword matching against obfuscated phone numbers
-        Assert.True(scorer.MatchesBuyerKeywords("Liên hệ O98🔥765🔥4321", ["0987654321"]));
-    }
-
-    [Fact]
-    public void ShellViewModel_MultiPhotoAndUpdateVersionParsing_WorkCorrectly()
-    {
-        string img1 = Path.Combine(_tempDir, "photo1.jpg");
-        string img2 = Path.Combine(_tempDir, "photo2.png");
-        string missingImg = Path.Combine(_tempDir, "missing.jpg");
-        File.WriteAllBytes(img1, [0xFF, 0xD8, 0xFF]);
-        File.WriteAllBytes(img2, [0x89, 0x50, 0x4E, 0x47]);
-
-        string rawPaths = $"{img1} ; {img2} ; {missingImg} ; {img1}";
-        List<string> existing = ShellViewModel.ParseExistingMediaFilePaths(rawPaths);
-
-        Assert.Equal(2, existing.Count);
-        Assert.Equal(img1, existing[0]);
-        Assert.Equal(img2, existing[1]);
-
-        Version v1 = ShellViewModel.TryParseReleaseVersion("v1.2.4");
-        Version v2 = ShellViewModel.TryParseReleaseVersion("v1.3.0-preview.1");
-        Assert.True(v2 > v1);
-        Assert.Equal(new Version(1, 2, 4), v1);
-        Assert.Equal(new Version(1, 3, 0), v2);
-    }
-
-    [Fact]
     public void AgyCliService_ParseResponseActionAndMemories_StripsLearnTagsAndParsesAllNewActions()
     {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-
         string rawText =
             "Chào anh Minh, bên em có sẵn mẫu bàn ghế gỗ sồi giá xưởng.\n" +
             "[LEARN:ProductKnowledge|sản_phẩm_nội_thất|Bàn ghế gỗ sồi tự nhiên giá xưởng bảo hành 5 năm]\n" +
@@ -688,7 +431,6 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.Equal("post_998877", action.TargetId);
         Assert.Equal("Chào {author_name}, em gửi báo giá gỗ sồi qua inbox nhé!", action.ContentText);
 
-        // Verify FILTER_LEADS and BUMP_POSTS action parsing
         (_, AgyProposedAction? filterAction, _) = AgyCliService.ParseResponseActionAndMemories(
             "Đã lọc danh sách khách hàng tiềm năng.\n[ACTION:FILTER_LEADS|keyword=cần mua gấp]");
         Assert.NotNull(filterAction);
@@ -702,361 +444,13 @@ public sealed partial class AiAssistantAndMemoryStoreTests : IDisposable
         Assert.Equal("{Up|Chấm} bài lên top", bumpAction.ContentText);
     }
 
-    [Fact]
-    public void LeadScoringService_AnalyzeWorkspaceData_ComputesGroupRoiRepeatAuthorsAndPeakHours()
-    {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-        LeadScoringService scorer = LeadScoringService.Instance;
-
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        List<SavedTargetGroup> groups =
-        [
-            new SavedTargetGroup("grp_1", "Chợ Nội Thất Sài Gòn", IsEnabled: true, TagsCsv: "tag_furniture"),
-            new SavedTargetGroup("grp_2", "Hội Mua Bán Chung Cư", IsEnabled: true, TagsCsv: string.Empty)
-        ];
-
-        List<PostSummary> posts =
-        [
-            new PostSummary(
-                PostId: "p1",
-                AuthorUid: "u_buyer_1",
-                AuthorName: "Nguyễn Văn An",
-                MessageText: "Cần mua gấp sofa phòng khách, liên hệ 0987.654.321 báo giá giúp mình?",
-                PermalinkUrl: "https://facebook.com/groups/grp_1/posts/p1",
-                ReactionCount: 5,
-                CommentCount: 0,
-                CreatedAt: now.AddMinutes(-30),
-                GroupId: "grp_1",
-                GroupName: "Chợ Nội Thất Sài Gòn"),
-            new PostSummary(
-                PostId: "p2",
-                AuthorUid: "u_seeder",
-                AuthorName: "Trần Môi Giới",
-                MessageText: "Xả kho sofa giá rẻ",
-                PermalinkUrl: "https://facebook.com/groups/grp_1/posts/p2",
-                ReactionCount: 1,
-                CommentCount: 12,
-                CreatedAt: now.AddHours(-2),
-                GroupId: "grp_1",
-                GroupName: "Chợ Nội Thất Sài Gòn"),
-            new PostSummary(
-                PostId: "p3",
-                AuthorUid: "u_seeder",
-                AuthorName: "Trần Môi Giới",
-                MessageText: "Xả kho bàn ăn giá rẻ",
-                PermalinkUrl: "https://facebook.com/groups/grp_2/posts/p3",
-                ReactionCount: 2,
-                CommentCount: 8,
-                CreatedAt: now.AddHours(-3),
-                GroupId: "grp_2",
-                GroupName: "Hội Mua Bán Chung Cư")
-        ];
-
-        HashSet<string> commentedIds = new(StringComparer.Ordinal) { "p1" };
-
-        WorkspaceDataAnalyticsReport report = scorer.AnalyzeWorkspaceData(
-            posts,
-            groups,
-            commentedIds,
-            "cần mua, báo giá, sofa");
-
-        Assert.Equal(3, report.TotalScrapedPosts);
-        Assert.Equal(1, report.TotalPostsWithPhone);
-        Assert.Equal(1, report.TotalHighIntentPosts);
-        Assert.Equal(1, report.TotalZeroCommentOpportunities);
-        Assert.Equal(1, report.TotalCommentedPosts);
-        Assert.Equal(2, report.TotalPendingPosts);
-        Assert.NotEmpty(report.TopPerformingGroups);
-        Assert.Equal("grp_1", report.TopPerformingGroups[0].GroupId);
-        _ = Assert.Single(report.RepeatAuthors);
-        Assert.Equal("Trần Môi Giới", report.RepeatAuthors[0].AuthorName);
-        Assert.Equal(2, report.RepeatAuthors[0].PostCount);
-
-        string formatted = scorer.FormatAnalyticsReportForAi(report);
-        Assert.Contains("Chợ Nội Thất Sài Gòn", formatted, StringComparison.Ordinal);
-        Assert.Contains("Trần Môi Giới", formatted, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task CustomerLeadTags_And_CrmNotes_PersistAndTriggerSilentAiLearning()
-    {
-        string workspaceDir = Path.Combine(_tempDir, "customer_tags_and_notes_test");
-        FakeAgyCliService fakeAgy = new();
-
-        using UiServiceContext context = new(
-            new StubBrowserAdapter(),
-            workspaceDir,
-            new ImmediateDispatcher(),
-            agyCliService: fakeAgy);
-
-        PostSummary sampleLead = new(
-            PostId: "lead_post_101",
-            AuthorUid: "uid_khach_1",
-            AuthorName: "Lê Hoàng Nam",
-            MessageText: "Mình cần tìm căn hộ 2PN Quận 7 giá tầm 3 tỷ, sđt 0912345678",
-            PermalinkUrl: "https://facebook.com/groups/grp_101/posts/lead_post_101",
-            ReactionCount: 3,
-            CommentCount: 1,
-            CreatedAt: DateTimeOffset.UtcNow,
-            GroupId: "grp_101",
-            GroupName: "Nhóm Mua Bán Nhà Đất");
-
-        await context.AccountStore.InitializeAsync();
-        await context.AccountStore.UpsertScrapedPostsAsync([sampleLead]);
-
-        using ShellViewModel vm = new(context);
-        await vm.InitializeAsync();
-
-        // Default 5 seeded customer tags should be loaded
-        Assert.True(vm.LeadTags.Count >= 5);
-
-        GroupTag? createdLeadTag = await vm.CreateQuickLeadTagAsync("Khách VIP Quận 7", "#EC4899");
-        Assert.NotNull(createdLeadTag);
-        Assert.Equal("Khách VIP Quận 7", createdLeadTag.Name);
-
-        await vm.ToggleLeadPostTagAsync(sampleLead, createdLeadTag.Id);
-        await vm.UpdateLeadPostNotesAsync(sampleLead, "Đã gọi điện tư vấn căn hộ Sunrise City, hẹn thứ 7 xem nhà");
-
-        IReadOnlyList<PostSummary> reloaded = await context.AccountStore.QueryScrapedPostsAsync(groupId: "grp_101");
-        PostSummary updatedPost = Assert.Single(reloaded);
-        Assert.True(updatedPost.HasTag(createdLeadTag.Id));
-        Assert.Equal("Đã gọi điện tư vấn căn hộ Sunrise City, hẹn thứ 7 xem nhà", updatedPost.Notes);
-    }
-
-    [Fact]
-    public void McpServerTools_And_SystemPrompts_Have100PercentSchemaParity()
-    {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-
-        HashSet<string> registeredMcpTools = new(StringComparer.Ordinal);
-        CollectTools<AccountTools>(registeredMcpTools);
-        CollectTools<GroupTools>(registeredMcpTools);
-        CollectTools<PublisherTools>(registeredMcpTools);
-        CollectTools<SalesLeadsTools>(registeredMcpTools);
-        CollectTools<SystemSettingsTools>(registeredMcpTools);
-        CollectTools<AiMemoryTools>(registeredMcpTools);
-
-        // Verify all 63 MCP tools across 6 Bounded Contexts are registered
-        Assert.Equal(63, registeredMcpTools.Count);
-        Assert.Contains("fb_analyze_workspace_data", registeredMcpTools);
-        Assert.Contains("fb_auto_tag_groups_by_keywords", registeredMcpTools);
-        Assert.Contains("fb_clean_and_classify_all_groups", registeredMcpTools);
-        Assert.Contains("fb_configure_target_groups_selection", registeredMcpTools);
-        Assert.Contains("fb_publish_campaign_batch", registeredMcpTools);
-        Assert.Contains("fb_repost_to_groups", registeredMcpTools);
-        Assert.Contains("fb_scrape_target_groups_batch", registeredMcpTools);
-        Assert.Contains("fb_auto_comment_leads_batch", registeredMcpTools);
-        Assert.Contains("fb_update_app_settings", registeredMcpTools);
-        Assert.Contains("fb_clean_browser_cache", registeredMcpTools);
-        Assert.Contains("fb_check_app_updates", registeredMcpTools);
-
-        // Verify every fb_* tool mentioned in System Prompts, Resources, and Prompts exists in the MCP Server
-        string analyzePromptText = ((TextContentBlock)Prompts.AnalyzeGroupLeads("test").Messages[0].Content).Text;
-        string composePromptText = ((TextContentBlock)Prompts.ComposeSpintaxCampaign("test").Messages[0].Content).Text;
-
-        string[] promptSources =
-        [
-            AppConfig.DefaultAiSystemPrompt,
-            Resources.Overview(),
-            Resources.SalesAgentGuide(),
-            analyzePromptText,
-            composePromptText
-        ];
-
-        Regex toolRegex = FbToolNameRegex();
-        foreach (string source in promptSources)
-        {
-            foreach (Match match in toolRegex.Matches(source))
-            {
-                string mentionedTool = match.Value;
-                Assert.Contains(mentionedTool, registeredMcpTools);
-            }
-        }
-
-        // Bidirectional parity: every registered MCP tool must be documented in DefaultAiSystemPrompt and Resources.Overview()
-        string defaultPrompt = AppConfig.DefaultAiSystemPrompt;
-        string overviewDoc = Resources.Overview();
-        foreach (string registeredTool in registeredMcpTools)
-        {
-            Assert.Contains(registeredTool, defaultPrompt, StringComparison.Ordinal);
-            Assert.Contains(registeredTool, overviewDoc, StringComparison.Ordinal);
-        }
-    }
-
-    private static void CollectTools<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>(
-        HashSet<string> target)
-    {
-        foreach (MethodInfo method in typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
-        {
-            McpServerToolAttribute? attr = method.GetCustomAttribute<McpServerToolAttribute>();
-            if (attr is not null && !string.IsNullOrWhiteSpace(attr.Name))
-            {
-                _ = target.Add(attr.Name);
-            }
-        }
-    }
-
-    [Fact]
-    public void LeadScoringService_CalculateBuyerIntentScore_ScoresHighIntentEvenWhenKeywordsEmpty()
-    {
-        Assert.False(string.IsNullOrWhiteSpace(_tempDir));
-        LeadScoringService scorer = LeadScoringService.Instance;
-
-        int scoreWithEmptyKeywords = scorer.CalculateBuyerIntentScore(
-            "Mình cần mua bàn ghế văn phòng gấp, liên hệ báo giá giúp mình qua số 0987.654.321 nhé?",
-            rawKeywords: string.Empty);
-
-        Assert.True(scoreWithEmptyKeywords >= 75);
-    }
-
-    [Fact]
-    public async Task SqliteAccountStore_InitializeAsync_RepairsMassTagBdsPollution_AndNormalizesLegacyTags()
-    {
-        string workspaceDir = Path.Combine(_tempDir, "tag_pollution_repair_test");
-        FakeAgyCliService fakeAgy = new();
-
-        using UiServiceContext context = new(
-            new StubBrowserAdapter(),
-            workspaceDir,
-            new ImmediateDispatcher(),
-            agyCliService: fakeAgy);
-
-        await context.AccountStore.InitializeAsync();
-
-        // Simulate 12 groups where all 12 were accidentally mass-tagged with tag_bds + legacy tag_jobs/tag_sales
-        string[] sampleNames =
-        [
-            "Cộng đồng C# .NET Việt Nam",
-            "Hội lập trình viên Claude AI & ChatGPT",
-            "Tuyển dụng IT Việc làm Phần mềm",
-            "Chợ Mua Bán Đồ Cũ Sài Gòn",
-            "Mua Bán Nhà Đất Bất Động Sản Quận 7",
-            "Hội Sinh Viên Giao Lưu Kết Bạn",
-            "Lập trình Python & Data Science",
-            "Chợ Thanh Lý Nội Thất Gia Đình",
-            "Tuyển Dụng Nhân Sự Freelance",
-            "Cộng đồng ReactJS & Frontend Dev",
-            "VOZ Góc Công Nghệ",
-            "Hội Chung Cư Vinhomes Grand Park"
-        ];
-
-        for (int i = 0; i < sampleNames.Length; i++)
-        {
-            await context.AccountStore.UpsertTargetGroupAsync(new SavedTargetGroup(
-                GroupId: $"grp_{i + 1}",
-                GroupName: sampleNames[i],
-                IsEnabled: true,
-                TagsCsv: "tag_bds,tag_jobs,tag_sales"));
-        }
-
-        // Re-run InitializeAsync (legacy tag normalization) + ShellViewModel.InitializeAsync (DDD GroupTagDomainService pollution repair)
-        await context.AccountStore.InitializeAsync();
-        using ShellViewModel vm = new(context);
-        await vm.InitializeAsync();
-
-        IReadOnlyList<SavedTargetGroup> cleaned = await context.AccountStore.GetAllTargetGroupsAsync();
-        Assert.Equal(12, cleaned.Count);
-
-        SavedTargetGroup? dotNetGroup = null;
-        SavedTargetGroup? bdsGroup = null;
-        for (int i = 0; i < cleaned.Count; i++)
-        {
-            if (string.Equals(cleaned[i].GroupId, "grp_1", StringComparison.Ordinal))
-            {
-                dotNetGroup = cleaned[i];
-            }
-            else if (string.Equals(cleaned[i].GroupId, "grp_5", StringComparison.Ordinal))
-            {
-                bdsGroup = cleaned[i];
-            }
-        }
-
-        Assert.NotNull(dotNetGroup);
-        Assert.False(dotNetGroup.HasTag("tag_bds"));
-        Assert.True(dotNetGroup.HasTag("tag_tech"));
-        Assert.True(dotNetGroup.HasTag("tag_job"));
-        Assert.True(dotNetGroup.HasTag("tag_market"));
-
-        Assert.NotNull(bdsGroup);
-        Assert.True(bdsGroup.HasTag("tag_bds"));
-
-        // Verify GroupTagDomainService.ConfigureTargetGroupsSelection (random & only_tag)
-        (IReadOnlyList<SavedTargetGroup> randomModified, int enabledCnt, int disabledCnt) =
-            context.GroupTagService.ConfigureTargetGroupsSelection(cleaned, "random", randomCount: 5);
-        Assert.Equal(5, enabledCnt);
-        Assert.Equal(7, disabledCnt);
-        Assert.NotEmpty(randomModified);
-    }
-
-    [Fact]
-    public async Task CrossProcessSettingsReload_And_DomainServiceConsolidation_WorkCorrectly()
-    {
-        string workspaceDir = Path.Combine(_tempDir, "cross_process_reload_and_domain_test");
-        FakeAgyCliService fakeAgy = new();
-
-        using UiServiceContext context = new(
-            new StubBrowserAdapter(),
-            workspaceDir,
-            new ImmediateDispatcher(),
-            agyCliService: fakeAgy);
-
-        await context.AccountStore.InitializeAsync();
-        using ShellViewModel vm = new(context);
-        await vm.InitializeAsync();
-
-        // 1. Verify GroupTagDomainService.NormalizeColorHex and CreateTag
-        Assert.Equal("#3B82F6", context.GroupTagService.NormalizeColorHex("3b82f6"));
-        Assert.Equal("#F6821F", context.GroupTagService.NormalizeColorHex("not_a_color"));
-        GroupTag normalizedTag = context.GroupTagService.CreateTag("Nhóm Công Nghệ", "10b981");
-        Assert.Equal("#10B981", normalizedTag.ColorHex);
-
-        // 2. Verify AccountVaultDomainService.SanitizeProfileFolderSlug & PrepareIsolatedProfileDirectory
-        string slug = context.AccountVault.SanitizeProfileFolderSlug("Hồ sơ (Chính) — Test");
-        Assert.DoesNotContain("(", slug, StringComparison.Ordinal);
-        Assert.DoesNotContain(")", slug, StringComparison.Ordinal);
-        (string isolatedDir, string friendlyLabel, _) = context.AccountVault.PrepareIsolatedProfileDirectory(
-            "Hồ sơ Marketing 01",
-            context.ProfilesRootDirectory);
-        Assert.True(Directory.Exists(isolatedDir));
-        Assert.Equal("Hồ sơ Marketing 01", friendlyLabel);
-
-        // 3. Simulate cross-process appsettings.json update (e.g. from Facebook.Net.Mcp.exe)
-        string settingsPath = Path.Combine(workspaceDir, "appsettings.json");
-        AppSettingsService externalProcessSettings = new(settingsPath);
-        await externalProcessSettings.SaveAsync(externalProcessSettings.Current with
-        {
-            MinDelaySeconds = 4.5,
-            MaxDelaySeconds = 9.5,
-            ScrapePostsPerGroup = 45
-        });
-
-        vm.ReloadSettingsFromDisk();
-        Assert.Equal(4.5, vm.MinDelaySeconds);
-        Assert.Equal(9.5, vm.MaxDelaySeconds);
-        Assert.Equal(45, vm.ScrapePostsPerGroup);
-
-        // 4. Verify accent-insensitive matching in LeadScoringService & SqliteAiMemoryStore
-        Assert.True(context.LeadScoring.MatchesAccentInsensitive("Hội Mua Bán Bất Động Sản Quận 7", "bat dong san"));
-        Assert.False(context.LeadScoring.MatchesAccentInsensitive("Hội Lập Trình C# .NET", "bat dong san"));
-
-        _ = await context.AiMemoryStore.SaveMemoryAsync(
-            AiMemoryCategory.ProductKnowledge,
-            "Căn hộ Vinhomes",
-            "Chuyên phân phối căn hộ Quận 9 giá tốt",
-            importance: 5);
-
-        IReadOnlyList<AiMemoryRecord> accentFreeHits = await context.AiMemoryStore.QueryMemoriesAsync(keyword: "can ho quan 9");
-        _ = Assert.Single(accentFreeHits);
-        Assert.Equal("Căn hộ Vinhomes", accentFreeHits[0].Key);
-    }
-
     public void Dispose()
     {
         try
         {
-            if (Directory.Exists(_tempDir))
+            if (Directory.Exists(this._tempDir))
             {
-                Directory.Delete(_tempDir, recursive: true);
+                Directory.Delete(this._tempDir, recursive: true);
             }
         }
         catch

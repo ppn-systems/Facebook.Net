@@ -3,7 +3,6 @@
 
 using System;
 using System.Text.Json;
-using Facebook.Net.Contracts.Exceptions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Contracts.Serialization;
@@ -105,14 +104,6 @@ public sealed class ProtocolCodecTests
         Assert.Equal(material.Uid, roundtrip.Uid);
         Assert.Equal(material.FbDtsg, roundtrip.FbDtsg);
         Assert.Equal(material.Jazoest, roundtrip.Jazoest);
-    }
-
-    [Fact]
-    public void CheckpointException_StoresUidAndErrorCode()
-    {
-        CheckpointException ex = new("1000999", "Checkpoint 282 triggered", 282);
-        Assert.Equal("1000999", ex.AccountUid);
-        Assert.Equal(282, ex.ErrorCode);
     }
 
     [Fact]

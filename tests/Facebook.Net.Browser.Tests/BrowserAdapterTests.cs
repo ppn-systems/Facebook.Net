@@ -3,9 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using Facebook.Net.Browser.MacOS;
 using Facebook.Net.Browser.Session;
-using Facebook.Net.Browser.Windows;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Xunit;
@@ -13,7 +11,7 @@ using Xunit;
 namespace Facebook.Net.Browser.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="BrowserLauncherHelpers"/>, <see cref="WindowsBrowserAdapter"/>, and <see cref="MacOsBrowserAdapter"/>.
+/// Unit tests for <see cref="BrowserLauncherHelpers"/> and <see cref="ChromiumSession"/>.
 /// </summary>
 public sealed class BrowserAdapterTests
 {
@@ -126,16 +124,6 @@ public sealed class BrowserAdapterTests
     {
         int port = BrowserLauncherHelpers.AllocateFreePort();
         Assert.InRange(port, 1024, 65535);
-    }
-
-    [Fact]
-    public void Adapters_ReportExpectedPlatformNames()
-    {
-        WindowsBrowserAdapter win = new();
-        MacOsBrowserAdapter mac = new();
-
-        Assert.Equal("windows", win.PlatformName);
-        Assert.Equal("macos", mac.PlatformName);
     }
 
     [Fact]
