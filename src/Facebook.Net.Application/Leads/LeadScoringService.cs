@@ -8,7 +8,7 @@ using System.Globalization;
 using System.Text;
 using Facebook.Net.Contracts.Models;
 
-namespace Facebook.Net.UI.Core.Leads;
+namespace Meta.UI.Core.Leads;
 
 /// <summary>
 /// ROI and buyer-intent performance metrics for a single scraped Facebook group.

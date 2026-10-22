@@ -5,11 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Facebook.Net.UI.Core.AiAssistant;
-using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.ViewModels.AiAssistant;
-using Facebook.Net.UI.ViewModels.Services;
-using Facebook.Net.UI.ViewModels.Shell;
+using Meta.UI.Core.AiAssistant;
+using Meta.UI.Core.Configuration;
+using Meta.UI.ViewModels.AiAssistant;
+using Meta.UI.ViewModels.Services;
+using Meta.UI.ViewModels.Shell;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;

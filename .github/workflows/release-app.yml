@@ -100,7 +100,7 @@ jobs:
       - name: Publish Desktop Client & Unified MCP Host — FacebookOneClient.exe
         shell: bash
         run: |
-          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+          dotnet publish app/Meta.App/Meta.App.csproj \
             --configuration Release \
             --runtime win-x64 \
             --self-contained true \
@@ -130,7 +130,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "./dist/win-x64" | Out-Null
           $publishDir = (Resolve-Path "./publish/win-x64").Path
-          $iconPath = (Resolve-Path "./ui/Facebook.Net.App/Assets/app.ico").Path
+          $iconPath = (Resolve-Path "./app/Meta.App/Assets/app.ico").Path
           $msiVersion = "${{ steps.release.outputs.msi_version }}"
 
           # Compile standalone native Windows uninstaller launcher (uninstall.exe)
@@ -379,7 +379,7 @@ jobs:
       - name: Publish Desktop Client & Unified MCP Host — FacebookOneClient
         shell: bash
         run: |
-          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+          dotnet publish app/Meta.App/Meta.App.csproj \
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
@@ -423,7 +423,7 @@ jobs:
           chmod +x "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp"
 
           # Generate macOS .icns from brand-logo.png
-          ICON_SRC="ui/Facebook.Net.UI.Components/Assets/Icons/brand-logo.png"
+          ICON_SRC="app/Meta.UI.Components/Assets/Icons/brand-logo.png"
           if [ -f "$ICON_SRC" ]; then
             ICONSET_DIR="./bundle/${RID}/app.iconset"
             mkdir -p "$ICONSET_DIR"

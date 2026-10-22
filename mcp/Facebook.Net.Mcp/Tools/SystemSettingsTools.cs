@@ -3,10 +3,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
-using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.Core.Localization;
-using Facebook.Net.UI.Core.Theming;
+using Meta.UI.Core.Audit;
+using Meta.UI.Core.Configuration;
+using Meta.UI.Core.Localization;
+using Meta.UI.Core.Theming;
 using ModelContextProtocol.Server;
 
 namespace Facebook.Net.Mcp.Tools;

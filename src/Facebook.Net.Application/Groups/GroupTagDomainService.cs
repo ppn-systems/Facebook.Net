@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using Facebook.Net.Contracts.Models;
 
-namespace Facebook.Net.UI.Core.Groups;
+namespace Meta.UI.Core.Groups;
 
 /// <summary>
 /// Domain service contract for the Groups &amp; Color Tags Bounded Context: encapsulates tag CSV

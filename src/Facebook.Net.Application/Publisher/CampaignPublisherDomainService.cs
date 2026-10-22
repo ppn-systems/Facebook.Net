@@ -10,7 +10,7 @@ using Facebook.Net.Contracts.Exceptions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.UI.Core.Publisher;
+namespace Meta.UI.Core.Publisher;
 
 /// <summary>
 /// Domain service contract for the Campaign Publisher Bounded Context: encapsulates Spintax variation,

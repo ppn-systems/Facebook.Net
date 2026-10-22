@@ -4,8 +4,9 @@
 using System;
 using System.Text;
 using System.Text.Json;
+using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.UI.Core.Importing;
+namespace Meta.UI.Core.Importing;
 
 /// <summary>
 /// Result of parsing a J2Team Cookies JSON export, Cookie-Editor JSON array,
@@ -94,16 +95,16 @@ public static class UniversalSessionImporter
         }
 
         string trimmed = rawProxy.Trim();
-        Facebook.Net.Contracts.Primitives.ProxyProtocol protocol = Contracts.Primitives.ProxyProtocol.Http;
+        ProxyProtocol protocol = ProxyProtocol.Http;
 
         if (trimmed.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase))
         {
-            protocol = Contracts.Primitives.ProxyProtocol.Socks5;
+            protocol = ProxyProtocol.Socks5;
             trimmed = trimmed["socks5://".Length..];
         }
         else if (trimmed.StartsWith("socks://", StringComparison.OrdinalIgnoreCase))
         {
-            protocol = Contracts.Primitives.ProxyProtocol.Socks5;
+            protocol = ProxyProtocol.Socks5;
             trimmed = trimmed["socks://".Length..];
         }
         else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
@@ -174,7 +175,7 @@ public static class UniversalSessionImporter
             return string.Empty;
         }
 
-        string scheme = proxy.Protocol == Contracts.Primitives.ProxyProtocol.Socks5 ? "socks5://" : "http://";
+        string scheme = proxy.Protocol == ProxyProtocol.Socks5 ? "socks5://" : "http://";
         if (!string.IsNullOrWhiteSpace(proxy.Username))
         {
             return $"{scheme}{proxy.Host}:{proxy.Port}:{proxy.Username}:{proxy.Password}";

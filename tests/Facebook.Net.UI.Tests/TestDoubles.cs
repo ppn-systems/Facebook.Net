@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.AiAssistant;
-using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.Core.Threading;
+using Meta.UI.Core.AiAssistant;
+using Meta.UI.Core.Configuration;
+using Meta.UI.Core.Threading;
 
 namespace Facebook.Net.UI.Tests;
 

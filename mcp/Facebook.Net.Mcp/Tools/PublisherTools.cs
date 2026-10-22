@@ -7,7 +7,7 @@ using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
-using Facebook.Net.UI.Core.Audit;
+using Meta.UI.Core.Audit;
 using ModelContextProtocol.Server;
 
 namespace Facebook.Net.Mcp.Tools;

@@ -5,17 +5,17 @@ using System;
 using System.Collections.Generic;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.Accounts;
-using Facebook.Net.UI.Core.Groups;
-using Facebook.Net.UI.Core.Importing;
-using Facebook.Net.UI.Core.Leads;
-using Facebook.Net.UI.Core.Publisher;
+using Meta.UI.Core.Accounts;
+using Meta.UI.Core.Groups;
+using Meta.UI.Core.Importing;
+using Meta.UI.Core.Leads;
+using Meta.UI.Core.Publisher;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;
 
 /// <summary>
-/// Pure unit tests for <c>Facebook.Net.Application</c> domain services:
+/// Pure unit tests for <c>Meta.Application</c> domain services:
 /// <see cref="LeadScoringService"/>, <see cref="GroupTagDomainService"/>,
 /// <see cref="AccountVaultDomainService"/>, <see cref="UniversalSessionImporter"/>,
 /// and <see cref="CampaignPublisherDomainService"/>.

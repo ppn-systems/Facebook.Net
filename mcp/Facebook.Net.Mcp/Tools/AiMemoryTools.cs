@@ -4,9 +4,9 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Facebook.Net.Contracts.Models;
-using Facebook.Net.UI.Core.AiAssistant;
-using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Configuration;
+using Meta.UI.Core.AiAssistant;
+using Meta.UI.Core.Audit;
+using Meta.UI.Core.Configuration;
 using ModelContextProtocol.Server;
 
 namespace Facebook.Net.Mcp.Tools;

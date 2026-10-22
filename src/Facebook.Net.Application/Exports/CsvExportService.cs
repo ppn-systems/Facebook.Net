@@ -9,9 +9,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Contracts.Models;
-using Facebook.Net.UI.Core.Audit;
+using Meta.UI.Core.Audit;
 
-namespace Facebook.Net.UI.Core.Exports;
+namespace Meta.UI.Core.Exports;
 
 /// <summary>
 /// Immutable row projection for exporting a scraped sales lead to a UTF-8 with BOM CSV file.
