@@ -295,7 +295,7 @@ public sealed partial class GroupsPage
 
         Grid rightHeaderRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 10,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -312,10 +312,27 @@ public sealed partial class GroupsPage
             VerticalAlignment = VerticalAlignment.Center
         };
 
+        Button toggleGroupsByTagBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Groups.BtnToggleByTag"],
+            null,
+            VectorIcons.CheckCircle);
+        toggleGroupsByTagBtn.Click += async (_, _) =>
+        {
+            if (selectedAssignTag is null)
+            {
+                return;
+            }
+
+            await this._vm.ToggleSelectTargetGroupsByTagAsync(selectedAssignTag.Id).ConfigureAwait(true);
+        };
+
         Grid.SetColumn(rightHeader, 0);
         Grid.SetColumn(activeTagBadgeHost, 1);
+        Grid.SetColumn(toggleGroupsByTagBtn, 2);
         rightHeaderRow.Children.Add(rightHeader);
         rightHeaderRow.Children.Add(activeTagBadgeHost);
+        rightHeaderRow.Children.Add(toggleGroupsByTagBtn);
         Grid.SetRow(rightHeaderRow, 0);
         rightGrid.Children.Add(rightHeaderRow);
 
@@ -401,6 +418,7 @@ public sealed partial class GroupsPage
             activeTagBadgeHost.Content = selectedAssignTag is not null
                 ? GroupRowCard.CreateTagPill(selectedAssignTag, isActive: true)
                 : null;
+            toggleGroupsByTagBtn.IsEnabled = selectedAssignTag is not null;
             batchAssignBtn.IsEnabled = selectedAssignTag is not null;
             batchRemoveBtn.IsEnabled = selectedAssignTag is not null;
 
@@ -424,7 +442,7 @@ public sealed partial class GroupsPage
                 }
 
                 if (!string.IsNullOrEmpty(q) &&
-                    !tg.GroupName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    !this._vm.MatchesTextAccentInsensitive(tg.GroupName, q))
                 {
                     continue;
                 }
@@ -744,6 +762,7 @@ public sealed partial class GroupsPage
 
             rightTitleTb.Text = this._i18n["Groups.TagAssignPanelTitle"];
             rightHintTb.Text = this._i18n["Groups.TagAssignPanelHint"];
+            AppButton.SetText(toggleGroupsByTagBtn, this._i18n["Groups.BtnToggleByTag"]);
             AppButton.SetText(batchAssignBtn, this._i18n["Groups.BtnBatchAssignAllFiltered"]);
             AppButton.SetText(batchRemoveBtn, this._i18n["Groups.BtnBatchRemoveAllFiltered"]);
 

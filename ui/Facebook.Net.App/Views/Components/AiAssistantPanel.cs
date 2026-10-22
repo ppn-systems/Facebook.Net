@@ -14,6 +14,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -23,7 +24,6 @@ using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.AiAssistant;
 using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.AiAssistant;
@@ -101,11 +101,11 @@ public sealed class AiAssistantPanel : Border
             AiAssistantSetupStage stage = _aiVm.SetupStage;
             bool isInstallStage = stage is AiAssistantSetupStage.NeedsInstall or AiAssistantSetupStage.Installing;
             bool isAuthStage = stage is AiAssistantSetupStage.NeedsAuth or AiAssistantSetupStage.Authenticating;
-            bool isChatStage = !isInstallStage && !isAuthStage;
+            bool isReadyOrChat = !isInstallStage && !isAuthStage;
 
             installView.IsVisible = isInstallStage;
             authView.IsVisible = isAuthStage;
-            chatSubView.IsVisible = isChatStage;
+            chatSubView.IsVisible = isReadyOrChat;
         }
 
         void RefreshAllVisuals()
@@ -136,7 +136,8 @@ public sealed class AiAssistantPanel : Border
 
         _aiVm.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SetupStage), StringComparison.Ordinal))
+            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SetupStage), StringComparison.Ordinal) ||
+                string.Equals(e.PropertyName, nameof(AiAssistantViewModel.ActiveSubTabIndex), StringComparison.Ordinal))
             {
                 refreshTopBarTheme();
                 UpdateActiveStageVisibility();
@@ -737,7 +738,7 @@ public sealed class AiAssistantPanel : Border
         };
     }
 
-    // ───────────────────────────── 2B. View B — Browser-Selectable CDP Google OAuth Card ─────────────────────────────
+    // ───────────────────────────── 2B. View B — Google OAuth Card ─────────────────────────────
 
     private ScrollViewer BuildOAuthView(out Action refreshState, out Action refreshI18n)
     {
@@ -774,57 +775,6 @@ public sealed class AiAssistantPanel : Border
             12,
             FontWeight.Normal,
             isSecondary: true);
-
-        ComboBox browserCombo = FormField.CreateComboBox<PreferredBrowserKind>(
-            _theme,
-            _aiVm.InstalledAuthBrowsers,
-            kind => SectionHeader.CreateLabel(
-                _theme,
-                _i18n.FormatBrowserKind(kind),
-                12.5,
-                FontWeight.Medium),
-            selectedItem: _aiVm.SelectedAuthBrowser);
-
-        browserCombo.SelectionChanged += (_, _) =>
-        {
-            if (browserCombo.SelectedItem is PreferredBrowserKind selectedKind &&
-                _aiVm.SelectedAuthBrowser != selectedKind)
-            {
-                _aiVm.SelectedAuthBrowser = selectedKind;
-            }
-        };
-
-        StackPanel browserField = FormField.CreateLabeled(
-            _theme,
-            _i18n["Ai.AuthBrowserLabel"],
-            browserCombo,
-            out TextBlock browserLabelTb);
-
-        ComboBox profileCombo = FormField.CreateComboBox<BrowserProfileOption>(
-            _theme,
-            _aiVm.AvailableAuthProfiles,
-            opt => SectionHeader.CreateLabel(
-                _theme,
-                opt.DisplayName,
-                12,
-                FontWeight.Medium),
-            selectedItem: _aiVm.SelectedAuthProfile,
-            placeholderText: _i18n["Ai.AuthProfileIsolated"]);
-
-        profileCombo.SelectionChanged += (_, _) =>
-        {
-            if (profileCombo.SelectedItem is BrowserProfileOption selectedProfile &&
-                !ReferenceEquals(_aiVm.SelectedAuthProfile, selectedProfile))
-            {
-                _aiVm.SelectedAuthProfile = selectedProfile;
-            }
-        };
-
-        StackPanel profileField = FormField.CreateLabeled(
-            _theme,
-            _i18n["Ai.AuthProfileLabel"],
-            profileCombo,
-            out TextBlock profileLabelTb);
 
         Button startOAuthBtn = AppButton.CreatePrimary(
             _theme,
@@ -866,8 +816,6 @@ public sealed class AiAssistantPanel : Border
 
         cardStack.Children.Add(headerRow);
         cardStack.Children.Add(descTb);
-        cardStack.Children.Add(browserField);
-        cardStack.Children.Add(profileField);
         cardStack.Children.Add(startOAuthBtn);
         cardStack.Children.Add(verifyAuthBtn);
         cardStack.Children.Add(divider);
@@ -879,22 +827,7 @@ public sealed class AiAssistantPanel : Border
 
         _aiVm.PropertyChanged += (_, e) =>
         {
-            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SelectedAuthBrowser), StringComparison.Ordinal))
-            {
-                if (browserCombo.SelectedItem is not PreferredBrowserKind current ||
-                    current != _aiVm.SelectedAuthBrowser)
-                {
-                    browserCombo.SelectedItem = _aiVm.SelectedAuthBrowser;
-                }
-            }
-            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.SelectedAuthProfile), StringComparison.Ordinal))
-            {
-                if (!ReferenceEquals(profileCombo.SelectedItem, _aiVm.SelectedAuthProfile))
-                {
-                    profileCombo.SelectedItem = _aiVm.SelectedAuthProfile;
-                }
-            }
-            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.ManualOAuthCode), StringComparison.Ordinal))
+            if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.ManualOAuthCode), StringComparison.Ordinal))
             {
                 if (!string.Equals(manualCodeBox.Text, _aiVm.ManualOAuthCode, StringComparison.Ordinal))
                 {
@@ -910,25 +843,12 @@ public sealed class AiAssistantPanel : Border
             ThemePalette p = _theme.Palette;
             VectorIcons.SetForeground(authHeaderIcon, p.BrandPrimary);
             divider.Background = p.SubtleBorder;
-            if (browserCombo.SelectedItem is not PreferredBrowserKind current ||
-                current != _aiVm.SelectedAuthBrowser)
-            {
-                browserCombo.SelectedItem = _aiVm.SelectedAuthBrowser;
-            }
-
-            if (!ReferenceEquals(profileCombo.SelectedItem, _aiVm.SelectedAuthProfile))
-            {
-                profileCombo.SelectedItem = _aiVm.SelectedAuthProfile;
-            }
         };
 
         refreshI18n = () =>
         {
             titleTb.Text = _i18n["Ai.AuthTitle"];
             descTb.Text = _i18n["Ai.AuthDescription"];
-            browserLabelTb.Text = _i18n["Ai.AuthBrowserLabel"];
-            profileLabelTb.Text = _i18n["Ai.AuthProfileLabel"];
-            profileCombo.PlaceholderText = _i18n["Ai.AuthProfileIsolated"];
             AppButton.SetText(startOAuthBtn, _i18n["Ai.BtnStartOAuth"]);
             AppButton.SetText(verifyAuthBtn, _i18n["Ai.BtnVerifyAuthAgain"]);
             manualCodeBox.PlaceholderText = _i18n["Ai.AuthManualCodePlaceholder"];
@@ -1043,21 +963,109 @@ public sealed class AiAssistantPanel : Border
             Background = _theme.Palette.BrandPrimary,
             Content = sendIcon,
             Command = _aiVm.SendMessageCommand,
+            IsVisible = !_aiVm.IsBusy,
             Cursor = new Cursor(StandardCursorType.Hand)
         };
         ToolTip.SetTip(sendBtn, _i18n["Ai.BtnSend"]);
         AutomationProperties.SetName(sendBtn, _i18n["Ai.BtnSend"]);
 
+        Button stopBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnStopGeneration"],
+            _aiVm.StopGenerationCommand,
+            VectorIcons.StopCircle);
+        stopBtn.Height = 38;
+        stopBtn.VerticalAlignment = VerticalAlignment.Bottom;
+        stopBtn.IsVisible = _aiVm.IsBusy;
+
+        StackPanel actionBtnHost = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Children = { stopBtn, sendBtn }
+        };
+
         Grid.SetColumn(promptBox, 0);
-        Grid.SetColumn(sendBtn, 1);
+        Grid.SetColumn(actionBtnHost, 1);
         inputRow.Children.Add(promptBox);
-        inputRow.Children.Add(sendBtn);
+        inputRow.Children.Add(actionBtnHost);
+
+        // ── Active Context Pills + (+ Nạp Context ▾) & (Kịch bản mẫu ▾) Toolbar ──
+        WrapPanel activeContextPillsWrap = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 5,
+            LineSpacing = 4,
+            IsVisible = false
+        };
+
+        Button injectContextBtn = this.CreateInjectContextFlyoutButton(out Action refreshInjectBtnTheme, out Action refreshInjectBtnI18n);
+        Button presetsToolbarBtn = this.CreatePromptPresetsFlyoutButton(out Action refreshPresetsBtnTheme, out Action refreshPresetsBtnI18n);
+
+        WrapPanel composerToolbarRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 6,
+            LineSpacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { injectContextBtn, presetsToolbarBtn }
+        };
+
+        StackPanel composerContainerStack = new()
+        {
+            Spacing = 7,
+            Children = { activeContextPillsWrap, composerToolbarRow, inputRow }
+        };
+
+        void RebuildActiveContextPills()
+        {
+            activeContextPillsWrap.Children.Clear();
+            activeContextPillsWrap.IsVisible = _aiVm.ActiveContextPacks.Count > 0;
+            if (_aiVm.ActiveContextPacks.Count == 0)
+            {
+                return;
+            }
+
+            ThemePalette p = _theme.Palette;
+            for (int i = 0; i < _aiVm.ActiveContextPacks.Count; i++)
+            {
+                string packId = _aiVm.ActiveContextPacks[i];
+                string packTitle = this.FormatContextPackLabel(packId);
+
+                TextBlock pillText = new()
+                {
+                    Text = $"{packTitle}  ✕",
+                    FontSize = 10.5,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = p.BrandPrimary,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                Button pillBtn = new()
+                {
+                    CornerRadius = new CornerRadius(999),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8, 2),
+                    MinHeight = 20,
+                    Background = p.BrandSubtleFill,
+                    BorderBrush = p.BrandSubtleBorder,
+                    Content = pillText,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                pillBtn.Click += (_, _) => _aiVm.ToggleContextPack(packId);
+                activeContextPillsWrap.Children.Add(pillBtn);
+            }
+        }
+
+        _aiVm.ActiveContextPacks.CollectionChanged += (_, _) => RebuildActiveContextPills();
+        RebuildActiveContextPills();
 
         Border inputBarBorder = new()
         {
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(12, 10),
-            Child = inputRow
+            Padding = new Thickness(12, 8, 12, 10),
+            Child = composerContainerStack
         };
 
         Grid.SetRow(chatScrollViewer, 0);
@@ -1179,6 +1187,11 @@ public sealed class AiAssistantPanel : Border
                     updatingPrompt = false;
                 }
             }
+            else if (string.Equals(e.PropertyName, nameof(AiAssistantViewModel.IsBusy), StringComparison.Ordinal))
+            {
+                sendBtn.IsVisible = !_aiVm.IsBusy;
+                stopBtn.IsVisible = _aiVm.IsBusy;
+            }
         };
 
         RebuildMessageBubbles();
@@ -1187,9 +1200,14 @@ public sealed class AiAssistantPanel : Border
         {
             ThemePalette p = _theme.Palette;
             refreshWelcomeTheme();
+            refreshInjectBtnTheme();
+            refreshPresetsBtnTheme();
+            RebuildActiveContextPills();
             inputBarBorder.Background = p.ElevatedSurface;
             inputBarBorder.BorderBrush = p.SubtleBorder;
             sendBtn.Background = p.BrandPrimary;
+            sendBtn.IsVisible = !_aiVm.IsBusy;
+            stopBtn.IsVisible = _aiVm.IsBusy;
             VectorIcons.SetForeground(sendIcon, Brushes.White);
             RebuildMessageBubbles();
         };
@@ -1197,16 +1215,286 @@ public sealed class AiAssistantPanel : Border
         refreshI18n = () =>
         {
             refreshWelcomeI18n();
+            refreshInjectBtnI18n();
+            refreshPresetsBtnI18n();
+            RebuildActiveContextPills();
             promptBox.PlaceholderText = _i18n["Ai.InputPlaceholder"];
             AutomationProperties.SetName(promptBox, _i18n["Ai.InputPlaceholder"]);
             ToolTip.SetTip(promptBox, _i18n["Ai.InputPlaceholder"]);
             ToolTip.SetTip(sendBtn, _i18n["Ai.BtnSend"]);
             AutomationProperties.SetName(sendBtn, _i18n["Ai.BtnSend"]);
+            AppButton.SetText(stopBtn, _i18n["Ai.BtnStopGeneration"]);
             RebuildMessageBubbles();
         };
 
         return chatGrid;
     }
+
+    private Button CreateInjectContextFlyoutButton(out Action refreshTheme, out Action refreshI18n)
+    {
+        ThemePalette initialPalette = _theme.Palette;
+        Control icon = VectorIcons.Create(VectorIcons.Plus, 11, initialPalette.BrandPrimary);
+        TextBlock labelTb = new()
+        {
+            Text = _i18n["Ai.BtnInjectContext"],
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel btnContent = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { icon, labelTb }
+        };
+
+        Flyout flyout = new()
+        {
+            Placement = PlacementMode.TopEdgeAlignedLeft,
+            ShowMode = FlyoutShowMode.Standard
+        };
+
+        StackPanel flyoutStack = new()
+        {
+            Spacing = 5,
+            Width = 260
+        };
+
+        Border flyoutCard = SurfaceCard.Create(_theme, flyoutStack, new Thickness(10));
+        flyout.Content = flyoutCard;
+
+        (string PackId, string LabelKey, string IconName)[] packDefinitions =
+        [
+            ("selected_lead", "Ai.CtxSelectedLead", VectorIcons.SalesComment),
+            ("top_hot_leads", "Ai.CtxTopHotLeads", VectorIcons.Search),
+            ("deep_analytics", "Ai.CtxDeepAnalytics", VectorIcons.AiSparkle),
+            ("all_groups_tags", "Ai.CtxAllGroupsAndTags", VectorIcons.Groups),
+            ("templates_posts", "Ai.CtxTemplatesAndPosts", VectorIcons.Publish)
+        ];
+
+        void RebuildFlyoutItems()
+        {
+            ThemePalette p = _theme.Palette;
+            flyoutStack.Children.Clear();
+
+            for (int i = 0; i < packDefinitions.Length; i++)
+            {
+                (string packId, string labelKey, string iconName) = packDefinitions[i];
+                bool isEnabled = _aiVm.IsContextPackEnabled(packId);
+
+                Control itemIcon = VectorIcons.Create(
+                    iconName,
+                    13,
+                    isEnabled ? p.BrandPrimary : p.TextSecondary);
+
+                TextBlock itemLabel = SectionHeader.CreateLabel(
+                    _theme,
+                    _i18n[labelKey],
+                    11.5,
+                    isEnabled ? FontWeight.Bold : FontWeight.Medium);
+                itemLabel.VerticalAlignment = VerticalAlignment.Center;
+                itemLabel.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                TextBlock checkTb = new()
+                {
+                    Text = isEnabled ? "✓" : string.Empty,
+                    FontSize = 12,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = p.BrandPrimary,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                Grid rowGrid = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(itemIcon, 0);
+                Grid.SetColumn(itemLabel, 1);
+                Grid.SetColumn(checkTb, 2);
+                rowGrid.Children.Add(itemIcon);
+                rowGrid.Children.Add(itemLabel);
+                rowGrid.Children.Add(checkTb);
+
+                Button optionBtn = new()
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    CornerRadius = new CornerRadius(7),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8, 6),
+                    Background = isEnabled ? p.BrandSubtleFill : p.SecondarySurface,
+                    BorderBrush = isEnabled ? p.BrandSubtleBorder : p.SubtleBorder,
+                    Content = rowGrid,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+
+                optionBtn.Click += (_, _) =>
+                {
+                    _aiVm.ToggleContextPack(packId);
+                    RebuildFlyoutItems();
+                };
+
+                flyoutStack.Children.Add(optionBtn);
+            }
+        }
+
+        flyout.Opening += (_, _) => RebuildFlyoutItems();
+
+        Button btn = new()
+        {
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 3),
+            MinHeight = 22,
+            Content = btnContent,
+            Flyout = flyout,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+
+        refreshTheme = () =>
+        {
+            ThemePalette p = _theme.Palette;
+            btn.Background = p.BrandSubtleFill;
+            btn.BorderBrush = p.BrandSubtleBorder;
+            labelTb.Foreground = p.BrandPrimary;
+            VectorIcons.SetForeground(icon, p.BrandPrimary);
+        };
+
+        refreshI18n = () => labelTb.Text = _i18n["Ai.BtnInjectContext"];
+        refreshTheme();
+        return btn;
+    }
+
+    private Button CreatePromptPresetsFlyoutButton(out Action refreshTheme, out Action refreshI18n)
+    {
+        ThemePalette initialPalette = _theme.Palette;
+        Control icon = VectorIcons.Create(VectorIcons.AiSparkle, 11, initialPalette.TextSecondary);
+        TextBlock labelTb = new()
+        {
+            Text = _i18n["Ai.BtnPromptPresets"],
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        StackPanel btnContent = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { icon, labelTb }
+        };
+
+        Flyout flyout = new()
+        {
+            Placement = PlacementMode.TopEdgeAlignedLeft,
+            ShowMode = FlyoutShowMode.Standard
+        };
+
+        StackPanel flyoutStack = new()
+        {
+            Spacing = 5,
+            Width = 260
+        };
+
+        Border flyoutCard = SurfaceCard.Create(_theme, flyoutStack, new Thickness(10));
+        flyout.Content = flyoutCard;
+
+        (string PresetKey, string LabelKey, string IconName)[] presets =
+        [
+            ("closing_expert", "Ai.PresetClosingExpert", VectorIcons.SalesComment),
+            ("viral_copywriter", "Ai.PresetViralCopywriter", VectorIcons.Publish),
+            ("data_analyst", "Ai.PresetDataAnalyst", VectorIcons.AiSparkle)
+        ];
+
+        void RebuildPresetItems()
+        {
+            ThemePalette p = _theme.Palette;
+            flyoutStack.Children.Clear();
+
+            for (int i = 0; i < presets.Length; i++)
+            {
+                (string presetKey, string labelKey, string iconName) = presets[i];
+                Control itemIcon = VectorIcons.Create(iconName, 13, p.BrandPrimary);
+                TextBlock itemLabel = SectionHeader.CreateLabel(_theme, _i18n[labelKey], 11.5, FontWeight.SemiBold);
+                itemLabel.VerticalAlignment = VerticalAlignment.Center;
+                itemLabel.TextWrapping = TextWrapping.Wrap;
+
+                Grid rowGrid = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(itemIcon, 0);
+                Grid.SetColumn(itemLabel, 1);
+                rowGrid.Children.Add(itemIcon);
+                rowGrid.Children.Add(itemLabel);
+
+                Button presetBtn = new()
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    CornerRadius = new CornerRadius(7),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8, 6),
+                    Background = p.SecondarySurface,
+                    BorderBrush = p.SubtleBorder,
+                    Content = rowGrid,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+
+                presetBtn.Click += (_, _) =>
+                {
+                    flyout.Hide();
+                    _aiVm.ApplySystemPromptPreset(presetKey);
+                };
+
+                flyoutStack.Children.Add(presetBtn);
+            }
+        }
+
+        flyout.Opening += (_, _) => RebuildPresetItems();
+
+        Button btn = new()
+        {
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 3),
+            MinHeight = 22,
+            Content = btnContent,
+            Flyout = flyout,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+
+        refreshTheme = () =>
+        {
+            ThemePalette p = _theme.Palette;
+            btn.Background = p.SecondarySurface;
+            btn.BorderBrush = p.InteractiveBorder;
+            labelTb.Foreground = p.TextSecondary;
+            VectorIcons.SetForeground(icon, p.TextSecondary);
+        };
+
+        refreshI18n = () => labelTb.Text = _i18n["Ai.BtnPromptPresets"];
+        refreshTheme();
+        return btn;
+    }
+
+    private string FormatContextPackLabel(string packId) =>
+        packId.ToLowerInvariant() switch
+        {
+            "selected_lead" => _i18n["Ai.CtxSelectedLead"],
+            "top_hot_leads" => _i18n["Ai.CtxTopHotLeads"],
+            "deep_analytics" => _i18n["Ai.CtxDeepAnalytics"],
+            "all_groups_tags" => _i18n["Ai.CtxAllGroupsAndTags"],
+            "templates_posts" => _i18n["Ai.CtxTemplatesAndPosts"],
+            _ => packId
+        };
 
     private Border BuildWelcomeCard(out Action refreshTheme, out Action refreshI18n)
     {
@@ -1428,8 +1716,56 @@ public sealed class AiAssistantPanel : Border
         actionStack.Children.Add(executedBadge);
         actionCard.Child = actionStack;
 
+        WrapPanel assistantActionsRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 5,
+            LineSpacing = 4,
+            Margin = new Thickness(0, 2, 0, 0),
+            IsVisible = !isUser && !item.IsLoading && !string.IsNullOrWhiteSpace(item.Content) && !string.Equals(item.Content, "...", StringComparison.Ordinal)
+        };
+
+        Button copyReplyBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnCopyReply"],
+            command: null,
+            iconSvg: VectorIcons.Clipboard);
+        copyReplyBtn.Padding = new Thickness(7, 3);
+        copyReplyBtn.MinHeight = 24;
+        copyReplyBtn.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard && !string.IsNullOrWhiteSpace(item.Content))
+            {
+                await clipboard.SetTextAsync(item.Content).ConfigureAwait(true);
+                AppButton.SetText(copyReplyBtn, _i18n["Ai.BtnCopiedReply"]);
+            }
+        };
+
+        Button toPublisherBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnToPublisher"],
+            command: null,
+            iconSvg: VectorIcons.Publish);
+        toPublisherBtn.Padding = new Thickness(7, 3);
+        toPublisherBtn.MinHeight = 24;
+        toPublisherBtn.Click += (_, _) => _aiVm.SendTextToPublisherComposer(item.Content);
+
+        Button toLeadCommentBtn = AppButton.CreateSecondary(
+            _theme,
+            _i18n["Ai.BtnToLeadComment"],
+            command: null,
+            iconSvg: VectorIcons.SalesComment);
+        toLeadCommentBtn.Padding = new Thickness(7, 3);
+        toLeadCommentBtn.MinHeight = 24;
+        toLeadCommentBtn.Click += (_, _) => _aiVm.SendTextToSalesCommentComposer(item.Content);
+
+        assistantActionsRow.Children.Add(copyReplyBtn);
+        assistantActionsRow.Children.Add(toPublisherBtn);
+        assistantActionsRow.Children.Add(toLeadCommentBtn);
+
         bubbleStack.Children.Add(metaRow);
         bubbleStack.Children.Add(innerContentTb);
+        bubbleStack.Children.Add(assistantActionsRow);
         bubbleStack.Children.Add(actionCard);
 
         Border bubbleBorder = new()
@@ -1497,10 +1833,32 @@ public sealed class AiAssistantPanel : Border
                 actionSummaryTb.Text = proposed.SummaryText;
                 actionSummaryTb.Foreground = p.BrandPrimary;
                 actionSummaryTb.IsVisible = !string.IsNullOrWhiteSpace(proposed.SummaryText);
+
+                string confirmLabel = (proposed.ActionKind ?? string.Empty).ToUpperInvariant() switch
+                {
+                    "FILTER_LEADS" => _i18n["Ai.ActionFilterLeads"],
+                    "COMMENT_LEAD" => _i18n["Ai.ActionCommentLead"],
+                    "OPEN_GROUP_TAGS" => _i18n["Ai.ActionOpenGroupTags"],
+                    "BUMP_POSTS" => _i18n["Ai.ActionBumpPosts"],
+                    "SEARCH_GROUPS" => _i18n["Ai.QuickChipFindGroups"],
+                    "SCAN_LEADS" => _i18n["Ai.QuickChipScanLeads"],
+                    _ => _i18n["Ai.BtnConfirmAction"]
+                };
+
+                AppButton.SetText(confirmActionBtn, confirmLabel);
+                AppButton.SetText(editActionBtn, _i18n["Ai.BtnEditAction"]);
+                StatusPill.SetText(executedBadge, _i18n["Ai.ActionExecutedBadge"]);
             }
 
             actionButtonsRow.IsVisible = hasAction && !item.IsActionExecuted;
             executedBadge.IsVisible = hasAction && item.IsActionExecuted;
+            assistantActionsRow.IsVisible = !isUser &&
+                                            !item.IsLoading &&
+                                            !string.IsNullOrWhiteSpace(item.Content) &&
+                                            !string.Equals(item.Content, "...", StringComparison.Ordinal);
+            AppButton.SetText(copyReplyBtn, _i18n["Ai.BtnCopyReply"]);
+            AppButton.SetText(toPublisherBtn, _i18n["Ai.BtnToPublisher"]);
+            AppButton.SetText(toLeadCommentBtn, _i18n["Ai.BtnToLeadComment"]);
         };
 
         refreshBubble();

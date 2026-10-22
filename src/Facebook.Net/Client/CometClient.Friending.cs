@@ -189,9 +189,11 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(requesterUid);
 
+        // Prefer reusing existing material; only navigate to the lightweight /friends/requests
+        // page (not /{uid} profile) when no material is available to avoid slow profile page loads.
         if (session.CurrentMaterial is null)
         {
-            await session.NavigateAsync(ResolveFullUrl($"/{requesterUid}"), ct).ConfigureAwait(false);
+            await session.NavigateAsync(ResolveFullUrl("/friends/requests"), ct).ConfigureAwait(false);
         }
 
         SessionMaterial material = session.CurrentMaterial
@@ -228,9 +230,11 @@ public sealed partial class CometClient
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetUid);
 
+        // Prefer reusing existing material; only navigate to the lightweight /friends/requests
+        // page (not /{uid} profile) when no material is available to avoid slow profile page loads.
         if (session.CurrentMaterial is null)
         {
-            await session.NavigateAsync(ResolveFullUrl($"/{targetUid}"), ct).ConfigureAwait(false);
+            await session.NavigateAsync(ResolveFullUrl("/friends/requests"), ct).ConfigureAwait(false);
         }
 
         SessionMaterial material = session.CurrentMaterial

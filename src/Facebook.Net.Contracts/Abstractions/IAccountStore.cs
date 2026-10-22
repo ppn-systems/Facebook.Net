@@ -141,6 +141,26 @@ public interface IAccountStore
     Task<bool> DeleteGroupTagAsync(string tagId, CancellationToken ct = default);
 
     /// <summary>
+    /// Retrieves all user-defined or AI-created color-coded customer/lead tags.
+    /// </summary>
+    Task<IReadOnlyList<GroupTag>> GetAllLeadTagsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a color-coded customer/lead tag.
+    /// </summary>
+    Task UpsertLeadTagAsync(GroupTag tag, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a color-coded customer/lead tag by ID.
+    /// </summary>
+    Task<bool> DeleteLeadTagAsync(string tagId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates the assigned customer/lead tags (<paramref name="tagsCsv"/>) and optional CRM <paramref name="notes"/> on a scraped post.
+    /// </summary>
+    Task UpdateScrapedPostTagsAndNotesAsync(string postId, string? tagsCsv, string? notes = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Retrieves stored published posts and synchronized personal profile posts.
     /// </summary>
     Task<IReadOnlyList<PublishedPostRecord>> GetPublishedPostsAsync(string? accountUid = null, int limit = 200, CancellationToken ct = default);

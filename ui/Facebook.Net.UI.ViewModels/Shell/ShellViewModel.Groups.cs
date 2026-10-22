@@ -51,6 +51,13 @@ public sealed partial class ShellViewModel
     private GroupMembershipState? _activeStateFilter;
 
     /// <summary>
+    /// Checks whether <paramref name="source"/> contains <paramref name="keyword"/> using Vietnamese accent-insensitive matching.
+    /// </summary>
+    public bool MatchesTextAccentInsensitive(string? source, string? keyword) =>
+        string.IsNullOrWhiteSpace(keyword) ||
+        (!string.IsNullOrWhiteSpace(source) && _context.LeadScoring.MatchesAccentInsensitive(source, keyword));
+
+    /// <summary>
     /// Filters the displayed <see cref="JoinedGroups"/> catalog locally by <see cref="GroupFilterText"/>,
     /// optional membership state, and optional tag filter.
     /// </summary>
@@ -115,7 +122,8 @@ public sealed partial class ShellViewModel
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(kw) && !grp.Name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !_context.LeadScoring.MatchesAccentInsensitive(grp.Name, kw))
             {
                 continue;
             }
@@ -239,6 +247,11 @@ public sealed partial class ShellViewModel
         this.NewGroupTagName = string.Empty;
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
 
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "campaign_rules",
+            $"group_tag_{tag.Id}",
+            _context.Localization.Format("Ai.LearnGroupTagClassification", tag.Name, tag.ColorHex));
+
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
@@ -257,10 +270,15 @@ public sealed partial class ShellViewModel
         }
 
         string trimmedName = newName.Trim();
-        string color = string.IsNullOrWhiteSpace(newColorHex) ? "#F6821F" : newColorHex.Trim();
+        string color = _context.GroupTagService.NormalizeColorHex(newColorHex);
         GroupTag updated = new(tagId, trimmedName, color);
         await _context.AccountStore.UpsertGroupTagAsync(updated).ConfigureAwait(true);
         await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "campaign_rules",
+            $"group_tag_{updated.Id}",
+            _context.Localization.Format("Ai.LearnGroupTagClassification", updated.Name, updated.ColorHex));
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
@@ -526,34 +544,14 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        System.Collections.Generic.HashSet<int> chosen =
-            _context.GroupTagService.SelectRandomIndices(this.TargetGroups.Count, randomCount);
-
-        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
-        System.Collections.Generic.List<SavedTargetGroup> modified = new();
-        for (int i = 0; i < this.TargetGroups.Count; i++)
-        {
-            bool shouldEnable = chosen.Contains(i);
-            SavedTargetGroup tg = this.TargetGroups[i];
-            if (tg.IsEnabled != shouldEnable)
-            {
-                SavedTargetGroup updated = tg with { IsEnabled = shouldEnable };
-                modified.Add(updated);
-                nextList.Add(updated);
-            }
-            else
-            {
-                nextList.Add(tg);
-            }
-        }
+        (System.Collections.Generic.IReadOnlyList<SavedTargetGroup> modified, _, _) =
+            _context.GroupTagService.ConfigureTargetGroupsSelection(this.TargetGroups, "random", randomCount: randomCount);
 
         if (modified.Count > 0)
         {
             await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            this.ApplyModifiedTargetGroupsInMemory(modified);
         }
-
-        this.TargetGroups.ReplaceAll(nextList);
-        this.RebuildTargetGroupIndex();
     }
 
     private async Task ReloadGroupTagsOnlyAsync()
@@ -596,30 +594,15 @@ public sealed partial class ShellViewModel
 
     private async Task SetAllTargetGroupsEnabledAsync(bool isEnabled)
     {
-        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
-        System.Collections.Generic.List<SavedTargetGroup> modified = new();
-        for (int i = 0; i < this.TargetGroups.Count; i++)
-        {
-            SavedTargetGroup current = this.TargetGroups[i];
-            if (current.IsEnabled != isEnabled)
-            {
-                SavedTargetGroup updated = current with { IsEnabled = isEnabled };
-                modified.Add(updated);
-                nextList.Add(updated);
-            }
-            else
-            {
-                nextList.Add(current);
-            }
-        }
+        string mode = isEnabled ? "enable_all" : "disable_all";
+        (System.Collections.Generic.IReadOnlyList<SavedTargetGroup> modified, _, _) =
+            _context.GroupTagService.ConfigureTargetGroupsSelection(this.TargetGroups, mode);
 
         if (modified.Count > 0)
         {
             await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
-            this.TargetGroups.ReplaceAll(nextList);
+            this.ApplyModifiedTargetGroupsInMemory(modified);
         }
-
-        this.RebuildTargetGroupIndex();
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
@@ -628,6 +611,136 @@ public sealed partial class ShellViewModel
             isEnabled
                 ? _context.Localization.Format("Log.TargetGroupsEnabledAll", this.TargetGroups.Count)
                 : _context.Localization.Format("Log.TargetGroupsDisabledAll", this.TargetGroups.Count)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Batch-enables or disables the specified subset of target groups by <paramref name="groupIds"/> and persists changes to SQLite.
+    /// </summary>
+    public async Task SetTargetGroupsEnabledBatchAsync(System.Collections.Generic.IReadOnlyList<string> groupIds, bool isEnabled)
+    {
+        if (groupIds is null || groupIds.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.HashSet<string> idSet = new(groupIds.Count, StringComparer.Ordinal);
+        for (int i = 0; i < groupIds.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(groupIds[i]))
+            {
+                _ = idSet.Add(groupIds[i]);
+            }
+        }
+
+        if (idSet.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> modified = new(idSet.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup tg = this.TargetGroups[i];
+            if (idSet.Contains(tg.GroupId) && tg.IsEnabled != isEnabled)
+            {
+                modified.Add(tg with { IsEnabled = isEnabled });
+            }
+        }
+
+        if (modified.Count > 0)
+        {
+            await _context.AccountStore.UpsertTargetGroupsBatchAsync(modified).ConfigureAwait(true);
+            this.ApplyModifiedTargetGroupsInMemory(modified);
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            _context.Localization["Audit.Cat.Group"],
+            isEnabled
+                ? _context.Localization.Format("Log.TargetGroupsEnabledAll", idSet.Count)
+                : _context.Localization.Format("Log.TargetGroupsDisabledAll", idSet.Count)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Batch-adds the specified discovered <paramref name="groups"/> into the saved campaign target groups and persists them to SQLite.
+    /// </summary>
+    public async Task AddDiscoveredGroupsBatchToTargetsAsync(System.Collections.Generic.IReadOnlyList<GroupSummary> groups)
+    {
+        if (groups is null || groups.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> toUpsert = new(groups.Count);
+        for (int i = 0; i < groups.Count; i++)
+        {
+            GroupSummary grp = groups[i];
+            if (grp is null || string.IsNullOrWhiteSpace(grp.GroupId))
+            {
+                continue;
+            }
+
+            SavedTargetGroup? existing = this.FindTargetGroupById(grp.GroupId);
+            if (existing is null)
+            {
+                toUpsert.Add(new SavedTargetGroup(
+                    grp.GroupId,
+                    grp.Name,
+                    IsEnabled: true,
+                    Notes: null,
+                    AvatarUrl: grp.AvatarUrl,
+                    TagsCsv: null));
+            }
+            else if (!existing.IsEnabled)
+            {
+                toUpsert.Add(existing with
+                {
+                    GroupName = !string.IsNullOrWhiteSpace(grp.Name) ? grp.Name : existing.GroupName,
+                    AvatarUrl = grp.AvatarUrl ?? existing.AvatarUrl,
+                    IsEnabled = true
+                });
+            }
+        }
+
+        if (toUpsert.Count == 0)
+        {
+            return;
+        }
+
+        await _context.AccountStore.UpsertTargetGroupsBatchAsync(toUpsert).ConfigureAwait(true);
+        await this.ReloadTargetGroupsOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.Group"],
+            _context.Localization.Format("Log.TargetGroupsEnabledAll", toUpsert.Count)).ConfigureAwait(true);
+    }
+
+    private void ApplyModifiedTargetGroupsInMemory(System.Collections.Generic.IReadOnlyList<SavedTargetGroup> modified)
+    {
+        if (modified.Count == 0)
+        {
+            return;
+        }
+
+        System.Collections.Generic.Dictionary<string, SavedTargetGroup> modMap =
+            new(modified.Count, StringComparer.Ordinal);
+        for (int i = 0; i < modified.Count; i++)
+        {
+            modMap[modified[i].GroupId] = modified[i];
+        }
+
+        System.Collections.Generic.List<SavedTargetGroup> nextList = new(this.TargetGroups.Count);
+        for (int i = 0; i < this.TargetGroups.Count; i++)
+        {
+            SavedTargetGroup current = this.TargetGroups[i];
+            nextList.Add(modMap.TryGetValue(current.GroupId, out SavedTargetGroup? updated) ? updated : current);
+        }
+
+        this.TargetGroups.ReplaceAll(nextList);
+        this.RebuildTargetGroupIndex();
     }
 
     private async Task SyncJoinedGroupsAsync()

@@ -298,12 +298,14 @@ public sealed partial class SqliteAccountStore
             INSERT INTO scraped_posts (
                 post_id, group_id, group_name, author_uid, author_name,
                 message_text, permalink_url, reaction_count, comment_count,
-                created_at, scraped_at, media_preview_url, is_video, author_avatar_url, group_avatar_url
+                created_at, scraped_at, media_preview_url, is_video, author_avatar_url, group_avatar_url,
+                tags_csv, notes
             )
             VALUES (
                 $post_id, $group_id, $group_name, $author_uid, $author_name,
                 $message_text, $permalink_url, $reaction_count, $comment_count,
-                $created_at, $scraped_at, $media_preview_url, $is_video, $author_avatar_url, $group_avatar_url
+                $created_at, $scraped_at, $media_preview_url, $is_video, $author_avatar_url, $group_avatar_url,
+                $tags_csv, $notes
             )
             ON CONFLICT(post_id) DO UPDATE SET
                 group_id = CASE WHEN excluded.group_id <> '' THEN excluded.group_id ELSE scraped_posts.group_id END,
@@ -319,7 +321,9 @@ public sealed partial class SqliteAccountStore
                 media_preview_url = COALESCE(excluded.media_preview_url, scraped_posts.media_preview_url),
                 is_video = CASE WHEN excluded.is_video <> 0 THEN 1 ELSE scraped_posts.is_video END,
                 author_avatar_url = COALESCE(excluded.author_avatar_url, scraped_posts.author_avatar_url),
-                group_avatar_url = COALESCE(excluded.group_avatar_url, scraped_posts.group_avatar_url);
+                group_avatar_url = COALESCE(excluded.group_avatar_url, scraped_posts.group_avatar_url),
+                tags_csv = COALESCE(NULLIF(excluded.tags_csv, ''), scraped_posts.tags_csv),
+                notes = COALESCE(NULLIF(excluded.notes, ''), scraped_posts.notes);
             """;
 
         string nowIso = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
@@ -346,6 +350,8 @@ public sealed partial class SqliteAccountStore
         SqliteParameter pIsVideo = cmd.Parameters.Add("$is_video", SqliteType.Integer);
         SqliteParameter pAuthorAvatarUrl = cmd.Parameters.Add("$author_avatar_url", SqliteType.Text);
         SqliteParameter pGroupAvatarUrl = cmd.Parameters.Add("$group_avatar_url", SqliteType.Text);
+        SqliteParameter pTagsCsv = cmd.Parameters.Add("$tags_csv", SqliteType.Text);
+        SqliteParameter pNotes = cmd.Parameters.Add("$notes", SqliteType.Text);
         pScrapedAt.Value = nowIso;
 
         for (int i = 0; i < posts.Count; i++)
@@ -372,6 +378,8 @@ public sealed partial class SqliteAccountStore
             pIsVideo.Value = p.IsVideo ? 1 : 0;
             pAuthorAvatarUrl.Value = (object?)p.AuthorAvatarUrl ?? DBNull.Value;
             pGroupAvatarUrl.Value = (object?)p.GroupAvatarUrl ?? DBNull.Value;
+            pTagsCsv.Value = (object?)p.TagsCsv ?? DBNull.Value;
+            pNotes.Value = (object?)p.Notes ?? DBNull.Value;
 
             _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -400,7 +408,9 @@ public sealed partial class SqliteAccountStore
                    sp.media_preview_url,
                    sp.is_video,
                    sp.author_avatar_url,
-                   COALESCE(NULLIF(sp.group_avatar_url, ''), tg.avatar_url) AS resolved_group_avatar_url
+                   COALESCE(NULLIF(sp.group_avatar_url, ''), tg.avatar_url) AS resolved_group_avatar_url,
+                   sp.tags_csv,
+                   sp.notes
             FROM scraped_posts sp
             LEFT JOIN target_groups tg ON tg.group_id = sp.group_id
             WHERE ($group_id IS NULL OR sp.group_id = $group_id)
@@ -408,7 +418,8 @@ public sealed partial class SqliteAccountStore
                    OR sp.message_text LIKE $keyword
                    OR sp.author_name LIKE $keyword
                    OR sp.group_name LIKE $keyword
-                   OR tg.group_name LIKE $keyword)
+                   OR tg.group_name LIKE $keyword
+                   OR sp.notes LIKE $keyword)
             ORDER BY COALESCE(sp.created_at, sp.scraped_at) DESC
             LIMIT $limit;
             """;
@@ -516,6 +527,92 @@ public sealed partial class SqliteAccountStore
 
         int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<GroupTag>> GetAllLeadTagsAsync(CancellationToken ct = default)
+    {
+        const string sql = "SELECT id, name, color_hex FROM lead_tags ORDER BY name ASC;";
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        List<GroupTag> list = new();
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            list.Add(new GroupTag(
+                Id: reader.GetString(0),
+                Name: reader.GetString(1),
+                ColorHex: reader.GetString(2)));
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertLeadTagAsync(GroupTag tag, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(tag);
+
+        const string sql = """
+            INSERT INTO lead_tags (id, name, color_hex)
+            VALUES ($id, $name, $color_hex)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color_hex = excluded.color_hex;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("$name", tag.Name);
+        _ = cmd.Parameters.AddWithValue("$color_hex", tag.ColorHex);
+
+        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteLeadTagAsync(string tagId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tagId);
+
+        const string sql = "DELETE FROM lead_tags WHERE id = $id;";
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$id", tagId);
+
+        int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateScrapedPostTagsAndNotesAsync(string postId, string? tagsCsv, string? notes = null, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+
+        const string sql = """
+            UPDATE scraped_posts
+            SET tags_csv = $tags_csv,
+                notes = COALESCE($notes, notes)
+            WHERE post_id = $post_id;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$post_id", postId.Trim());
+        _ = cmd.Parameters.AddWithValue("$tags_csv", string.IsNullOrWhiteSpace(tagsCsv) ? DBNull.Value : tagsCsv.Trim());
+        _ = cmd.Parameters.AddWithValue("$notes", (object?)notes ?? DBNull.Value);
+
+        _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -815,6 +912,8 @@ public sealed partial class SqliteAccountStore
             MediaPreviewUrl: reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : null,
             IsVideo: reader.FieldCount > 11 && !reader.IsDBNull(11) && reader.GetInt32(11) != 0,
             AuthorAvatarUrl: reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : null,
-            GroupAvatarUrl: reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : null);
+            GroupAvatarUrl: reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : null,
+            TagsCsv: reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : null,
+            Notes: reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : null);
     }
 }

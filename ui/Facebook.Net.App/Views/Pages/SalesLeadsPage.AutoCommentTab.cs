@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -24,7 +25,7 @@ public sealed partial class SalesLeadsPage
     {
         Grid commentTabGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
             RowSpacing = 12
         };
 
@@ -50,18 +51,125 @@ public sealed partial class SalesLeadsPage
             this._i18n["Leads.CommentContentPlaceholder"],
             this._vm.SalesCommentSpintaxText,
             multiline: true,
-            height: 150);
+            height: 140);
         commentBox.VerticalAlignment = VerticalAlignment.Stretch;
-        commentBox.TextChanged += (_, _) => this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
         Grid.SetRow(commentBox, 2);
         commentTabGrid.Children.Add(commentBox);
 
-        Grid commentOptionsRow = new()
+        // Live Spintax & Variable Comment Preview Strip
+        Grid previewRowGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
-            ColumnSpacing = 12,
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
+        TextBlock previewPrefixTb = SectionHeader.CreateLabel(
+            this._theme,
+            this._i18n["Leads.CommentPreviewPrefix"],
+            11.5,
+            FontWeight.Bold);
+        previewPrefixTb.Foreground = this._theme.Palette.BrandPrimary;
+        previewPrefixTb.VerticalAlignment = VerticalAlignment.Top;
+
+        TextBlock previewBodyTb = SectionHeader.CreateLabel(
+            this._theme,
+            string.Empty,
+            12,
+            FontWeight.Normal,
+            isSecondary: true);
+        previewBodyTb.TextWrapping = TextWrapping.Wrap;
+        previewBodyTb.MaxLines = 3;
+        previewBodyTb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+        Grid.SetColumn(previewPrefixTb, 0);
+        Grid.SetColumn(previewBodyTb, 1);
+        previewRowGrid.Children.Add(previewPrefixTb);
+        previewRowGrid.Children.Add(previewBodyTb);
+
+        Border commentPreviewBanner = SurfaceCard.CreateInset(this._theme, previewRowGrid, new Thickness(12, 8));
+        Grid.SetRow(commentPreviewBanner, 3);
+        commentTabGrid.Children.Add(commentPreviewBanner);
+
+        void RefreshCommentPreview()
+        {
+            string resolved = this._vm.GenerateSalesCommentPreview();
+            previewBodyTb.Text = string.IsNullOrWhiteSpace(resolved)
+                ? this._i18n["Leads.CommentContentPlaceholder"]
+                : resolved;
+        }
+
+        commentBox.TextChanged += (_, _) =>
+        {
+            this._vm.SalesCommentSpintaxText = commentBox.Text ?? string.Empty;
+            RefreshCommentPreview();
+        };
+
+        Grid commentOptionsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,Auto,*"),
+            ColumnSpacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        List<CampaignTemplate> templatePickerItems = new();
+        ComboBox commentTemplateCombo = FormField.CreateComboBox<string>(
+            this._theme,
+            Array.Empty<string>(),
+            label => SectionHeader.CreateLabel(this._theme, label, 12, FontWeight.Medium),
+            selectedItem: null,
+            placeholderText: this._i18n["Leads.PickCommentTemplatePlaceholder"]);
+        commentTemplateCombo.MinWidth = 175;
+        bool suppressTemplateCombo = false;
+
+        void RefreshCommentTemplateCombo()
+        {
+            suppressTemplateCombo = true;
+            templatePickerItems.Clear();
+            List<string> labels = new(this._vm.SavedTemplates.Count);
+            for (int i = 0; i < this._vm.SavedTemplates.Count; i++)
+            {
+                CampaignTemplate tpl = this._vm.SavedTemplates[i];
+                templatePickerItems.Add(tpl);
+                labels.Add(tpl.Title);
+            }
+
+            commentTemplateCombo.ItemsSource = labels;
+            commentTemplateCombo.SelectedIndex = -1;
+            suppressTemplateCombo = false;
+        }
+
+        RefreshCommentTemplateCombo();
+        this._vm.SavedTemplates.CollectionChanged += (_, _) => RefreshCommentTemplateCombo();
+
+        commentTemplateCombo.SelectionChanged += (_, _) =>
+        {
+            if (suppressTemplateCombo)
+            {
+                return;
+            }
+
+            int idx = commentTemplateCombo.SelectedIndex;
+            if (idx >= 0 && idx < templatePickerItems.Count)
+            {
+                CampaignTemplate picked = templatePickerItems[idx];
+                commentBox.Text = picked.SpintaxContent;
+                this._vm.SalesCommentSpintaxText = picked.SpintaxContent;
+                if (!string.IsNullOrWhiteSpace(picked.MediaFilePath))
+                {
+                    this._vm.SalesCommentPhotoPath = picked.MediaFilePath;
+                }
+
+                RefreshCommentPreview();
+            }
+        };
+
+        Button saveCommentTemplateBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnSaveAsCommentTemplate"],
+            null,
+            VectorIcons.Bookmark);
+        saveCommentTemplateBtn.Click += async (_, _) =>
+            await this._vm.SaveSalesCommentAsTemplateAsync().ConfigureAwait(true);
 
         StackPanel variableMenuStack = new()
         {
@@ -126,6 +234,13 @@ public sealed partial class SalesLeadsPage
             VectorIcons.Plus);
         insertVarBtn.Flyout = variableFlyout;
 
+        Button previewSpinBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Leads.BtnPreviewComment"],
+            null,
+            VectorIcons.Sync);
+        previewSpinBtn.Click += (_, _) => RefreshCommentPreview();
+
         CheckBox autoReactCheck = FormField.CreateCheckBox(
             this._theme,
             this._i18n["Leads.AutoReactToggle"],
@@ -152,13 +267,19 @@ public sealed partial class SalesLeadsPage
             }
         };
 
-        Grid.SetColumn(insertVarBtn, 0);
-        Grid.SetColumn(autoReactCheck, 1);
-        Grid.SetColumn(commentPhotoPicker, 2);
+        Grid.SetColumn(commentTemplateCombo, 0);
+        Grid.SetColumn(saveCommentTemplateBtn, 1);
+        Grid.SetColumn(insertVarBtn, 2);
+        Grid.SetColumn(previewSpinBtn, 3);
+        Grid.SetColumn(autoReactCheck, 4);
+        Grid.SetColumn(commentPhotoPicker, 5);
+        commentOptionsRow.Children.Add(commentTemplateCombo);
+        commentOptionsRow.Children.Add(saveCommentTemplateBtn);
         commentOptionsRow.Children.Add(insertVarBtn);
+        commentOptionsRow.Children.Add(previewSpinBtn);
         commentOptionsRow.Children.Add(autoReactCheck);
         commentOptionsRow.Children.Add(commentPhotoPicker);
-        Grid.SetRow(commentOptionsRow, 3);
+        Grid.SetRow(commentOptionsRow, 4);
         commentTabGrid.Children.Add(commentOptionsRow);
 
         Grid commentButtonsRow = new()
@@ -176,8 +297,44 @@ public sealed partial class SalesLeadsPage
         Button autoCommentAllBtn = AppButton.CreateSecondary(
             this._theme,
             this._i18n["Leads.BtnAutoCommentAllMatched"],
-            this._vm.AutoCommentAllMatchedPostsCommand,
+            command: null,
             VectorIcons.Publish);
+        autoCommentAllBtn.Click += (_, _) =>
+        {
+            int count = this._vm.ScrapedPosts.Count;
+            if (count == 0)
+            {
+                if (this._vm.AutoCommentAllMatchedPostsCommand.CanExecute(null))
+                {
+                    this._vm.AutoCommentAllMatchedPostsCommand.Execute(null);
+                }
+
+                return;
+            }
+
+            ConfirmDialogModal.ShowAsync(
+                this,
+                this._theme,
+                this._i18n["Leads.BtnAutoCommentAllMatched"],
+                this._i18n.Format("Leads.ConfirmAutoCommentAllMsg", count),
+                this._i18n["Leads.BtnAutoCommentAllMatched"],
+                this._i18n["Groups.BtnCancelEditTag"],
+                async () =>
+                {
+                    if (this._vm.AutoCommentAllMatchedPostsCommand.CanExecute(null))
+                    {
+                        await this._vm.AutoCommentAllMatchedPostsCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    }
+                });
+        };
+
+        void UpdateAutoCommentAllBtnLabel()
+        {
+            string label = !string.IsNullOrWhiteSpace(this._vm.AutoCommentProgressText)
+                ? this._vm.AutoCommentProgressText
+                : this._i18n["Leads.BtnAutoCommentAllMatched"];
+            AppButton.SetText(autoCommentAllBtn, label);
+        }
 
         Button openPostBtn = AppButton.CreateSecondary(
             this._theme,
@@ -191,11 +348,12 @@ public sealed partial class SalesLeadsPage
         commentButtonsRow.Children.Add(sendSelectedBtn);
         commentButtonsRow.Children.Add(autoCommentAllBtn);
         commentButtonsRow.Children.Add(openPostBtn);
-        Grid.SetRow(commentButtonsRow, 4);
+        Grid.SetRow(commentButtonsRow, 5);
         commentTabGrid.Children.Add(commentButtonsRow);
 
         void UpdateSelectedPostBanner()
         {
+            RefreshCommentPreview();
             PostSummary? post = this._vm.SelectedScrapedPost;
             sendSelectedBtn.IsVisible = post is not null;
             openPostBtn.IsVisible = post is not null;
@@ -275,11 +433,16 @@ public sealed partial class SalesLeadsPage
                      !string.Equals(commentBox.Text, this._vm.SalesCommentSpintaxText, StringComparison.Ordinal))
             {
                 commentBox.Text = this._vm.SalesCommentSpintaxText;
+                RefreshCommentPreview();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SalesCommentPhotoPath), StringComparison.Ordinal) &&
                      !string.Equals(commentPhotoBox.Text, this._vm.SalesCommentPhotoPath, StringComparison.Ordinal))
             {
                 commentPhotoBox.Text = this._vm.SalesCommentPhotoPath;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.AutoCommentProgressText), StringComparison.Ordinal))
+            {
+                UpdateAutoCommentAllBtnLabel();
             }
         };
         this._vm.ScrapedPosts.CollectionChanged += (_, _) => UpdateSelectedPostBanner();
@@ -287,21 +450,26 @@ public sealed partial class SalesLeadsPage
         {
             UpdateSelectedPostBanner();
             RebuildVariableFlyoutItems();
+            previewPrefixTb.Foreground = this._theme.Palette.BrandPrimary;
         };
 
         refreshI18n = () =>
         {
             titleTb.Text = this._i18n["Leads.TabAutoComment"];
             descTb.Text = this._i18n["Leads.Desc"];
+            previewPrefixTb.Text = this._i18n["Leads.CommentPreviewPrefix"];
             UpdateSelectedPostBanner();
             commentBox.PlaceholderText = this._i18n["Leads.CommentContentPlaceholder"];
+            commentTemplateCombo.PlaceholderText = this._i18n["Leads.PickCommentTemplatePlaceholder"];
+            AppButton.SetText(saveCommentTemplateBtn, this._i18n["Leads.BtnSaveAsCommentTemplate"]);
             AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
+            AppButton.SetText(previewSpinBtn, this._i18n["Leads.BtnPreviewComment"]);
             RebuildVariableFlyoutItems();
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
             autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];
             AppButton.SetText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             AppButton.SetText(sendSelectedBtn, this._i18n["Leads.BtnSendCommentSelected"]);
-            AppButton.SetText(autoCommentAllBtn, this._i18n["Leads.BtnAutoCommentAllMatched"]);
+            UpdateAutoCommentAllBtnLabel();
             AppButton.SetText(openPostBtn, this._i18n["Leads.BtnOpenPostInBrowser"]);
         };
 

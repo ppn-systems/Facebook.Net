@@ -286,8 +286,14 @@ public static class GroupRowCard
             rightActionsStack.Children.Add(joinBtn);
         }
 
-        i18n.LanguageChanged += (_, _) =>
+        void OnLangChanged(object? sender, AppLanguage lang) =>
             StatusPill.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
+        row.AttachedToVisualTree += (_, _) =>
+        {
+            i18n.LanguageChanged -= OnLangChanged;
+            i18n.LanguageChanged += OnLangChanged;
+        };
+        row.DetachedFromVisualTree += (_, _) => i18n.LanguageChanged -= OnLangChanged;
 
         Grid.SetColumn(rightActionsStack, 2);
         row.Children.Add(badge);

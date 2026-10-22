@@ -71,7 +71,7 @@ public sealed partial class PublisherPage : UserControl
     {
         SubTabBar? subTabBar = null;
         Control tab1View = this.BuildComposeTab(out TextBox contentBox, out TextBox photoBox, out Action refreshTab1);
-        Control tab2View = this.BuildPublishedPostsAndRepostTab(out Action refreshTab2);
+        Control tab2View = this.BuildPublishedPostsAndRepostTab(() => subTabBar?.SelectTab(0), out Action refreshTab2);
         Control tab3View = this.BuildTemplatesAndBumpCombinedTab(
             contentBox,
             photoBox,
@@ -344,9 +344,23 @@ public sealed partial class PublisherPage : UserControl
         previewInnerGrid.Children.Add(clearPhotoBtn);
         photoPreviewContainer.Child = previewInnerGrid;
 
+        static void DisposeStripBitmaps(Panel strip)
+        {
+            for (int i = 0; i < strip.Children.Count; i++)
+            {
+                if (strip.Children[i] is Border { Child: Image img } && img.Source is IDisposable disp)
+                {
+                    img.Source = null;
+                    disp.Dispose();
+                }
+            }
+
+            strip.Children.Clear();
+        }
+
         void RefreshPhotoPreview()
         {
-            thumbnailStrip.Children.Clear();
+            DisposeStripBitmaps(thumbnailStrip);
             List<string> files = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
             if (files.Count > 0)
             {
@@ -376,6 +390,16 @@ public sealed partial class PublisherPage : UserControl
                     {
                         // Ignore unreadable bitmap
                     }
+                }
+
+                if (files.Count > maxThumbs)
+                {
+                    Border overflowBadge = StatusPill.Create(
+                        this._theme,
+                        this._i18n.Format("Publisher.PhotosOverflowBadge", files.Count - maxThumbs),
+                        AuditSeverity.Info);
+                    overflowBadge.VerticalAlignment = VerticalAlignment.Center;
+                    thumbnailStrip.Children.Add(overflowBadge);
                 }
 
                 if (validBitmaps > 0)
@@ -426,11 +450,11 @@ public sealed partial class PublisherPage : UserControl
         composerGrid.Children.Add(mediaStack);
         photoBox = localPhotoBox;
 
-        // Row 4: Auto-React + Schedule Delay Row
+        // Row 4: Auto-React + Schedule Delay Row + Quick Presets
         Grid optionsRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,78"),
-            ColumnSpacing = 10,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,64,Auto"),
+            ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -461,12 +485,46 @@ public sealed partial class PublisherPage : UserControl
             }
         };
 
+        StackPanel schedulePresetsRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Button CreateSchedulePresetBtn(string i18nKey, int minutes)
+        {
+            Button btn = AppButton.CreateSecondary(this._theme, this._i18n[i18nKey]);
+            btn.Padding = new Thickness(7, 4);
+            btn.MinHeight = 26;
+            btn.Click += (_, _) =>
+            {
+                this._vm.ScheduleDelayMinutes = minutes;
+                scheduleDelayBox.Text = minutes.ToString(CultureInfo.InvariantCulture);
+            };
+            return btn;
+        }
+
+        Button presetNowBtn = CreateSchedulePresetBtn("Publisher.PresetNow", 0);
+        Button preset15mBtn = CreateSchedulePresetBtn("Publisher.Preset15m", 15);
+        Button preset30mBtn = CreateSchedulePresetBtn("Publisher.Preset30m", 30);
+        Button preset1hBtn = CreateSchedulePresetBtn("Publisher.Preset1h", 60);
+        Button preset2hBtn = CreateSchedulePresetBtn("Publisher.Preset2h", 120);
+
+        schedulePresetsRow.Children.Add(presetNowBtn);
+        schedulePresetsRow.Children.Add(preset15mBtn);
+        schedulePresetsRow.Children.Add(preset30mBtn);
+        schedulePresetsRow.Children.Add(preset1hBtn);
+        schedulePresetsRow.Children.Add(preset2hBtn);
+
         Grid.SetColumn(autoReactOwnPostCheck, 0);
         Grid.SetColumn(scheduleDelayLbl, 1);
         Grid.SetColumn(scheduleDelayBox, 2);
+        Grid.SetColumn(schedulePresetsRow, 3);
         optionsRow.Children.Add(autoReactOwnPostCheck);
         optionsRow.Children.Add(scheduleDelayLbl);
         optionsRow.Children.Add(scheduleDelayBox);
+        optionsRow.Children.Add(schedulePresetsRow);
         Grid.SetRow(optionsRow, 4);
         composerGrid.Children.Add(optionsRow);
 
@@ -521,12 +579,14 @@ public sealed partial class PublisherPage : UserControl
                 }
             }
 
-            string dynamicBtnLabel = this._vm.PublishTargetMode switch
-            {
-                0 => this._i18n.Format("Publisher.BtnPublishFeedDynamic", accName),
-                2 => this._i18n.Format("Publisher.BtnPublishBothDynamic", enabledGroups),
-                _ => this._i18n.Format("Publisher.BtnPublishGroupsDynamic", enabledGroups)
-            };
+            string dynamicBtnLabel = !string.IsNullOrWhiteSpace(this._vm.CampaignProgressText)
+                ? this._vm.CampaignProgressText
+                : (this._vm.PublishTargetMode switch
+                {
+                    0 => this._i18n.Format("Publisher.BtnPublishFeedDynamic", accName),
+                    2 => this._i18n.Format("Publisher.BtnPublishBothDynamic", enabledGroups),
+                    _ => this._i18n.Format("Publisher.BtnPublishGroupsDynamic", enabledGroups)
+                });
             AppButton.SetText(publishBtn, dynamicBtnLabel);
         }
 
@@ -658,6 +718,14 @@ public sealed partial class PublisherPage : UserControl
         };
         fbPostCardStack.Children.Add(fbMediaFrame);
 
+        StackPanel fbExtraPhotosStrip = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            IsVisible = false
+        };
+        fbPostCardStack.Children.Add(fbExtraPhotosStrip);
+
         TextBlock fbReactionSummaryTb = SectionHeader.CreateLabel(
             this._theme,
             $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}",
@@ -717,7 +785,7 @@ public sealed partial class PublisherPage : UserControl
             string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
             fbPreviewAvatarHost.Content = AvatarBadge.Create(this._theme, accName, 44, this._vm.SelectedAccount?.AvatarUrl);
 
-            string sampleGroupName = "Cộng đồng Facebook";
+            string sampleGroupName = this._i18n["Publisher.DefaultSampleGroupName"];
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
                 if (this._vm.TargetGroups[i].IsEnabled)
@@ -748,6 +816,14 @@ public sealed partial class PublisherPage : UserControl
             fbBodyContentTb.Text = resolvedBody;
             fbReactionSummaryTb.IsVisible = this._vm.AutoReactPublishedPost;
 
+            if (fbFullPreviewImage.Source is IDisposable oldPreviewBmp)
+            {
+                fbFullPreviewImage.Source = null;
+                oldPreviewBmp.Dispose();
+            }
+
+            DisposeStripBitmaps(fbExtraPhotosStrip);
+
             List<string> previewMediaFiles = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
             if (previewMediaFiles.Count > 0)
             {
@@ -760,10 +836,67 @@ public sealed partial class PublisherPage : UserControl
                 {
                     fbMediaFrame.IsVisible = false;
                 }
+
+                if (previewMediaFiles.Count > 1)
+                {
+                    int maxExtra = Math.Min(previewMediaFiles.Count, 6);
+                    for (int i = 0; i < maxExtra; i++)
+                    {
+                        try
+                        {
+                            string path = previewMediaFiles[i];
+                            Image extraImg = new()
+                            {
+                                Width = 88,
+                                Height = 66,
+                                Stretch = Stretch.UniformToFill,
+                                Source = new Bitmap(path)
+                            };
+                            Border extraBorder = new()
+                            {
+                                CornerRadius = new CornerRadius(8),
+                                ClipToBounds = true,
+                                BorderThickness = new Thickness(1),
+                                BorderBrush = this._theme.Palette.SubtleBorder,
+                                Cursor = new Cursor(StandardCursorType.Hand),
+                                Child = extraImg
+                            };
+                            extraBorder.PointerPressed += (_, _) =>
+                            {
+                                try
+                                {
+                                    if (fbFullPreviewImage.Source is IDisposable prevBmp)
+                                    {
+                                        fbFullPreviewImage.Source = null;
+                                        prevBmp.Dispose();
+                                    }
+
+                                    fbFullPreviewImage.Source = new Bitmap(path);
+                                }
+                                catch
+                                {
+                                    // Ignore unreadable bitmap
+                                }
+                            };
+                            fbExtraPhotosStrip.Children.Add(extraBorder);
+                        }
+                        catch
+                        {
+                            // Ignore unreadable bitmap
+                        }
+                    }
+
+                    fbExtraPhotosStrip.IsVisible = fbExtraPhotosStrip.Children.Count > 1;
+                }
+                else
+                {
+                    fbExtraPhotosStrip.IsVisible = false;
+                }
             }
             else
             {
                 fbMediaFrame.IsVisible = false;
+                fbExtraPhotosStrip.IsVisible = false;
             }
         }
 
@@ -791,7 +924,8 @@ public sealed partial class PublisherPage : UserControl
                 RefreshPhotoPreview();
             }
             else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal) ||
-                     string.Equals(e.PropertyName, nameof(ShellViewModel.PublishTargetMode), StringComparison.Ordinal))
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.PublishTargetMode), StringComparison.Ordinal) ||
+                     string.Equals(e.PropertyName, nameof(ShellViewModel.CampaignProgressText), StringComparison.Ordinal))
             {
                 UpdatePublishButtonAndIdentity();
             }
@@ -808,6 +942,11 @@ public sealed partial class PublisherPage : UserControl
 
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
             scheduleDelayLbl.Text = this._i18n["Publisher.ScheduleDelayLabel"];
+            AppButton.SetText(presetNowBtn, this._i18n["Publisher.PresetNow"]);
+            AppButton.SetText(preset15mBtn, this._i18n["Publisher.Preset15m"]);
+            AppButton.SetText(preset30mBtn, this._i18n["Publisher.Preset30m"]);
+            AppButton.SetText(preset1hBtn, this._i18n["Publisher.Preset1h"]);
+            AppButton.SetText(preset2hBtn, this._i18n["Publisher.Preset2h"]);
             localContentBox.PlaceholderText = this._i18n["Publisher.ContentPlaceholder"];
             rebuildComposeVars();
             AppButton.SetText(previewSpintaxBtn, this._i18n["Publisher.BtnPreviewSpintax"]);

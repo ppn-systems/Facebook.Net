@@ -4,10 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Models;
@@ -236,6 +234,19 @@ public sealed partial class ShellViewModel
         }
     }
 
+    /// <summary>
+    /// Reloads <see cref="AppConfig"/> from disk (picking up cross-process mutations made by <c>Facebook.Net.Mcp</c>)
+    /// and synchronizes all bound UI settings, theme, language, and background scraper state.
+    /// </summary>
+    public void ReloadSettingsFromDisk()
+    {
+        _ = _context.Settings.Reload();
+        this.LoadSettingsIntoProperties();
+        _context.Theme.SetTheme(this.SelectedThemeMode);
+        _context.Localization.SetLanguage(this.SelectedLanguage);
+        this.SyncBackgroundScraperLoop();
+    }
+
     private void ToggleThemeQuick()
     {
         _context.Theme.ToggleTheme();
@@ -403,53 +414,10 @@ public sealed partial class ShellViewModel
 
     private void PruneOrphanPlaceholderProfiles()
     {
-        if (string.IsNullOrWhiteSpace(_context.ProfilesRootDirectory) || !Directory.Exists(_context.ProfilesRootDirectory))
+        int pruned = _context.AccountVault.PruneOrphanPlaceholderProfiles(_context.ProfilesRootDirectory, this.Accounts);
+        if (pruned > 0)
         {
-            return;
-        }
-
-        try
-        {
-            string[] managedDirs = Directory.GetDirectories(_context.ProfilesRootDirectory);
-            for (int i = 0; i < managedDirs.Length; i++)
-            {
-                string dir = managedDirs[i];
-                string folderName = Path.GetFileName(dir);
-                if (!folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) &&
-                    !folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                bool isAssignedToAnyAccount = false;
-                for (int a = 0; a < this.Accounts.Count; a++)
-                {
-                    AccountProfile acc = this.Accounts[a];
-                    if (string.Equals(acc.ProfileDirectory, dir, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isAssignedToAnyAccount = true;
-                        break;
-                    }
-                }
-
-                if (!isAssignedToAnyAccount && !this.HasProfileAuthenticatedCookieStore(dir))
-                {
-                    try
-                    {
-                        Directory.Delete(dir, recursive: true);
-                        _context.StorageUsage.InvalidateCache();
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        // Ignore folder locked by an active browser process
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Ignore inaccessible directory
+            _context.StorageUsage.InvalidateCache();
         }
     }
 
@@ -521,25 +489,10 @@ public sealed partial class ShellViewModel
         }
 
         string trimmed = rawProfileName.Trim();
-        char[] invalidChars = Path.GetInvalidFileNameChars();
-        System.Text.StringBuilder safeBuilder = new(trimmed.Length);
-        for (int i = 0; i < trimmed.Length; i++)
-        {
-            char ch = trimmed[i];
-            if (Array.IndexOf(invalidChars, ch) < 0 && ch is not '(' and not ')')
-            {
-                _ = safeBuilder.Append(ch);
-            }
-        }
-
-        string safeFolderName = safeBuilder.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(safeFolderName))
-        {
-            safeFolderName = $"Profile_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}";
-        }
-
-        string newProfileDir = Path.Combine(_context.ProfilesRootDirectory, safeFolderName);
-        _ = Directory.CreateDirectory(newProfileDir);
+        (string newProfileDir, _, _) = _context.AccountVault.PrepareIsolatedProfileDirectory(
+            trimmed,
+            _context.ProfilesRootDirectory,
+            trimmed);
         _context.StorageUsage.InvalidateCache();
 
         _ = await this.LogAuditAsync(
@@ -564,24 +517,15 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string fullPath = profileDirectoryPath.Trim();
-        string rawLeafName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        string folderName = !string.IsNullOrWhiteSpace(friendlyProfileName)
-            ? friendlyProfileName.Trim()
-            : rawLeafName;
-
-        if (!this.IsProfileInsideManagedRoot(fullPath) && Directory.Exists(fullPath))
+        (string fullPath, string folderName, bool syncedFromSystem) = _context.AccountVault.PrepareIsolatedProfileDirectory(
+            profileDirectoryPath,
+            _context.ProfilesRootDirectory,
+            friendlyProfileName);
+        if (syncedFromSystem)
         {
-            string safeSlug = SanitizeFolderSlug($"{folderName}_{rawLeafName}");
-            string isolatedDir = Path.Combine(_context.ProfilesRootDirectory, safeSlug);
-            if (_context.AccountVault.TrySyncSystemProfileToIsolatedRoot(fullPath, isolatedDir))
-            {
-                fullPath = isolatedDir;
-                _context.StorageUsage.InvalidateCache();
-            }
+            _context.StorageUsage.InvalidateCache();
         }
 
-        _ = Directory.CreateDirectory(fullPath);
         bool hasCookies = this.HasProfileAuthenticatedCookieStore(fullPath);
 
         if (this.SelectedAccount is not null)
@@ -635,88 +579,17 @@ public sealed partial class ShellViewModel
         }
     }
 
-    private static string SanitizeFolderSlug(string raw)
-    {
-        char[] invalid = Path.GetInvalidFileNameChars();
-        System.Text.StringBuilder sb = new(raw.Length);
-        for (int i = 0; i < raw.Length; i++)
-        {
-            char c = raw[i];
-            if (Array.IndexOf(invalid, c) < 0 && c is not '(' and not ')' and not '—' and not '·')
-            {
-                _ = sb.Append(c == ' ' ? '_' : c);
-            }
-        }
+    private string ResolveFriendlyProfileLabel(string folderName, string fullDirPath) =>
+        _context.AccountVault.ResolveFriendlyProfileLabel(folderName, fullDirPath, this.Accounts);
 
-        string slug = sb.ToString().Trim('_');
-        while (slug.Contains("__", StringComparison.Ordinal))
-        {
-            slug = slug.Replace("__", "_", StringComparison.Ordinal);
-        }
-
-        return string.IsNullOrWhiteSpace(slug) ? $"Imported_{DateTimeOffset.UtcNow:yyyyMMdd}" : slug;
-    }
-
-    private string ResolveFriendlyProfileLabel(string folderName, string fullDirPath)
-    {
-        for (int i = 0; i < this.Accounts.Count; i++)
-        {
-            AccountProfile acc = this.Accounts[i];
-            if (string.Equals(acc.ProfileDirectory, fullDirPath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
-            {
-                bool isAutoGeneratedId =
-                    folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) ||
-                    folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(acc.DisplayName, folderName, StringComparison.OrdinalIgnoreCase);
-
-                return isAutoGeneratedId
-                    ? acc.DisplayName
-                    : $"{acc.DisplayName} · {folderName}";
-            }
-        }
-
-        return folderName;
-    }
-
-    private static string GetCurrentAppVersionString()
-    {
-        Version? asmVersion = typeof(ShellViewModel).Assembly.GetName().Version;
-        if (asmVersion is null)
-        {
-            return "v1.0.0";
-        }
-
-        int build = asmVersion.Build >= 0 ? asmVersion.Build : 0;
-        return $"v{asmVersion.Major}.{asmVersion.Minor}.{build}";
-    }
+    private static string GetCurrentAppVersionString() =>
+        GitHubAppReleaseService.Instance.GetCurrentAppVersionString();
 
     /// <summary>
     /// Normalizes a release tag or version string (such as <c>v1.2.3-beta.1</c>) into a comparable 3-part <see cref="Version"/>.
     /// </summary>
-    public static Version TryParseReleaseVersion(string? rawVersion)
-    {
-        if (string.IsNullOrWhiteSpace(rawVersion))
-        {
-            return new Version(1, 0, 0);
-        }
-
-        string cleaned = rawVersion.Trim().TrimStart('v', 'V');
-        int dashIdx = cleaned.IndexOfAny(['-', '+']);
-        if (dashIdx > 0)
-        {
-            cleaned = cleaned[..dashIdx];
-        }
-
-        if (Version.TryParse(cleaned, out Version? parsed) && parsed is not null)
-        {
-            int build = parsed.Build >= 0 ? parsed.Build : 0;
-            return new Version(parsed.Major, parsed.Minor, build);
-        }
-
-        return new Version(1, 0, 0);
-    }
+    public static Version TryParseReleaseVersion(string? rawVersion) =>
+        GitHubAppReleaseService.Instance.TryParseReleaseVersion(rawVersion);
 
     /// <summary>
     /// Queries GitHub Releases (<c>ppn-systems/Facebook.Net</c>) to check if a newer application version is available.
@@ -733,121 +606,21 @@ public sealed partial class ShellViewModel
 
         try
         {
-            using HttpClient http = new()
-            {
-                Timeout = TimeSpan.FromSeconds(15)
-            };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            AppReleaseCheckResult result = await _context.AppRelease.CheckForUpdatesAsync().ConfigureAwait(true);
+            this.IsUpdateAvailable = result.IsUpdateAvailable;
+            this.LatestReleaseTag = result.LatestTag;
+            this.LatestReleaseDownloadUrl = result.DownloadUrl;
 
-            const string ReleasesPageFallback = "https://github.com/ppn-systems/Facebook.Net/releases";
-            string json = await http
-                .GetStringAsync(new Uri("https://api.github.com/repos/ppn-systems/Facebook.Net/releases?per_page=20"))
-                .ConfigureAwait(true);
-
-            using JsonDocument doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                this.IsUpdateAvailable = false;
-                this.LatestReleaseTag = this.CurrentAppVersion;
-                this.LatestReleaseDownloadUrl = ReleasesPageFallback;
-                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
-                return;
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusFailed", result.ErrorMessage);
             }
-
-            // Pick the highest semantic version among all non-draft releases (tie-breaking by published_at timestamp)
-            JsonElement? chosenRelease = null;
-            Version? highestVersion = null;
-            DateTimeOffset highestPublishedAt = DateTimeOffset.MinValue;
-
-            foreach (JsonElement item in doc.RootElement.EnumerateArray())
+            else if (result.IsUpdateAvailable)
             {
-                bool isDraft = item.TryGetProperty("draft", out JsonElement draftProp) && draftProp.ValueKind == JsonValueKind.True;
-                if (isDraft || !item.TryGetProperty("tag_name", out JsonElement tagCheck))
-                {
-                    continue;
-                }
-
-                string? rawTag = tagCheck.GetString();
-                if (string.IsNullOrWhiteSpace(rawTag))
-                {
-                    continue;
-                }
-
-                Version candidateVer = TryParseReleaseVersion(rawTag);
-                DateTimeOffset candidateDate = DateTimeOffset.MinValue;
-                if (item.TryGetProperty("published_at", out JsonElement pubProp) &&
-                    DateTimeOffset.TryParse(pubProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsedPub))
-                {
-                    candidateDate = parsedPub;
-                }
-
-                if (highestVersion is null ||
-                    candidateVer > highestVersion ||
-                    (candidateVer == highestVersion && candidateDate > highestPublishedAt))
-                {
-                    highestVersion = candidateVer;
-                    highestPublishedAt = candidateDate;
-                    chosenRelease = item;
-                }
-            }
-
-            chosenRelease ??= doc.RootElement[0];
-            JsonElement rel = chosenRelease.Value;
-
-            string tagName = rel.TryGetProperty("tag_name", out JsonElement tagEl) && !string.IsNullOrWhiteSpace(tagEl.GetString())
-                ? tagEl.GetString()!.Trim()
-                : this.CurrentAppVersion;
-
-            string htmlUrl = rel.TryGetProperty("html_url", out JsonElement htmlEl) && !string.IsNullOrWhiteSpace(htmlEl.GetString())
-                ? htmlEl.GetString()!.Trim()
-                : ReleasesPageFallback;
-
-            string rawDate = string.Empty;
-            if (rel.TryGetProperty("published_at", out JsonElement pubEl) && !string.IsNullOrWhiteSpace(pubEl.GetString()))
-            {
-                rawDate = pubEl.GetString()!;
-            }
-            else if (rel.TryGetProperty("created_at", out JsonElement createdEl) && !string.IsNullOrWhiteSpace(createdEl.GetString()))
-            {
-                rawDate = createdEl.GetString()!;
-            }
-
-            string dateText = DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset dto)
-                ? dto.ToLocalTime().ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-                : "—";
-
-            string preferredExt = OperatingSystem.IsMacOS() ? ".dmg" : ".msi";
-            string? assetUrl = null;
-            if (rel.TryGetProperty("assets", out JsonElement assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement asset in assetsEl.EnumerateArray())
-                {
-                    string assetName = asset.TryGetProperty("name", out JsonElement nameEl) ? (nameEl.GetString() ?? string.Empty) : string.Empty;
-                    string dlUrl = asset.TryGetProperty("browser_download_url", out JsonElement dlEl) ? (dlEl.GetString() ?? string.Empty) : string.Empty;
-                    if (!string.IsNullOrWhiteSpace(dlUrl) && assetName.EndsWith(preferredExt, StringComparison.OrdinalIgnoreCase))
-                    {
-                        assetUrl = dlUrl;
-                        break;
-                    }
-                }
-            }
-
-            Version remoteVersion = TryParseReleaseVersion(tagName);
-            Version currentVersion = TryParseReleaseVersion(this.CurrentAppVersion);
-
-            if (remoteVersion > currentVersion)
-            {
-                this.IsUpdateAvailable = true;
-                this.LatestReleaseTag = tagName;
-                this.LatestReleaseDownloadUrl = assetUrl ?? htmlUrl;
-                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusAvailable", tagName, dateText);
+                this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusAvailable", result.LatestTag, result.PublishedDateText);
             }
             else
             {
-                this.IsUpdateAvailable = false;
-                this.LatestReleaseTag = tagName;
-                this.LatestReleaseDownloadUrl = htmlUrl;
                 this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusUpToDate", this.CurrentAppVersion);
             }
         }

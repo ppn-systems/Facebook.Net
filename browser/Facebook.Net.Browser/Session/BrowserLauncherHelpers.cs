@@ -106,6 +106,43 @@ public static class BrowserLauncherHelpers
     }
 
     /// <summary>
+    /// Resolves a profile directory path into a safe isolated Chromium <c>--user-data-dir</c> root.
+    /// Never points <c>--user-data-dir</c> directly at the OS system browser's <c>User Data</c> root (which would either fail CDP on Chromium 136+
+    /// or trigger App-Bound Encryption key rotation in the user's main browser <c>Local State</c>).
+    /// </summary>
+    public static (string UserDataRoot, string? ProfileDirectoryName) ResolveUserDataRootAndProfileDirectory(string rawProfilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rawProfilePath);
+        string fullPath = Path.GetFullPath(rawProfilePath.Trim());
+        string folderName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string? parentDir = Path.GetDirectoryName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+        if (!string.IsNullOrWhiteSpace(parentDir) &&
+            (string.Equals(folderName, "Default", StringComparison.OrdinalIgnoreCase) ||
+             folderName.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase)))
+        {
+            string parentName = Path.GetFileName(parentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            bool isSystemUserDataRoot =
+                string.Equals(parentName, "User Data", StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(Path.Combine(parentDir, "Local State"));
+
+            if (isSystemUserDataRoot)
+            {
+                string safeSlug = folderName.Replace(' ', '_');
+                string isolatedFallback = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Facebook.Net",
+                    "Profiles",
+                    $"isolated_{safeSlug}");
+                _ = Directory.CreateDirectory(isolatedFallback);
+                return (isolatedFallback, null);
+            }
+        }
+
+        return (fullPath, null);
+    }
+
+    /// <summary>
     /// Builds the list of stealth and resource-optimized command-line arguments for launching Chromium/Edge.
     /// Separates Scenario 1 (Visible user login/checkpoint: full rendering) from Scenario 2 (Headless/Automated: low RAM, GPU off).
     /// </summary>
@@ -113,10 +150,12 @@ public static class BrowserLauncherHelpers
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        (string userDataRoot, string? profileDirName) = ResolveUserDataRootAndProfileDirectory(options.UserDataDir);
+
         List<string> args = new(28)
         {
             string.Concat("--remote-debugging-port=", debuggingPort.ToString(CultureInfo.InvariantCulture)),
-            string.Concat("--user-data-dir=", Path.GetFullPath(options.UserDataDir)),
+            string.Concat("--user-data-dir=", userDataRoot),
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",
@@ -135,6 +174,11 @@ public static class BrowserLauncherHelpers
                 ",",
                 options.WindowHeight.ToString(CultureInfo.InvariantCulture))
         };
+
+        if (!string.IsNullOrWhiteSpace(profileDirName))
+        {
+            args.Insert(2, string.Concat("--profile-directory=", profileDirName));
+        }
 
         if (options.EffectiveLowResourceMode)
         {

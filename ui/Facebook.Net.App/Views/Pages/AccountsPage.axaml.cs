@@ -21,7 +21,8 @@ namespace Facebook.Net.App.Views.Pages;
 /// Uses a top <see cref="SubTabBar"/> to cleanly separate:
 /// 1) Account Vault &amp; Filter List,
 /// 2) Add &amp; Import Account Session,
-/// 3) Dedicated Network Proxy Setup.
+/// 3) Dedicated Network Proxy Setup,
+/// 4) Friend Requests (Incoming &amp; Outgoing).
 /// </summary>
 public sealed partial class AccountsPage : UserControl
 {
@@ -63,13 +64,15 @@ public sealed partial class AccountsPage : UserControl
         Control tab1View = this.BuildVaultTab(out Action refreshTab1);
         Control tab2View = this.BuildImportTab(out Action refreshTab2);
         Control tab3View = this.BuildProxyTab(out Action refreshTab3);
+        Control tab4View = this.BuildFriendRequestsTab(out Action refreshTab4);
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, tab1View),
                 new SubTabItem(this._i18n["Accounts.TabImport"], VectorIcons.Plus, tab2View),
-                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View)
+                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View),
+                new SubTabItem(this._i18n["Accounts.TabFriendRequests"], VectorIcons.Personal, tab4View)
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -78,11 +81,13 @@ public sealed partial class AccountsPage : UserControl
             [
                 this._i18n["Accounts.TabVault"],
                 this._i18n["Accounts.TabImport"],
-                this._i18n["Accounts.TabProxy"]
+                this._i18n["Accounts.TabProxy"],
+                this._i18n["Accounts.TabFriendRequests"]
             ]);
             refreshTab1();
             refreshTab2();
             refreshTab3();
+            refreshTab4();
         };
 
         return subTabBar;
@@ -145,9 +150,12 @@ public sealed partial class AccountsPage : UserControl
         tabGrid.Children.Add(topBar);
 
         // Row 1: Unified Search & Filter Bar ([ ▽ Bộ lọc | Tìm hoặc lọc... | 🔍 ]) with 2-Level Drill-Down Popover
-        AccountStatus? currentStatusFilter = null;
+        string? currentModeFilter = null;
         bool? currentProxyFilter = null;
         SearchFilterBar accountSearchBar = null!;
+
+        void RefreshAccountFilters() =>
+            this._vm.ApplyLocalAccountFilterByMode(accountSearchBar?.SearchTextBox.Text, currentModeFilter, currentProxyFilter);
 
         FilterCategoryDefinition statusCategory = new(
             "status",
@@ -160,14 +168,8 @@ public sealed partial class AccountsPage : UserControl
             ],
             onApplied: selectedIds =>
             {
-                string? selected = selectedIds.Count > 0 ? selectedIds[0] : null;
-                currentStatusFilter = selected switch
-                {
-                    "active" => AccountStatus.Active,
-                    "attention" => AccountStatus.CookieExpired,
-                    _ => null
-                };
-                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+                currentModeFilter = selectedIds.Count > 0 ? selectedIds[0] : null;
+                RefreshAccountFilters();
             },
             allowMultiple: false);
 
@@ -189,7 +191,7 @@ public sealed partial class AccountsPage : UserControl
                     "direct" => false,
                     _ => null
                 };
-                this._vm.ApplyLocalAccountFilter(accountSearchBar?.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+                RefreshAccountFilters();
             },
             allowMultiple: false);
 
@@ -202,10 +204,8 @@ public sealed partial class AccountsPage : UserControl
             [statusCategory, proxyCategory],
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
-        accountSearchBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
-        accountSearchBar.SearchButton.Click += (_, _) =>
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+        accountSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshAccountFilters();
+        accountSearchBar.SearchButton.Click += (_, _) => RefreshAccountFilters();
 
         Grid.SetRow(accountSearchBar, 1);
         tabGrid.Children.Add(accountSearchBar);
@@ -285,7 +285,7 @@ public sealed partial class AccountsPage : UserControl
                 this._i18n["Common.BtnApplyFilter"]);
             AppButton.SetText(pasteClipboardBtn, this._i18n["Accounts.BtnPasteClipboard"]);
             AppButton.SetText(openBrowserBtn, this._i18n["Accounts.BtnOpenBrowserLogin"]);
-            this._vm.ApplyLocalAccountFilter(accountSearchBar.SearchTextBox.Text, currentStatusFilter, currentProxyFilter);
+            RefreshAccountFilters();
         };
 
         return tabGrid;

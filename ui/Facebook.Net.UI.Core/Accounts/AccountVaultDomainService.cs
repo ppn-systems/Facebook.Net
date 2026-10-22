@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Facebook.Net.Contracts.Models;
@@ -27,6 +28,21 @@ public interface IAccountVaultDomainService
     /// even while the user's main browser is open and avoids Chromium's single-instance / default-dir CDP restrictions.
     /// </summary>
     bool TrySyncSystemProfileToIsolatedRoot(string sourceProfileDir, string targetIsolatedDir);
+
+    /// <summary>Sanitizes a raw folder or profile name into a filesystem-safe directory slug without parentheses.</summary>
+    string SanitizeProfileFolderSlug(string? raw);
+
+    /// <summary>Resolves a human-friendly display label for a managed profile directory based on bound <see cref="AccountProfile"/> entities.</summary>
+    string ResolveFriendlyProfileLabel(string folderName, string fullDirPath, IReadOnlyList<AccountProfile> accounts);
+
+    /// <summary>Prunes unauthenticated orphan <c>login_*</c> and <c>profile_*</c> directories that are not bound to any account, returning the count of removed directories.</summary>
+    int PruneOrphanPlaceholderProfiles(string? profilesRootDirectory, IReadOnlyList<AccountProfile> accounts);
+
+    /// <summary>Prepares or synchronizes an isolated Chromium profile directory under <paramref name="profilesRootDirectory"/> from a raw folder name or existing system profile path.</summary>
+    (string TargetIsolatedDir, string FriendlyLabel, bool SyncedFromSystem) PrepareIsolatedProfileDirectory(
+        string rawNameOrPath,
+        string profilesRootDirectory,
+        string? friendlyProfileName = null);
 }
 
 /// <summary>
@@ -103,10 +119,17 @@ public sealed class AccountVaultDomainService : IAccountVaultDomainService
                 .Trim();
             if (cleanedName.StartsWith("Facebook ", StringComparison.OrdinalIgnoreCase))
             {
-                cleanedName = $"Tài khoản {cleanedName["Facebook ".Length..].Trim()}";
+                cleanedName = $"FB {cleanedName["Facebook ".Length..].Trim()}";
             }
 
             acc = acc with { DisplayName = cleanedName };
+            modified = true;
+        }
+
+        if (IsSystemBrowserUserDataPath(acc.ProfileDirectory))
+        {
+            string isolatedDir = this.ResolveSafeIsolatedProfileForAccount(acc.Uid);
+            acc = acc with { ProfileDirectory = isolatedDir };
             modified = true;
         }
 
@@ -118,6 +141,58 @@ public sealed class AccountVaultDomainService : IAccountVaultDomainService
         }
 
         return (acc, modified);
+    }
+
+    private static bool IsSystemBrowserUserDataPath(string? profileDir)
+    {
+        if (string.IsNullOrWhiteSpace(profileDir))
+        {
+            return false;
+        }
+
+        string normalized = profileDir.Replace('/', '\\');
+        if (normalized.Contains("\\User Data", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string? parent = Path.GetDirectoryName(profileDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return !string.IsNullOrWhiteSpace(parent) &&
+               string.Equals(Path.GetFileName(parent), "User Data", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveSafeIsolatedProfileForAccount(string uid)
+    {
+        string profilesRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Facebook.Net",
+            "Profiles");
+        _ = Directory.CreateDirectory(profilesRoot);
+
+        string dedicatedDir = Path.Combine(profilesRoot, $"fb_{this.SanitizeProfileFolderSlug(uid)}");
+        if (Directory.Exists(dedicatedDir) && this.HasProfileAuthenticatedCookieStore(dedicatedDir))
+        {
+            return dedicatedDir;
+        }
+
+        try
+        {
+            string[] existingDirs = Directory.GetDirectories(profilesRoot);
+            for (int i = 0; i < existingDirs.Length; i++)
+            {
+                if (this.HasProfileAuthenticatedCookieStore(existingDirs[i]))
+                {
+                    return existingDirs[i];
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore directory enumeration failure
+        }
+
+        _ = Directory.CreateDirectory(dedicatedDir);
+        return dedicatedDir;
     }
 
     /// <inheritdoc />
@@ -178,6 +253,163 @@ public sealed class AccountVaultDomainService : IAccountVaultDomainService
         {
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    public string SanitizeProfileFolderSlug(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return $"Imported_{DateTimeOffset.UtcNow:yyyyMMdd}";
+        }
+
+        char[] invalid = Path.GetInvalidFileNameChars();
+        StringBuilder sb = new(raw.Length);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            if (Array.IndexOf(invalid, c) < 0 && c is not '(' and not ')' and not '—' and not '·')
+            {
+                _ = sb.Append(c == ' ' ? '_' : c);
+            }
+        }
+
+        string slug = sb.ToString().Trim('_');
+        while (slug.Contains("__", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return string.IsNullOrWhiteSpace(slug) ? $"Imported_{DateTimeOffset.UtcNow:yyyyMMdd}" : slug;
+    }
+
+    /// <inheritdoc />
+    public string ResolveFriendlyProfileLabel(string folderName, string fullDirPath, IReadOnlyList<AccountProfile> accounts)
+    {
+        ArgumentNullException.ThrowIfNull(folderName);
+        ArgumentNullException.ThrowIfNull(accounts);
+        for (int i = 0; i < accounts.Count; i++)
+        {
+            AccountProfile acc = accounts[i];
+            if (string.Equals(acc.ProfileDirectory, fullDirPath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
+            {
+                bool isAutoGeneratedId =
+                    folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) ||
+                    folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(acc.DisplayName, folderName, StringComparison.OrdinalIgnoreCase);
+
+                return isAutoGeneratedId
+                    ? acc.DisplayName
+                    : $"{acc.DisplayName} · {folderName}";
+            }
+        }
+
+        return folderName;
+    }
+
+    /// <inheritdoc />
+    public int PruneOrphanPlaceholderProfiles(string? profilesRootDirectory, IReadOnlyList<AccountProfile> accounts)
+    {
+        ArgumentNullException.ThrowIfNull(accounts);
+        if (string.IsNullOrWhiteSpace(profilesRootDirectory) || !Directory.Exists(profilesRootDirectory))
+        {
+            return 0;
+        }
+
+        int prunedCount = 0;
+        try
+        {
+            string[] managedDirs = Directory.GetDirectories(profilesRootDirectory);
+            for (int i = 0; i < managedDirs.Length; i++)
+            {
+                string dir = managedDirs[i];
+                string folderName = Path.GetFileName(dir);
+                if (!folderName.StartsWith("login_", StringComparison.OrdinalIgnoreCase) &&
+                    !folderName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                bool isAssignedToAnyAccount = false;
+                for (int a = 0; a < accounts.Count; a++)
+                {
+                    AccountProfile acc = accounts[a];
+                    if (string.Equals(acc.ProfileDirectory, dir, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(acc.Uid, folderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isAssignedToAnyAccount = true;
+                        break;
+                    }
+                }
+
+                if (!isAssignedToAnyAccount && !this.HasProfileAuthenticatedCookieStore(dir))
+                {
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                        prunedCount++;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // Ignore folder locked by an active browser process
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore inaccessible directory
+        }
+
+        return prunedCount;
+    }
+
+    /// <inheritdoc />
+    public (string TargetIsolatedDir, string FriendlyLabel, bool SyncedFromSystem) PrepareIsolatedProfileDirectory(
+        string rawNameOrPath,
+        string profilesRootDirectory,
+        string? friendlyProfileName = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rawNameOrPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(profilesRootDirectory);
+
+        string trimmed = rawNameOrPath.Trim();
+        string rawLeafName = Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string friendlyLabel = !string.IsNullOrWhiteSpace(friendlyProfileName)
+            ? friendlyProfileName.Trim()
+            : (!string.IsNullOrWhiteSpace(rawLeafName) ? rawLeafName : trimmed);
+
+        bool syncedFromSystem = false;
+        string targetIsolatedDir;
+
+        if (Path.IsPathRooted(trimmed) && Directory.Exists(trimmed))
+        {
+            string normalizedCandidate = Path.GetFullPath(trimmed)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedRoot = Path.GetFullPath(profilesRootDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            if (normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                targetIsolatedDir = trimmed;
+            }
+            else
+            {
+                string safeSlug = this.SanitizeProfileFolderSlug($"{friendlyLabel}_{rawLeafName}");
+                targetIsolatedDir = Path.Combine(profilesRootDirectory, safeSlug);
+                syncedFromSystem = this.TrySyncSystemProfileToIsolatedRoot(trimmed, targetIsolatedDir);
+            }
+        }
+        else
+        {
+            string safeFolder = this.SanitizeProfileFolderSlug(trimmed);
+            targetIsolatedDir = Path.Combine(profilesRootDirectory, safeFolder);
+        }
+
+        _ = Directory.CreateDirectory(targetIsolatedDir);
+        return (targetIsolatedDir, friendlyLabel, syncedFromSystem);
     }
 
     private static void SafeCopyUnlocked(string sourceFile, string destinationFile)

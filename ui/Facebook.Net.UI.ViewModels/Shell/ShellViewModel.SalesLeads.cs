@@ -12,7 +12,9 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Collections;
 using Facebook.Net.UI.Core.Leads;
+using Facebook.Net.UI.Core.Publisher;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
 
@@ -86,14 +88,30 @@ public sealed partial class ShellViewModel
     [ObservableProperty]
     public partial bool AutoReactBeforeComment { get; set; } = true;
 
+    /// <summary>Gets or sets the live progress text while auto-commenting matched lead posts (<c>i / total</c>).</summary>
+    [ObservableProperty]
+    public partial string AutoCommentProgressText { get; set; } = string.Empty;
+
+    /// <summary>Gets the collection of user-defined or AI-created color-coded customer/lead tags.</summary>
+    public BulkObservableCollection<GroupTag> LeadTags { get; } = new();
+
+    internal IReadOnlyList<PostSummary> AllScrapedPosts => _allScrapedPosts;
+
+    internal IReadOnlySet<string> CommentedPostIds => _commentedPostIds;
+
     private readonly List<PostSummary> _allScrapedPosts = new();
+    private readonly Dictionary<string, int> _scrapedPostIndex = new(StringComparer.Ordinal);
     private readonly HashSet<string> _commentedPostIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _dismissedPostIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _leadIntentFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _leadCustomerTagFilterIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _leadGroupFilterIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GroupTag> _leadTagIndex = new(StringComparer.OrdinalIgnoreCase);
     private string? _leadCompetitionFilter;
     private string? _leadTimeRangeFilter;
     private string? _leadMediaFilter;
+    private string? _leadSortOrder;
     private CancellationTokenSource? _backgroundScrapeCts;
     private int _nextScrapeGroupOffset;
 
@@ -210,13 +228,33 @@ public sealed partial class ShellViewModel
             }
         }
 
+        IReadOnlyList<GroupTag> storedLeadTags = await _context.AccountStore
+            .GetAllLeadTagsAsync(ct)
+            .ConfigureAwait(true);
+        this.LeadTags.ReplaceAll(storedLeadTags);
+        this.RebuildLeadTagIndex();
+
         IReadOnlyList<PostSummary> dbPosts = await _context.AccountStore
-            .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 300, ct: ct)
+            .QueryScrapedPostsAsync(this.FilterScrapedGroupId, searchKeyword: null, limit: 500, ct: ct)
             .ConfigureAwait(true);
 
         _allScrapedPosts.Clear();
         _allScrapedPosts.AddRange(dbPosts);
+        this.RebuildScrapedPostIndex();
         this.FilterCachedPostsFromDb();
+    }
+
+    private void RebuildScrapedPostIndex()
+    {
+        _scrapedPostIndex.Clear();
+        for (int i = 0; i < _allScrapedPosts.Count; i++)
+        {
+            string postId = _allScrapedPosts[i].PostId;
+            if (!string.IsNullOrWhiteSpace(postId))
+            {
+                _scrapedPostIndex[postId] = i;
+            }
+        }
     }
 
     /// <summary>
@@ -276,6 +314,15 @@ public sealed partial class ShellViewModel
     }
 
     /// <summary>
+    /// Updates the lead table sort order (<c>intent_desc</c>, <c>newest_first</c>, <c>engagement_desc</c>, <c>uncommented_first</c>, or <see langword="null"/>) and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadSortOrder(string? sortId)
+    {
+        _leadSortOrder = string.IsNullOrWhiteSpace(sortId) ? null : sortId.Trim();
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
     /// Updates the multi-select group color tag filters (including <c>__untagged__</c>) for scraped leads and refreshes <see cref="ScrapedPosts"/>.
     /// </summary>
     public void SetLeadGroupTagFilters(IReadOnlyList<string> tagIds)
@@ -293,6 +340,379 @@ public sealed partial class ShellViewModel
         }
 
         this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Updates the multi-select customer/lead color tag filters (including <c>__untagged__</c>) for scraped leads and refreshes <see cref="ScrapedPosts"/>.
+    /// </summary>
+    public void SetLeadCustomerTagFilters(IReadOnlyList<string> tagIds)
+    {
+        _leadCustomerTagFilterIds.Clear();
+        if (tagIds is not null)
+        {
+            for (int i = 0; i < tagIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(tagIds[i]))
+                {
+                    _ = _leadCustomerTagFilterIds.Add(tagIds[i]);
+                }
+            }
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Reloads the user-defined and AI-created customer/lead tags from SQLite into <see cref="LeadTags"/>.
+    /// </summary>
+    public async Task ReloadLeadTagsOnlyAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<GroupTag> tags = await _context.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(true);
+        this.LeadTags.ReplaceAll(tags);
+        this.RebuildLeadTagIndex();
+    }
+
+    private void RebuildLeadTagIndex()
+    {
+        _leadTagIndex.Clear();
+        for (int i = 0; i < this.LeadTags.Count; i++)
+        {
+            GroupTag tag = this.LeadTags[i];
+            if (!string.IsNullOrWhiteSpace(tag.Id))
+            {
+                _leadTagIndex[tag.Id] = tag;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds a customer/lead tag by <paramref name="tagId"/> in O(1) time.
+    /// </summary>
+    public GroupTag? FindLeadTagById(string? tagId)
+    {
+        if (string.IsNullOrWhiteSpace(tagId))
+        {
+            return null;
+        }
+
+        if (_leadTagIndex.Count == this.LeadTags.Count &&
+            _leadTagIndex.TryGetValue(tagId, out GroupTag? fastHit))
+        {
+            return fastHit;
+        }
+
+        this.RebuildLeadTagIndex();
+        return _leadTagIndex.TryGetValue(tagId, out GroupTag? val) ? val : null;
+    }
+
+    /// <summary>
+    /// Resolves the assigned <see cref="GroupTag"/> badges on a scraped <paramref name="post"/> against <see cref="LeadTags"/>.
+    /// </summary>
+    public IReadOnlyList<GroupTag> ResolveLeadTags(PostSummary? post)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.TagsCsv))
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        IReadOnlyList<string> tagIds = post.GetTagIds();
+        if (tagIds.Count == 0)
+        {
+            return Array.Empty<GroupTag>();
+        }
+
+        List<GroupTag> resolved = new(tagIds.Count);
+        for (int i = 0; i < tagIds.Count; i++)
+        {
+            GroupTag? matched = this.FindLeadTagById(tagIds[i]);
+            if (matched is not null)
+            {
+                resolved.Add(matched);
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Toggles a customer/lead <paramref name="tagId"/> on <paramref name="post"/> in SQLite and updates <see cref="ScrapedPosts"/> in-place without resetting scroll position.
+    /// </summary>
+    public async Task ToggleLeadPostTagAsync(PostSummary post, string tagId, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId) || string.IsNullOrWhiteSpace(tagId))
+        {
+            return;
+        }
+
+        PostSummary current = this.GetLatestCachedPost(post);
+        string trimmedTagId = tagId.Trim();
+        IReadOnlyList<string> existingIds = current.GetTagIds();
+        bool removed = current.HasTag(trimmedTagId);
+        (string? nextCsv, _) = _context.LeadScoring.ApplyLeadTagChange(existingIds, trimmedTagId, assign: !removed);
+        string updatedTagsCsv = nextCsv ?? string.Empty;
+        await _context.AccountStore
+            .UpdateScrapedPostTagsAndNotesAsync(current.PostId, updatedTagsCsv, current.Notes, ct)
+            .ConfigureAwait(true);
+
+        PostSummary updatedPost = current with { TagsCsv = updatedTagsCsv };
+        this.ReplaceScrapedPostInPlace(updatedPost);
+
+        if (!removed)
+        {
+            string tagName = this.FindLeadTagById(trimmedTagId)?.Name ?? trimmedTagId;
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "lead_tag_preference",
+                $"lead_tag_{trimmedTagId}",
+                _context.Localization.Format(
+                    "Ai.LearnLeadTagAssigned",
+                    tagName,
+                    current.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
+                    current.GroupName ?? _context.Localization["Audit.Cat.Group"]),
+                ct);
+        }
+    }
+
+    /// <summary>
+    /// Creates a new color-coded customer/lead tag in SQLite, reloads <see cref="LeadTags"/>, and returns the created tag.
+    /// </summary>
+    public async Task<GroupTag?> CreateQuickLeadTagAsync(string tagName, string colorHex, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tagName))
+        {
+            return null;
+        }
+
+        string trimmedName = tagName.Trim();
+        string resolvedColor = string.IsNullOrWhiteSpace(colorHex) ? "#F6821F" : colorHex.Trim();
+        GroupTag tag = _context.GroupTagService.CreateTag(trimmedName, resolvedColor);
+        await _context.AccountStore.UpsertLeadTagAsync(tag, ct).ConfigureAwait(true);
+        await this.ReloadLeadTagsOnlyAsync(ct).ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "lead_preferences",
+            $"lead_tag_def_{tag.Id}",
+            _context.Localization.Format("Ai.LearnLeadTagCreated", tag.Name, tag.ColorHex),
+            ct);
+
+        return tag;
+    }
+
+    /// <summary>
+    /// Updates CRM <paramref name="notes"/> on a scraped <paramref name="post"/> in SQLite and updates <see cref="ScrapedPosts"/> in-place.
+    /// </summary>
+    public async Task UpdateLeadPostNotesAsync(PostSummary post, string notes, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId))
+        {
+            return;
+        }
+
+        PostSummary current = this.GetLatestCachedPost(post);
+        string normalizedNotes = notes?.Trim() ?? string.Empty;
+        if (string.Equals(current.Notes ?? string.Empty, normalizedNotes, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _context.AccountStore
+            .UpdateScrapedPostTagsAndNotesAsync(current.PostId, current.TagsCsv, normalizedNotes, ct)
+            .ConfigureAwait(true);
+
+        PostSummary updatedPost = current with { Notes = normalizedNotes };
+        this.ReplaceScrapedPostInPlace(updatedPost);
+    }
+
+    private PostSummary GetLatestCachedPost(PostSummary fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(fallback.PostId))
+        {
+            if (_scrapedPostIndex.Count == _allScrapedPosts.Count &&
+                _scrapedPostIndex.TryGetValue(fallback.PostId, out int idx) &&
+                idx >= 0 &&
+                idx < _allScrapedPosts.Count &&
+                string.Equals(_allScrapedPosts[idx].PostId, fallback.PostId, StringComparison.Ordinal))
+            {
+                return _allScrapedPosts[idx];
+            }
+
+            this.RebuildScrapedPostIndex();
+            if (_scrapedPostIndex.TryGetValue(fallback.PostId, out int rebuiltIdx))
+            {
+                return _allScrapedPosts[rebuiltIdx];
+            }
+        }
+
+        return fallback;
+    }
+
+    /// <summary>
+    /// Selects <paramref name="post"/>, opens the AI Assistant drawer, attaches the <c>selected_lead</c> context pack,
+    /// and requests AI buyer-intent analysis and consultation comment drafting.
+    /// </summary>
+    public void AskAiToAnalyzeAndConsultLead(PostSummary? post)
+    {
+        if (post is null)
+        {
+            return;
+        }
+
+        this.SelectedScrapedPost = post;
+        this.IsAiAssistantOpen = true;
+        _ = this.AiAssistant.RequestLeadAnalysisAndConsultationAsync(post);
+    }
+
+    /// <summary>
+    /// Manually toggles a scraped post's Contacted/Commented state so users who reach out via Phone/Zalo/DM can mark the lead as handled.
+    /// </summary>
+    public async Task ToggleLeadContactedStatusAsync(PostSummary? post, CancellationToken ct = default)
+    {
+        if (post is null || string.IsNullOrWhiteSpace(post.PostId))
+        {
+            return;
+        }
+
+        bool wasContacted = _commentedPostIds.Contains(post.PostId);
+        if (wasContacted)
+        {
+            _ = _commentedPostIds.Remove(post.PostId);
+        }
+        else
+        {
+            _ = _commentedPostIds.Add(post.PostId);
+            string accountUid = this.SelectedAccount?.Uid ?? "manual";
+            await _context.AccountStore.RecordActionAsync(
+                new ActionHistoryEntry(
+                    accountUid,
+                    "COMMENT",
+                    post.PostId,
+                    "manual_contacted",
+                    DateTimeOffset.UtcNow),
+                ct).ConfigureAwait(true);
+        }
+
+        this.FilterCachedPostsFromDb();
+    }
+
+    /// <summary>
+    /// Exports all currently filtered <see cref="ScrapedPosts"/> to a UTF-8 with BOM CSV file for Excel/CRM usage.
+    /// </summary>
+    public async Task ExportFilteredLeadsToCsvAsync(string filePath, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return;
+        }
+
+        static string EscapeCsv(string? val)
+        {
+            if (string.IsNullOrEmpty(val))
+            {
+                return "\"\"";
+            }
+
+            string cleaned = val.Replace("\"", "\"\"", StringComparison.Ordinal)
+                                .Replace('\r', ' ')
+                                .Replace('\n', ' ');
+            return $"\"{cleaned}\"";
+        }
+
+        System.Text.StringBuilder sb = new((this.ScrapedPosts.Count * 160) + 128);
+        _ = sb.AppendLine("CreatedAt,AuthorName,PhoneNumbers,GroupName,IntentScore,Status,Tags,Notes,MessageText,PermalinkUrl");
+
+        for (int i = 0; i < this.ScrapedPosts.Count; i++)
+        {
+            PostSummary p = this.ScrapedPosts[i];
+            string createdStr = p.CreatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            string phonesStr = string.Join(" | ", this.ExtractAllPostPhoneNumbers(p));
+            int score = CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
+            string statusStr = this.IsPostCommented(p.PostId)
+                ? _context.Localization["Leads.StatusCommented"]
+                : _context.Localization["Leads.StatusPending"];
+
+            IReadOnlyList<GroupTag> tags = this.ResolveLeadTags(p);
+            List<string> tagNames = new(tags.Count);
+            for (int t = 0; t < tags.Count; t++)
+            {
+                tagNames.Add(tags[t].Name);
+            }
+
+            string tagsStr = string.Join(" | ", tagNames);
+
+            _ = sb.Append(EscapeCsv(createdStr)).Append(',')
+                  .Append(EscapeCsv(p.AuthorName)).Append(',')
+                  .Append(EscapeCsv(phonesStr)).Append(',')
+                  .Append(EscapeCsv(p.GroupName)).Append(',')
+                  .Append(score.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                  .Append(EscapeCsv(statusStr)).Append(',')
+                  .Append(EscapeCsv(tagsStr)).Append(',')
+                  .Append(EscapeCsv(p.Notes)).Append(',')
+                  .Append(EscapeCsv(p.MessageText)).Append(',')
+                  .AppendLine(EscapeCsv(p.PermalinkUrl));
+        }
+
+        await File.WriteAllTextAsync(filePath, sb.ToString(), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true), ct).ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.Scrape"],
+            _context.Localization.Format("Log.LeadsExportedCsv", this.ScrapedPosts.Count, Path.GetFileName(filePath))).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Generates a live resolved preview of <see cref="SalesCommentSpintaxText"/> using <see cref="SelectedScrapedPost"/> context.
+    /// </summary>
+    public string GenerateSalesCommentPreview()
+    {
+        PostSummary? post = this.SelectedScrapedPost;
+        string sampleAuthor = !string.IsNullOrWhiteSpace(post?.AuthorName)
+            ? post.AuthorName
+            : _context.Localization["Leads.DefaultAuthor"];
+        string sampleGroup = !string.IsNullOrWhiteSpace(post?.GroupName)
+            ? post.GroupName
+            : _context.Localization["Audit.Cat.Group"];
+
+        string resolvedVars = ResolveDynamicCommentVariables(this.SalesCommentSpintaxText, sampleAuthor, sampleGroup);
+        string spun = PayloadBuilder.SpinText(resolvedVars);
+        return $"{_context.Localization["Leads.CommentPreviewPrefix"]} {spun}";
+    }
+
+    private void ReplaceScrapedPostInPlace(PostSummary updatedPost)
+    {
+        if (!string.IsNullOrWhiteSpace(updatedPost.PostId))
+        {
+            if (_scrapedPostIndex.Count == _allScrapedPosts.Count &&
+                _scrapedPostIndex.TryGetValue(updatedPost.PostId, out int fastIdx) &&
+                fastIdx >= 0 &&
+                fastIdx < _allScrapedPosts.Count &&
+                string.Equals(_allScrapedPosts[fastIdx].PostId, updatedPost.PostId, StringComparison.Ordinal))
+            {
+                _allScrapedPosts[fastIdx] = updatedPost;
+            }
+            else
+            {
+                this.RebuildScrapedPostIndex();
+                if (_scrapedPostIndex.TryGetValue(updatedPost.PostId, out int rebuiltIdx))
+                {
+                    _allScrapedPosts[rebuiltIdx] = updatedPost;
+                }
+            }
+        }
+
+        for (int i = 0; i < this.ScrapedPosts.Count; i++)
+        {
+            if (string.Equals(this.ScrapedPosts[i].PostId, updatedPost.PostId, StringComparison.Ordinal))
+            {
+                this.ScrapedPosts[i] = updatedPost;
+                break;
+            }
+        }
+
+        if (this.SelectedScrapedPost is not null &&
+            string.Equals(this.SelectedScrapedPost.PostId, updatedPost.PostId, StringComparison.Ordinal))
+        {
+            this.SelectedScrapedPost = updatedPost;
+        }
     }
 
     /// <summary>
@@ -359,6 +779,11 @@ public sealed partial class ShellViewModel
         for (int i = 0; i < _allScrapedPosts.Count; i++)
         {
             PostSummary post = _allScrapedPosts[i];
+            if (!string.IsNullOrWhiteSpace(post.PostId) && _dismissedPostIds.Contains(post.PostId))
+            {
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(this.FilterScrapedGroupId) &&
                 !string.Equals(post.GroupId, this.FilterScrapedGroupId, StringComparison.Ordinal))
             {
@@ -387,6 +812,26 @@ public sealed partial class ShellViewModel
                 }
 
                 if (!matchesUntagged && !matchesTag)
+                {
+                    continue;
+                }
+            }
+
+            if (_leadCustomerTagFilterIds.Count > 0)
+            {
+                IReadOnlyList<string> postTags = post.GetTagIds();
+                bool matchesUntaggedLead = _leadCustomerTagFilterIds.Contains("__untagged__") && postTags.Count == 0;
+                bool matchesLeadTag = false;
+                for (int t = 0; t < postTags.Count; t++)
+                {
+                    if (_leadCustomerTagFilterIds.Contains(postTags[t]))
+                    {
+                        matchesLeadTag = true;
+                        break;
+                    }
+                }
+
+                if (!matchesUntaggedLead && !matchesLeadTag)
                 {
                     continue;
                 }
@@ -533,24 +978,63 @@ public sealed partial class ShellViewModel
             }
         }
 
-        if (keywords.Length > 0 && matched.Count > 1)
+        if (matched.Count > 1)
         {
-            (PostSummary Post, int Score)[] scored = new (PostSummary Post, int Score)[matched.Count];
-            for (int i = 0; i < matched.Count; i++)
+            if (string.Equals(_leadSortOrder, "newest_first", StringComparison.OrdinalIgnoreCase))
             {
-                PostSummary p = matched[i];
-                scored[i] = (p, _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords));
+                matched.Sort(static (a, b) => Nullable.Compare(b.CreatedAt, a.CreatedAt));
             }
-
-            Array.Sort(scored, static (a, b) => b.Score.CompareTo(a.Score));
-            for (int i = 0; i < scored.Length; i++)
+            else if (string.Equals(_leadSortOrder, "engagement_desc", StringComparison.OrdinalIgnoreCase))
             {
-                matched[i] = scored[i].Post;
+                matched.Sort(static (a, b) => (b.ReactionCount + (b.CommentCount * 2)).CompareTo(a.ReactionCount + (a.CommentCount * 2)));
+            }
+            else if (string.Equals(_leadSortOrder, "uncommented_first", StringComparison.OrdinalIgnoreCase))
+            {
+                matched.Sort((a, b) =>
+                {
+                    bool aDone = this.IsPostCommented(a.PostId);
+                    bool bDone = this.IsPostCommented(b.PostId);
+                    int cmp = aDone.CompareTo(bDone);
+                    return cmp != 0 ? cmp : Nullable.Compare(b.CreatedAt, a.CreatedAt);
+                });
+            }
+            else if (keywords.Length > 0 || string.Equals(_leadSortOrder, "intent_desc", StringComparison.OrdinalIgnoreCase))
+            {
+                (PostSummary Post, int Score)[] scored = new (PostSummary Post, int Score)[matched.Count];
+                for (int i = 0; i < matched.Count; i++)
+                {
+                    PostSummary p = matched[i];
+                    scored[i] = (p, _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords));
+                }
+
+                Array.Sort(scored, static (a, b) => b.Score.CompareTo(a.Score));
+                for (int i = 0; i < scored.Length; i++)
+                {
+                    matched[i] = scored[i].Post;
+                }
             }
         }
 
+        string? previousSelectedId = this.SelectedScrapedPost?.PostId;
         this.ScrapedPosts.ReplaceAll(matched);
-        this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        if (!string.IsNullOrWhiteSpace(previousSelectedId))
+        {
+            PostSummary? preserved = null;
+            for (int i = 0; i < this.ScrapedPosts.Count; i++)
+            {
+                if (string.Equals(this.ScrapedPosts[i].PostId, previousSelectedId, StringComparison.Ordinal))
+                {
+                    preserved = this.ScrapedPosts[i];
+                    break;
+                }
+            }
+
+            this.SelectedScrapedPost = preserved ?? (this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null);
+        }
+        else
+        {
+            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        }
     }
 
     private void SyncBackgroundScraperLoop()
@@ -764,8 +1248,10 @@ public sealed partial class ShellViewModel
                     for (int i = chunkCollected.Count - 1; i >= 0; i--)
                     {
                         PostSummary incoming = chunkCollected[i];
-                        int existingIdx = _allScrapedPosts.FindIndex(p => string.Equals(p.PostId, incoming.PostId, StringComparison.Ordinal));
-                        if (existingIdx >= 0)
+                        if (_scrapedPostIndex.TryGetValue(incoming.PostId, out int existingIdx) &&
+                            existingIdx >= 0 &&
+                            existingIdx < _allScrapedPosts.Count &&
+                            string.Equals(_allScrapedPosts[existingIdx].PostId, incoming.PostId, StringComparison.Ordinal))
                         {
                             _allScrapedPosts[existingIdx] = incoming;
                         }
@@ -775,6 +1261,7 @@ public sealed partial class ShellViewModel
                         }
                     }
 
+                    this.RebuildScrapedPostIndex();
                     this.FilterCachedPostsFromDb();
                 }
             }
@@ -802,6 +1289,16 @@ public sealed partial class ShellViewModel
                 AuditSeverity.Success,
                 summaryTarget,
                 logMessage).ConfigureAwait(true);
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "lead_preferences",
+                "buyer_intent_keywords",
+                _context.Localization.Format(
+                    "Ai.LearnLeadScanHabit",
+                    string.IsNullOrWhiteSpace(this.BuyerIntentKeywords) ? this.ScrapeFilterKeywords : this.BuyerIntentKeywords,
+                    collectedForDb.Count,
+                    targets.Count),
+                ct);
         }
         catch (OperationCanceledException)
         {
@@ -905,9 +1402,18 @@ public sealed partial class ShellViewModel
                 for (int i = 0; i < postsToComment.Count; i++)
                 {
                     ct.ThrowIfCancellationRequested();
+                    string authorName = !string.IsNullOrWhiteSpace(postsToComment[i].AuthorName)
+                        ? postsToComment[i].AuthorName!
+                        : _context.Localization["Leads.DefaultAuthor"];
+                    this.AutoCommentProgressText = _context.Localization.Format(
+                        "Leads.AutoCommentProgressFormat",
+                        i + 1,
+                        postsToComment.Count,
+                        authorName);
+
                     if (i > 0)
                     {
-                        await this.WaitAntiCheckpointDelayAsync(postsToComment[i].AuthorName ?? _context.Localization["Leads.DefaultAuthor"], ct).ConfigureAwait(true);
+                        await this.WaitAntiCheckpointDelayAsync(authorName, ct).ConfigureAwait(true);
                     }
 
                     await this.ExecuteSingleSalesCommentAsync(
@@ -920,6 +1426,7 @@ public sealed partial class ShellViewModel
             }
             finally
             {
+                this.AutoCommentProgressText = string.Empty;
                 this.FilterCachedPostsFromDb();
             }
         }
@@ -1001,6 +1508,81 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             this.SelectedScrapedPost.AuthorName ?? _context.Localization["Leads.DefaultAuthor"],
             _context.Localization["Log.PostOpenedInBrowser"]).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Dismisses/removes a scraped lead post from the active list and records an audit log entry.
+    /// </summary>
+    /// <param name="post">Post to dismiss, or <c>null</c> to dismiss <see cref="SelectedScrapedPost"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task DeleteScrapedPostAsync(PostSummary? post, CancellationToken ct = default)
+    {
+        PostSummary? target = post ?? this.SelectedScrapedPost;
+        if (target is null || string.IsNullOrWhiteSpace(target.PostId))
+        {
+            return;
+        }
+
+        _ = _dismissedPostIds.Add(target.PostId);
+        for (int i = _allScrapedPosts.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_allScrapedPosts[i].PostId, target.PostId, StringComparison.Ordinal))
+            {
+                _allScrapedPosts.RemoveAt(i);
+            }
+        }
+
+        this.RebuildScrapedPostIndex();
+        for (int i = this.ScrapedPosts.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(this.ScrapedPosts[i].PostId, target.PostId, StringComparison.Ordinal))
+            {
+                this.ScrapedPosts.RemoveAt(i);
+            }
+        }
+
+        if (this.SelectedScrapedPost is not null &&
+            string.Equals(this.SelectedScrapedPost.PostId, target.PostId, StringComparison.Ordinal))
+        {
+            this.SelectedScrapedPost = this.ScrapedPosts.Count > 0 ? this.ScrapedPosts[0] : null;
+        }
+
+        string author = !string.IsNullOrWhiteSpace(target.AuthorName)
+            ? target.AuthorName
+            : _context.Localization["Leads.DefaultAuthor"];
+        _ = await this.LogAuditAsync(
+            AuditCategory.Scrape,
+            AuditSeverity.Info,
+            author,
+            _context.Localization.Format("Log.LeadPostDeleted", author)).ConfigureAwait(true);
+        _ = ct;
+    }
+
+    /// <summary>
+    /// Saves the current <see cref="SalesCommentSpintaxText"/> as a reusable comment template in SQLite.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task SaveSalesCommentAsTemplateAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(this.SalesCommentSpintaxText))
+        {
+            return;
+        }
+
+        CampaignTemplate template = _context.CampaignPublisher.CreateTemplate(
+            title: string.Empty,
+            spintaxContent: this.SalesCommentSpintaxText,
+            mediaFilePath: string.IsNullOrWhiteSpace(this.SalesCommentPhotoPath) ? null : this.SalesCommentPhotoPath.Trim(),
+            isCommentTemplate: true);
+
+        await _context.AccountStore.UpsertCampaignTemplateAsync(template, ct).ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.SalesComment,
+            AuditSeverity.Success,
+            _context.Localization["Audit.Cat.SalesComment"],
+            _context.Localization.Format("Log.TemplateSaved", template.Title)).ConfigureAwait(true);
     }
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)
@@ -1106,6 +1688,12 @@ public sealed partial class ShellViewModel
             {
                 this.FilterCachedPostsFromDb();
             }
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "brand_voice",
+                "sales_comment_style",
+                _context.Localization.Format("Ai.LearnSalesCommentStyle", TruncateForAiLearning(this.SalesCommentSpintaxText, 200)),
+                ct);
         }
 
         _ = await this.LogAuditAsync(
@@ -1119,23 +1707,8 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Resolves dynamic personalization variables (<c>{author_name}</c>, <c>{group_name}</c>, <c>{date}</c>, <c>{time}</c>, <c>{random_id}</c>) in a sales comment or post template.
     /// </summary>
-    public static string ResolveDynamicCommentVariables(string? rawTemplate, string? authorName, string? groupName)
-    {
-        if (string.IsNullOrWhiteSpace(rawTemplate))
-        {
-            return string.Empty;
-        }
-
-        string safeAuthor = !string.IsNullOrWhiteSpace(authorName) ? authorName.Trim() : "bạn";
-        string safeGroup = !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : "nhóm";
-        DateTime now = DateTime.Now;
-        return rawTemplate
-            .Replace("{author_name}", safeAuthor, StringComparison.OrdinalIgnoreCase)
-            .Replace("{group_name}", safeGroup, StringComparison.OrdinalIgnoreCase)
-            .Replace("{date}", now.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{time}", now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
-            .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
-    }
+    public static string ResolveDynamicCommentVariables(string? rawTemplate, string? authorName, string? groupName) =>
+        CampaignPublisherDomainService.Instance.ResolveDynamicVariables(rawTemplate, authorName, groupName);
 
     /// <summary>
     /// Computes a buyer-intent score (0..100) for a scraped group post based on matched keywords and question/inquiry signals.

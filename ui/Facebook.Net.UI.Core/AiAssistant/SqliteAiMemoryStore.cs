@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.UI.Core.Configuration;
+using Facebook.Net.UI.Core.Leads;
 using Microsoft.Data.Sqlite;
 
 namespace Facebook.Net.UI.Core.AiAssistant;
@@ -211,7 +212,7 @@ public sealed class SqliteAiMemoryStore : IAiMemoryStore
             DataSource = databaseFilePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
-            DefaultTimeout = 5
+            DefaultTimeout = 10
         };
         _connectionString = builder.ToString();
     }
@@ -222,6 +223,9 @@ public sealed class SqliteAiMemoryStore : IAiMemoryStore
         const string sql = """
             PRAGMA journal_mode=WAL;
             PRAGMA synchronous=NORMAL;
+            PRAGMA temp_store=MEMORY;
+            PRAGMA mmap_size=67108864;
+            PRAGMA cache_size=-8000;
             PRAGMA busy_timeout=5000;
 
             CREATE TABLE IF NOT EXISTS ai_memories (
@@ -376,10 +380,11 @@ public sealed class SqliteAiMemoryStore : IAiMemoryStore
             FROM ai_memories
             WHERE ($category IS NULL OR category = $category)
               AND ($account_uid IS NULL OR account_uid IS NULL OR account_uid = '' OR account_uid = $account_uid)
-              AND ($keyword IS NULL OR mem_key LIKE $keyword OR content LIKE $keyword)
-            ORDER BY importance DESC, updated_at_utc DESC
-            LIMIT $limit;
+            ORDER BY importance DESC, updated_at_utc DESC;
             """;
+
+        int maxResults = limit <= 0 ? int.MaxValue : limit;
+        string? trimmedKw = string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim();
 
         using SqliteConnection conn = new(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -387,14 +392,24 @@ public sealed class SqliteAiMemoryStore : IAiMemoryStore
         cmd.CommandText = sql;
         _ = cmd.Parameters.AddWithValue("$category", category.HasValue ? (int)category.Value : DBNull.Value);
         _ = cmd.Parameters.AddWithValue("$account_uid", !string.IsNullOrWhiteSpace(accountUid) ? accountUid.Trim() : DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("$keyword", !string.IsNullOrWhiteSpace(keyword) ? $"%{keyword.Trim()}%" : DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("$limit", limit <= 0 ? int.MaxValue : limit);
 
         using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         List<AiMemoryRecord> items = [];
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            items.Add(MapMemoryRecord(reader));
+            AiMemoryRecord record = MapMemoryRecord(reader);
+            if (trimmedKw is not null &&
+                !LeadScoringService.Instance.MatchesAccentInsensitive(record.Key, trimmedKw) &&
+                !LeadScoringService.Instance.MatchesAccentInsensitive(record.Content, trimmedKw))
+            {
+                continue;
+            }
+
+            items.Add(record);
+            if (items.Count >= maxResults)
+            {
+                break;
+            }
         }
 
         return items;

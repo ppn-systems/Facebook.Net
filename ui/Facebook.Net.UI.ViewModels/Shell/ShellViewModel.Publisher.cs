@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,6 +11,7 @@ using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
+using Facebook.Net.UI.Core.Publisher;
 
 namespace Facebook.Net.UI.ViewModels.Shell;
 
@@ -70,45 +70,14 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Splits a single or semicolon/pipe-delimited multi-photo path string into trimmed, deduplicated file path entries.
     /// </summary>
-    public static List<string> SplitMediaFilePaths(string? rawPaths)
-    {
-        List<string> results = new();
-        if (string.IsNullOrWhiteSpace(rawPaths))
-        {
-            return results;
-        }
-
-        string[] parts = rawPaths.Split([';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < parts.Length; i++)
-        {
-            string candidate = parts[i].Trim('"', '\'');
-            if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
-            {
-                results.Add(candidate);
-            }
-        }
-
-        return results;
-    }
+    public static List<string> SplitMediaFilePaths(string? rawPaths) =>
+        CampaignPublisherDomainService.Instance.SplitMediaFilePaths(rawPaths);
 
     /// <summary>
     /// Parses a single or semicolon-delimited multi-photo path string into existing local file paths.
     /// </summary>
-    public static List<string> ParseExistingMediaFilePaths(string? rawPaths)
-    {
-        List<string> candidates = SplitMediaFilePaths(rawPaths);
-        List<string> existing = new(candidates.Count);
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            if (File.Exists(candidates[i]))
-            {
-                existing.Add(candidates[i]);
-            }
-        }
-
-        return existing;
-    }
+    public static List<string> ParseExistingMediaFilePaths(string? rawPaths) =>
+        CampaignPublisherDomainService.Instance.ParseExistingMediaFilePaths(rawPaths);
 
     /// <summary>Gets or sets the currently selected template in the saved content library.</summary>
     [ObservableProperty]
@@ -141,6 +110,10 @@ public sealed partial class ShellViewModel
     /// <summary>Gets or sets a value indicating whether to automatically react (Love/Like) to newly published posts.</summary>
     [ObservableProperty]
     public partial bool AutoReactPublishedPost { get; set; } = true;
+
+    /// <summary>Gets or sets the live campaign progress text displayed during multi-group publishing or reposting.</summary>
+    [ObservableProperty]
+    public partial string CampaignProgressText { get; set; } = string.Empty;
 
     private readonly List<string> _recentPublishedPostIds = new();
 
@@ -205,25 +178,25 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string title = this.PostSpintaxText.Length > 36
-            ? string.Concat(this.PostSpintaxText[..36], "...")
-            : this.PostSpintaxText;
-
-        CampaignTemplate tpl = new(
-            Id: $"tpl_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
-            Title: title,
-            SpintaxContent: this.PostSpintaxText,
-            MediaFilePath: string.IsNullOrWhiteSpace(this.PostMediaFilePath) ? null : this.PostMediaFilePath.Trim(),
-            IsCommentTemplate: false);
+        CampaignTemplate tpl = _context.CampaignPublisher.CreateTemplate(
+            title: null,
+            spintaxContent: this.PostSpintaxText,
+            mediaFilePath: this.PostMediaFilePath,
+            isCommentTemplate: false);
 
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "brand_voice",
+            $"tpl_{tpl.Id}",
+            _context.Localization.Format("Ai.LearnSavedTemplate", tpl.Title, TruncateForAiLearning(tpl.SpintaxContent, 220)));
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
             _context.Localization["Publisher.TemplatesTitle"],
-            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TemplateSaved", tpl.Title)).ConfigureAwait(true);
     }
 
     private async Task SaveBumpTemplateAsync()
@@ -234,25 +207,25 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        string title = raw.Length > 36
-            ? string.Concat(raw[..36], "...")
-            : raw;
-
-        CampaignTemplate tpl = new(
-            Id: $"tpl_bump_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-            Title: title,
-            SpintaxContent: raw,
-            MediaFilePath: null,
-            IsCommentTemplate: true);
+        CampaignTemplate tpl = _context.CampaignPublisher.CreateTemplate(
+            title: null,
+            spintaxContent: raw,
+            mediaFilePath: null,
+            isCommentTemplate: true);
 
         await _context.AccountStore.UpsertCampaignTemplateAsync(tpl).ConfigureAwait(true);
         await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+            "brand_voice",
+            $"tpl_{tpl.Id}",
+            _context.Localization.Format("Ai.LearnSavedTemplate", tpl.Title, TruncateForAiLearning(tpl.SpintaxContent, 220)));
 
         _ = await this.LogAuditAsync(
             AuditCategory.Personal,
             AuditSeverity.Success,
             _context.Localization["Publisher.TemplatesTitle"],
-            _context.Localization.Format("Log.TemplateSaved", title)).ConfigureAwait(true);
+            _context.Localization.Format("Log.TemplateSaved", tpl.Title)).ConfigureAwait(true);
     }
 
     private async Task DeleteSelectedTemplateAsync()
@@ -272,6 +245,33 @@ public sealed partial class ShellViewModel
             AuditSeverity.Info,
             _context.Localization["Publisher.TemplatesTitle"],
             _context.Localization.Format("Log.TemplateDeleted", title)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Updates an existing <see cref="CampaignTemplate"/> title and Spintax content in-place and persists it to SQLite.
+    /// </summary>
+    public async Task UpdateTemplateContentAsync(CampaignTemplate template, string newTitle, string newSpintaxContent)
+    {
+        if (template is null || string.IsNullOrWhiteSpace(newSpintaxContent))
+        {
+            return;
+        }
+
+        string resolvedTitle = string.IsNullOrWhiteSpace(newTitle) ? template.Title : newTitle.Trim();
+        CampaignTemplate updated = template with
+        {
+            Title = resolvedTitle,
+            SpintaxContent = newSpintaxContent.Trim()
+        };
+
+        await _context.AccountStore.UpsertCampaignTemplateAsync(updated).ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            _context.Localization["Publisher.TemplatesTitle"],
+            _context.Localization.Format("Log.TemplateSaved", updated.Title)).ConfigureAwait(true);
     }
 
     private async Task<List<string>?> UploadMediaFilesParallelAsync(
@@ -360,7 +360,16 @@ public sealed partial class ShellViewModel
                     AuditSeverity.Info,
                     _context.Localization["Audit.Cat.Post"],
                     _context.Localization.Format("Log.CampaignScheduled", waitMins)).ConfigureAwait(true);
-                await Task.Delay(TimeSpan.FromMinutes(waitMins), ct).ConfigureAwait(true);
+
+                TimeSpan remaining = TimeSpan.FromMinutes(waitMins);
+                while (remaining > TimeSpan.Zero)
+                {
+                    this.CampaignProgressText = _context.Localization.Format(
+                        "Publisher.ScheduleCountdownFormat",
+                        remaining.ToString(@"mm\:ss", System.Globalization.CultureInfo.InvariantCulture));
+                    await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(true);
+                    remaining -= TimeSpan.FromSeconds(1);
+                }
             }
 
             IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
@@ -467,6 +476,7 @@ public sealed partial class ShellViewModel
                 return;
             }
 
+            int successCount = 0;
             for (int i = 0; i < targets.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -476,6 +486,7 @@ public sealed partial class ShellViewModel
                 }
 
                 SavedTargetGroup group = targets[i];
+                this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
                     AuditSeverity.Info,
@@ -493,6 +504,7 @@ public sealed partial class ShellViewModel
 
                 if (!string.IsNullOrWhiteSpace(postId))
                 {
+                    successCount++;
                     _recentPublishedPostIds.Add(postId);
                     if (this.AutoReactPublishedPost)
                     {
@@ -543,6 +555,12 @@ public sealed partial class ShellViewModel
             }
 
             await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+
+            _ = this.AiAssistant?.LearnFromUserActionSilentlyAsync(
+                "campaign_rules",
+                "recent_publish_campaign",
+                _context.Localization.Format("Ai.LearnPublishCampaign", successCount, targets.Count, this.MinDelaySeconds, this.MaxDelaySeconds),
+                ct);
         }
         catch (OperationCanceledException)
         {
@@ -558,6 +576,7 @@ public sealed partial class ShellViewModel
         }
         finally
         {
+            this.CampaignProgressText = string.Empty;
             this.EndTaskScope();
         }
     }
@@ -763,6 +782,7 @@ public sealed partial class ShellViewModel
                 }
 
                 SavedTargetGroup group = targets[i];
+                this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 string groupText = ResolveDynamicCommentVariables(rawSpintax, accountName, group.GroupName);
 
                 _ = await this.LogAuditAsync(
@@ -853,6 +873,7 @@ public sealed partial class ShellViewModel
         }
         finally
         {
+            this.CampaignProgressText = string.Empty;
             this.EndTaskScope();
         }
     }
@@ -897,6 +918,95 @@ public sealed partial class ShellViewModel
         await session.NavigateAsync(this.SelectedPublishedPost.PermalinkUrl).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Clones a published post's text and local media path (if still present on disk) into the Publisher Composer.
+    /// </summary>
+    /// <param name="post">Published post record to clone, or <c>null</c> to use <see cref="ShellViewModel.SelectedPublishedPost"/>.</param>
+    public void ClonePublishedPostToComposer(PublishedPostRecord? post)
+    {
+        PublishedPostRecord? target = post ?? this.SelectedPublishedPost;
+        if (target is null)
+        {
+            return;
+        }
+
+        this.PostSpintaxText = target.MessageText;
+        List<string> existingMedia = ParseExistingMediaFilePaths(target.LocalMediaFilePath);
+        this.PostMediaFilePath = existingMedia.Count > 0 ? string.Join(";", existingMedia) : string.Empty;
+        this.GenerateSpintaxPreview();
+    }
+
+    /// <summary>
+    /// Immediately bumps a single published post with a comment using the active account session.
+    /// </summary>
+    /// <param name="post">Published post record to bump, or <c>null</c> to use <see cref="ShellViewModel.SelectedPublishedPost"/>.</param>
+    public async Task BumpSinglePublishedPostAsync(PublishedPostRecord? post)
+    {
+        PublishedPostRecord? target = post ?? this.SelectedPublishedPost;
+        if (target is null || string.IsNullOrWhiteSpace(target.PostId))
+        {
+            return;
+        }
+
+        CancellationToken scopeCt = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(scopeCt).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            string bumpText = !string.IsNullOrWhiteSpace(this.BumpCommentSpintaxText)
+                ? this.BumpCommentSpintaxText
+                : _context.Localization["Publisher.DefaultBumpSpintax"];
+
+            string resolvedBumpText = ResolveDynamicCommentVariables(
+                bumpText,
+                this.SelectedAccount?.DisplayName,
+                target.TargetGroupName);
+
+            _ = await _context.CometClient
+                .CreateCommentAsync(session, target.PostId, resolvedBumpText, null, ct: scopeCt)
+                .ConfigureAwait(true);
+
+            PublishedPostRecord updated = target with
+            {
+                CommentCount = target.CommentCount + 1
+            };
+            await _context.AccountStore.UpsertPublishedPostAsync(updated, scopeCt).ConfigureAwait(true);
+            await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+            this.SelectedPublishedPost = updated;
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Success,
+                target.TargetGroupName ?? _context.Localization["Publisher.TabBump"],
+                _context.Localization.Format("Log.PostBumpedSuccess", 1, 1),
+                target.PermalinkUrl).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Warning,
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.SalesComment,
+                AuditSeverity.Error,
+                _context.Localization["Publisher.TabBump"],
+                _context.Localization.Format("Log.PostBumpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+
     private async Task BumpRecentPostsAsync()
     {
         List<(string PostId, string? GroupName)> bumpTargets = new();
@@ -926,22 +1036,13 @@ public sealed partial class ShellViewModel
         }
         else
         {
-            for (int i = 0; i < this.PublishedPosts.Count && bumpTargets.Count < 25; i++)
+            List<PublishedPostRecord> eligible = _context.CampaignPublisher.SelectEligibleBumpPosts(
+                this.PublishedPosts,
+                this.SelectedAccount?.Uid,
+                maxPosts: 25);
+            for (int i = 0; i < eligible.Count; i++)
             {
-                PublishedPostRecord rec = this.PublishedPosts[i];
-                if (rec.IsPersonalProfilePost ||
-                    string.IsNullOrWhiteSpace(rec.PostId) ||
-                    rec.PostId.StartsWith("grp_", StringComparison.Ordinal) ||
-                    rec.PostId.StartsWith("feed_", StringComparison.Ordinal) ||
-                    (this.SelectedAccount is not null && !string.Equals(rec.AccountUid, this.SelectedAccount.Uid, StringComparison.Ordinal)))
-                {
-                    continue;
-                }
-
-                if (seenPostIds.Add(rec.PostId))
-                {
-                    bumpTargets.Add((rec.PostId, rec.TargetGroupName));
-                }
+                bumpTargets.Add((eligible[i].PostId, eligible[i].TargetGroupName));
             }
         }
 
@@ -1009,5 +1110,16 @@ public sealed partial class ShellViewModel
         {
             this.EndTaskScope();
         }
+    }
+
+    private static string TruncateForAiLearning(string? raw, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        string oneLine = raw.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return oneLine.Length > maxChars ? string.Concat(oneLine[..maxChars], "...") : oneLine;
     }
 }

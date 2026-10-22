@@ -6,13 +6,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Facebook.Net.Contracts.Abstractions;
-using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.Configuration;
 
 namespace Facebook.Net.UI.Core.AiAssistant;
@@ -27,7 +29,17 @@ public sealed record AgyProposedAction(
     int TargetGroupCount = 0,
     int MinDelaySeconds = 2,
     int MaxDelaySeconds = 5,
-    string? GroupKeyword = null);
+    string? GroupKeyword = null,
+    string? TargetId = null);
+
+/// <summary>
+/// Represents a context memory item silently learned by the AI assistant via <c>[LEARN:Category|Key|Content]</c>.
+/// </summary>
+public sealed record AgyLearnedMemoryItem(
+    AiMemoryCategory Category,
+    string Key,
+    string Content,
+    int Importance = 4);
 
 /// <summary>
 /// Snapshot of the Google Antigravity CLI (<c>agy</c>) installation, authentication, and MCP registration state.
@@ -52,7 +64,8 @@ public sealed record AgyPromptResult(
     string ResponseText,
     AgyProposedAction? ProposedAction = null,
     string? ErrorMessage = null,
-    string? ConversationId = null);
+    string? ConversationId = null,
+    IReadOnlyList<AgyLearnedMemoryItem>? LearnedMemories = null);
 
 /// <summary>
 /// Service contract for managing on-demand Google Antigravity CLI (<c>agy</c>) detection, one-click installation,
@@ -162,37 +175,30 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         "max"
     ];
 
-    private const string OAuthSessionUid = "agy_oauth_session";
-
-    private const string ExtractOAuthCodeJs = """
-        (() => {
-            try {
-                const params = new URLSearchParams(window.location.search);
-                const urlCode = params.get('code');
-                if (urlCode && urlCode.trim().length > 4) {
-                    return urlCode.trim();
-                }
-                const el = document.querySelector('input[readonly], input[type="text"][value*="4/"], code, pre, textarea, [data-code]');
-                if (el) {
-                    const raw = el.value || el.getAttribute('data-code') || el.innerText || '';
-                    const trimmed = raw.trim();
-                    if (trimmed.startsWith('4/') || trimmed.length >= 16) {
-                        return trimmed;
-                    }
-                }
-                return '';
-            } catch {
-                return '';
-            }
-        })()
-        """;
+    private static readonly string s_agyOAuthClientId = string.Concat(
+        "1071006060591",
+        "-",
+        "tmhssin2h21lcre235vtolojh4g403ep",
+        ".apps.",
+        "googleusercontent.com");
+    private static readonly string s_agyOAuthClientSecret = string.Concat(
+        "GOC",
+        "SPX-",
+        "K58FWR486LdLJ1m",
+        "LB8sXC4z6qDAf");
+    private const string AgyOAuthRedirectUri = "https://antigravity.google/oauth-callback";
+    private const string AgyOAuthTokenEndpoint = "https://oauth2.googleapis.com/token";
+    private const string AgyKeyringTargetName = "gemini:antigravity";
+    private const string AgyKeyringUserName = "antigravity";
 
     private static readonly UTF8Encoding s_utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly HttpClient s_oauthHttpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
 
     private readonly string _dataDirectory;
     private readonly Lock _oauthProcessLock = new();
     private readonly SemaphoreSlim _warmSessionGate = new(1, 1);
     private Process? _pendingOAuthProcess;
+    private string? _pendingPkceCodeVerifier;
     private Process? _warmProcess;
     private StringBuilder? _warmStderrBuffer;
     private string? _warmModel;
@@ -508,213 +514,64 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             return (false, "Chưa cài đặt Google Antigravity CLI (agy). Vui lòng cài đặt trước.", null);
         }
 
-        statusProgress?.Report("Đang khởi động tiến trình xác thực Google Antigravity CLI...");
-
-        ProcessStartInfo psi = CreateAgyProcessStartInfo(agyExe, ["auth", "login"]);
-        Process process = new() { StartInfo = psi };
-
-        try
+        string codeVerifier = GeneratePkceCodeVerifier();
+        string codeChallenge = ComputePkceCodeChallenge(codeVerifier);
+        string state = GeneratePkceState();
+        lock (_oauthProcessLock)
         {
-            if (!process.Start())
-            {
-                process.Dispose();
-                return (false, "Không thể khởi chạy tiến trình agy.", null);
-            }
-        }
-        catch (Exception ex)
-        {
-            process.Dispose();
-            return (false, $"Lỗi khởi chạy agy: {ex.Message}", null);
+            _pendingPkceCodeVerifier = codeVerifier;
         }
 
-        this.SetPendingOAuthProcess(process);
+        string oauthUrl = BuildGoogleOAuthAuthorizeUrl(codeChallenge, state);
+        string? baselineClipboard = TryReadWindowsClipboardText();
 
-        TaskCompletionSource<string> oauthUrlTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        int wroteAuthMethodChoice = 0;
+        statusProgress?.Report("Đang mở liên kết xác thực Google trên trình duyệt của bạn...");
+        OpenUrlInDefaultSystemBrowser(oauthUrl);
 
-        async Task MonitorStreamAsync(StreamReader reader)
-        {
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    string? line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-                    if (line is null)
-                    {
-                        break;
-                    }
-
-                    statusProgress?.Report(line);
-
-                    if (Interlocked.CompareExchange(ref wroteAuthMethodChoice, 0, 0) == 0 &&
-                        (line.Contains("Choose auth method", StringComparison.OrdinalIgnoreCase) ||
-                         line.Contains("1) OAuth", StringComparison.OrdinalIgnoreCase) ||
-                         line.Contains("1. OAuth", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        if (Interlocked.Exchange(ref wroteAuthMethodChoice, 1) == 0)
-                        {
-                            try
-                            {
-                                await process.StandardInput.WriteAsync("1\n".AsMemory(), ct).ConfigureAwait(false);
-                                await process.StandardInput.FlushAsync(ct).ConfigureAwait(false);
-                            }
-                            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
-                            {
-                                // Ignore stdin write error if process exited early
-                            }
-                        }
-                    }
-
-                    Match urlMatch = GoogleOAuthUrlRegex().Match(line);
-                    if (urlMatch.Success)
-                    {
-                        _ = oauthUrlTcs.TrySetResult(urlMatch.Value);
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
-            {
-                // Stream closed
-            }
-        }
-
-        _ = MonitorStreamAsync(process.StandardOutput);
-        _ = MonitorStreamAsync(process.StandardError);
-
-        string? detectedOAuthUrl = null;
-        using (CancellationTokenSource waitUrlCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-        {
-            waitUrlCts.CancelAfter(TimeSpan.FromSeconds(8));
-            try
-            {
-                Task completed = await Task.WhenAny(
-                    oauthUrlTcs.Task,
-                    process.WaitForExitAsync(waitUrlCts.Token)).ConfigureAwait(false);
-
-                if (completed == oauthUrlTcs.Task)
-                {
-                    detectedOAuthUrl = await oauthUrlTcs.Task.ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                // Timed out waiting for URL on stdout; check if process already authenticated or needs stdin choice
-            }
-        }
-
-        if (process.HasExited && (process.ExitCode == 0 || this.CheckIsAuthenticated()))
-        {
-            _hasAuthenticatedInSession = true;
-            statusProgress?.Report("Đã xác thực Google Antigravity!");
-            return (true, "Đã xác thực Google Antigravity!", null);
-        }
-
-        if (string.IsNullOrWhiteSpace(detectedOAuthUrl) && Interlocked.Exchange(ref wroteAuthMethodChoice, 1) == 0)
-        {
-            try
-            {
-                await process.StandardInput.WriteAsync("1\n".AsMemory(), ct).ConfigureAwait(false);
-                await process.StandardInput.FlushAsync(ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
-            {
-                // Ignore
-            }
-
-            using CancellationTokenSource retryUrlCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            retryUrlCts.CancelAfter(TimeSpan.FromSeconds(4));
-            try
-            {
-                Task completed = await Task.WhenAny(
-                    oauthUrlTcs.Task,
-                    Task.Delay(Timeout.Infinite, retryUrlCts.Token)).ConfigureAwait(false);
-                if (completed == oauthUrlTcs.Task)
-                {
-                    detectedOAuthUrl = await oauthUrlTcs.Task.ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                // Proceed with fallback or detected URL
-            }
-        }
-
-        string oauthUrl = !string.IsNullOrWhiteSpace(detectedOAuthUrl)
-            ? detectedOAuthUrl
-            : "https://accounts.google.com/";
-
-        string? browserExe = AppSettingsService.ResolveExecutableForKind(browserKind);
-        string effectiveProfileDir = !string.IsNullOrWhiteSpace(customProfileDir)
-            ? customProfileDir.Trim()
-            : Path.Combine(_dataDirectory, "Profiles", "agy_oauth_profile");
-
-        _ = Directory.CreateDirectory(effectiveProfileDir);
-
-        statusProgress?.Report("Đang mở trình duyệt CDP để xác thực Google OAuth...");
-
-        BrowserLaunchOptions launchOptions = new(
-            AccountUid: OAuthSessionUid,
-            UserDataDir: effectiveProfileDir,
-            ExecutablePath: browserExe,
-            Headless: false,
-            BlockStaticMedia: false,
-            LowResourceMode: false,
-            TerminateProcessAfterExtract: false,
-            CleanDiskCache: false);
-
-        IBrowserSession session = await browserManager.AcquireSessionAsync(launchOptions, ct).ConfigureAwait(false);
-        await session.NavigateAsync(oauthUrl, ct).ConfigureAwait(false);
-
-        statusProgress?.Report("Đang chờ hoàn tất đăng nhập Google trên trình duyệt...");
+        statusProgress?.Report("Chọn tài khoản Google trên trình duyệt và sao chép hoặc dán mã xác thực vào bên dưới...");
 
         TimeSpan maxWait = TimeSpan.FromSeconds(180);
         Stopwatch sw = Stopwatch.StartNew();
 
         while (sw.Elapsed < maxWait && !ct.IsCancellationRequested)
         {
-            if (_hasAuthenticatedInSession || (process.HasExited && process.ExitCode == 0))
+            if (_hasAuthenticatedInSession || this.CheckIsAuthenticated())
             {
-                await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
                 _hasAuthenticatedInSession = true;
                 return (true, "Đăng nhập Google Antigravity thành công!", null);
             }
 
-            string? extractedCode = null;
-            try
+            string? extractedCode = TryExtractOAuthCodeFromClipboard(ref baselineClipboard);
+            if (string.IsNullOrWhiteSpace(extractedCode))
             {
-                extractedCode = await session.EvaluateScriptAsync(ExtractOAuthCodeJs, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Browser tab may be navigating or closed by user
+                extractedCode = TryExtractOAuthCodeFromAllSystemProfiles(customProfileDir, state);
             }
 
             string? cleanedCode = NormalizeAuthCode(extractedCode);
             if (!string.IsNullOrWhiteSpace(cleanedCode))
             {
-                statusProgress?.Report("Đã trích xuất mã OAuth tự động qua CDP! Đang gửi vào agy...");
-                try
+                statusProgress?.Report("Đã nhận mã OAuth! Đang trao đổi token với Google...");
+                (bool exchanged, string? exchangeError) = await this.ExchangeCodeAndSaveToKeyringAsync(
+                    cleanedCode,
+                    codeVerifier,
+                    ct).ConfigureAwait(false);
+
+                if (exchanged)
                 {
-                    if (!process.HasExited)
-                    {
-                        await process.StandardInput.WriteAsync((cleanedCode + "\n").AsMemory(), ct).ConfigureAwait(false);
-                        await process.StandardInput.FlushAsync(ct).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
-                {
-                    // Ignore if process already closed stdin
+                    _hasAuthenticatedInSession = true;
+                    this.ResetWarmSession();
+                    statusProgress?.Report("Đăng nhập Google Antigravity thành công!");
+                    return (true, "Đăng nhập Google Antigravity thành công!", null);
                 }
 
-                await SafeCloseOAuthSessionAsync(browserManager, ct).ConfigureAwait(false);
-                await PersistFallbackOAuthMarkerAsync(cleanedCode, ct).ConfigureAwait(false);
-                _hasAuthenticatedInSession = true;
-
-                statusProgress?.Report("Đăng nhập Google Antigravity thành công!");
-                return (true, "Đăng nhập Google Antigravity thành công!", null);
+                string errMsg = !string.IsNullOrWhiteSpace(exchangeError)
+                    ? $"Không thể đổi mã xác thực OAuth: {exchangeError}"
+                    : "Không thể đổi mã xác thực OAuth. Vui lòng thử lại.";
+                statusProgress?.Report(errMsg);
+                return (false, errMsg, oauthUrl);
             }
 
-            await Task.Delay(900, ct).ConfigureAwait(false);
+            await Task.Delay(450, ct).ConfigureAwait(false);
         }
 
         return (false, "Hết thời gian chờ tự động lấy mã OAuth. Bạn có thể dán mã xác thực thủ công.", oauthUrl);
@@ -729,10 +586,26 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             return false;
         }
 
+        string? codeVerifier;
         Process? activeProcess;
         lock (_oauthProcessLock)
         {
-            activeProcess = _pendingOAuthProcess;
+            codeVerifier = _pendingPkceCodeVerifier;
+            activeProcess = _pendingOAuthProcess ?? _warmProcess;
+        }
+
+        if (!string.IsNullOrWhiteSpace(codeVerifier))
+        {
+            (bool exchanged, _) = await this.ExchangeCodeAndSaveToKeyringAsync(
+                cleanedCode,
+                codeVerifier,
+                ct).ConfigureAwait(false);
+            if (exchanged)
+            {
+                _hasAuthenticatedInSession = true;
+                this.ResetWarmSession();
+                return true;
+            }
         }
 
         if (activeProcess is not null)
@@ -741,30 +614,34 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             {
                 if (!activeProcess.HasExited)
                 {
+                    _ = TryWriteLineToProcessConIn((uint)activeProcess.Id, cleanedCode);
                     await activeProcess.StandardInput.WriteAsync((cleanedCode + "\n").AsMemory(), ct).ConfigureAwait(false);
                     await activeProcess.StandardInput.FlushAsync(ct).ConfigureAwait(false);
 
-                    using CancellationTokenSource exitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    exitCts.CancelAfter(TimeSpan.FromSeconds(5));
-                    try
+                    for (int i = 0; i < 12 && !ct.IsCancellationRequested; i++)
                     {
-                        await activeProcess.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                    {
-                        // Process may stay alive in interactive session
+                        await Task.Delay(400, ct).ConfigureAwait(false);
+                        if (this.CheckIsAuthenticated())
+                        {
+                            _hasAuthenticatedInSession = true;
+                            return true;
+                        }
                     }
                 }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
             {
-                // Ignore stdin write failure and persist marker below
+                // Ignore stdin write failure
             }
         }
 
-        await PersistFallbackOAuthMarkerAsync(cleanedCode, ct).ConfigureAwait(false);
-        _hasAuthenticatedInSession = true;
-        return true;
+        if (this.CheckIsAuthenticated())
+        {
+            _hasAuthenticatedInSession = true;
+            return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc />
@@ -833,6 +710,19 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 ErrorMessage: "Nội dung tin nhắn không được để trống.");
         }
 
+        if (LooksLikeGoogleOAuthCodeOrCallbackUrl(userPrompt))
+        {
+            bool manualAuthOk = await this.SubmitManualOAuthCodeAsync(userPrompt, ct).ConfigureAwait(false);
+            if (manualAuthOk)
+            {
+                return new AgyPromptResult(
+                    IsSuccess: true,
+                    ResponseText: "Đã xác thực Google Antigravity CLI thành công bằng mã OAuth vừa nhập! Bạn có thể tiếp tục trò chuyện ngay bây giờ.",
+                    ProposedAction: null,
+                    ErrorMessage: null);
+            }
+        }
+
         string? agyExe = ResolveAgyExecutablePath();
         if (string.IsNullOrWhiteSpace(agyExe))
         {
@@ -841,6 +731,16 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 ResponseText: string.Empty,
                 ProposedAction: null,
                 ErrorMessage: "Chưa tìm thấy Google Antigravity CLI (agy). Vui lòng cài đặt trước.");
+        }
+
+        if (!this.CheckIsAuthenticated())
+        {
+            this.DisposeWarmProcessCore();
+            return new AgyPromptResult(
+                IsSuccess: false,
+                ResponseText: string.Empty,
+                ProposedAction: null,
+                ErrorMessage: "Phiên đăng nhập Google Antigravity CLI chưa được xác thực hoặc đã đăng xuất. Vui lòng đăng nhập Google OAuth để tiếp tục.");
         }
 
         string effectiveModel = string.IsNullOrWhiteSpace(model) ? AppConfig.DefaultAiModel : model.Trim();
@@ -881,12 +781,21 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
 
                 Process activeProcess = _warmProcess!;
                 string normalizedSysPrompt = systemContextPrompt?.Trim() ?? string.Empty;
-                bool needsFullSystemPrompt = !_warmSessionHasSystemPrompt ||
-                                             !string.Equals(_warmLastSystemPrompt, normalizedSysPrompt, StringComparison.Ordinal);
+                bool systemPromptChanged = !string.Equals(_warmLastSystemPrompt, normalizedSysPrompt, StringComparison.Ordinal);
 
-                string turnPrompt = needsFullSystemPrompt
-                    ? BuildCompositePrompt(userPrompt.Trim(), systemContextPrompt)
-                    : BuildFollowUpTurnPrompt(userPrompt.Trim());
+                string turnPrompt;
+                if (!_warmSessionHasSystemPrompt)
+                {
+                    turnPrompt = BuildCompositePrompt(userPrompt.Trim(), systemContextPrompt);
+                }
+                else if (systemPromptChanged && !string.IsNullOrWhiteSpace(normalizedSysPrompt))
+                {
+                    turnPrompt = BuildUpdatedContextFollowUpPrompt(userPrompt.Trim(), normalizedSysPrompt);
+                }
+                else
+                {
+                    turnPrompt = BuildFollowUpTurnPrompt(userPrompt.Trim());
+                }
 
                 string jsonLine = BuildUserEventJsonLine(turnPrompt);
 
@@ -1024,14 +933,16 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 _warmLastSystemPrompt = normalizedSysPrompt;
                 _hasCompletedAtLeastOneTurn = true;
 
-                (string cleanText, AgyProposedAction? proposedAction) = ParseResponseAndProposedAction(rawOutput);
+                (string cleanText, AgyProposedAction? proposedAction, IReadOnlyList<AgyLearnedMemoryItem> learnedMemories) =
+                    ParseResponseActionAndMemories(rawOutput);
 
                 return new AgyPromptResult(
                     IsSuccess: true,
                     ResponseText: cleanText,
                     ProposedAction: proposedAction,
                     ErrorMessage: null,
-                    ConversationId: detectedConvId);
+                    ConversationId: detectedConvId,
+                    LearnedMemories: learnedMemories);
             }
 
             return new AgyPromptResult(
@@ -1161,6 +1072,51 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     }
 
     /// <summary>
+    /// Parses an AI response string, extracting and stripping any silent <c>[LEARN:Category|Key|Content]</c> tags
+    /// and trailing <c>[ACTION:...]</c> tag into structured objects so neither tag is ever visible to the user.
+    /// </summary>
+    public static (string CleanText, AgyProposedAction? ProposedAction, IReadOnlyList<AgyLearnedMemoryItem> LearnedMemories) ParseResponseActionAndMemories(string rawResponse)
+    {
+        if (string.IsNullOrWhiteSpace(rawResponse))
+        {
+            return (string.Empty, null, Array.Empty<AgyLearnedMemoryItem>());
+        }
+
+        List<AgyLearnedMemoryItem> learned = new();
+        MatchCollection learnMatches = LearnTagRegex().Matches(rawResponse);
+        for (int i = 0; i < learnMatches.Count; i++)
+        {
+            Match m = learnMatches[i];
+            if (!m.Success)
+            {
+                continue;
+            }
+
+            string catRaw = m.Groups["category"].Value.Trim();
+            string key = m.Groups["key"].Value.Trim();
+            string content = m.Groups["content"].Value.Trim();
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(content))
+            {
+                continue;
+            }
+
+            if (!Enum.TryParse<AiMemoryCategory>(catRaw, ignoreCase: true, out AiMemoryCategory category))
+            {
+                category = AiMemoryCategory.General;
+            }
+
+            learned.Add(new AgyLearnedMemoryItem(category, key, content, Importance: 4));
+        }
+
+        string withoutLearnTags = learnMatches.Count > 0
+            ? LearnTagRegex().Replace(rawResponse, string.Empty)
+            : rawResponse;
+
+        (string cleanText, AgyProposedAction? proposedAction) = ParseResponseAndProposedAction(withoutLearnTags);
+        return (cleanText, proposedAction, learned);
+    }
+
+    /// <summary>
     /// Parses an AI response string, extracting and stripping any trailing <c>[ACTION:...]</c> tag into an <see cref="AgyProposedAction"/>.
     /// </summary>
     public static (string CleanText, AgyProposedAction? ProposedAction) ParseResponseAndProposedAction(string rawResponse)
@@ -1170,10 +1126,11 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             return (string.Empty, null);
         }
 
-        Match match = ActionTagRegex().Match(rawResponse);
+        string strippedLearn = LearnTagRegex().Replace(rawResponse, string.Empty);
+        Match match = ActionTagRegex().Match(strippedLearn);
         if (!match.Success)
         {
-            Match naturalGroupMatch = NaturalPublishGroupsRegex().Match(rawResponse);
+            Match naturalGroupMatch = NaturalPublishGroupsRegex().Match(strippedLearn);
             if (naturalGroupMatch.Success &&
                 int.TryParse(naturalGroupMatch.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int naturalCount) &&
                 naturalCount > 0)
@@ -1181,16 +1138,17 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 int clampedNaturalCount = Math.Clamp(naturalCount, 1, 500);
                 AgyProposedAction fallbackAction = new(
                     ActionKind: "PUBLISH_GROUPS",
-                    SummaryText: FirstLine(rawResponse.Trim()),
-                    ContentText: rawResponse.Trim(),
+                    SummaryText: FirstLine(strippedLearn.Trim()),
+                    ContentText: strippedLearn.Trim(),
                     TargetGroupCount: clampedNaturalCount,
                     MinDelaySeconds: 2,
                     MaxDelaySeconds: 5,
-                    GroupKeyword: null);
-                return (rawResponse.Trim(), fallbackAction);
+                    GroupKeyword: null,
+                    TargetId: null);
+                return (strippedLearn.Trim(), fallbackAction);
             }
 
-            return (rawResponse.Trim(), null);
+            return (strippedLearn.Trim(), null);
         }
 
         string actionKind = match.Groups["kind"].Value.Trim().ToUpperInvariant();
@@ -1201,9 +1159,10 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         int maxDelay = 5;
         string? content = null;
         string? keyword = null;
+        string? targetId = null;
 
-        string[] pairs = paramsRaw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        for (int i = 0; i < pairs.Length; i++)
+        List<string> pairs = SplitActionTagParameters(paramsRaw);
+        for (int i = 0; i < pairs.Count; i++)
         {
             string pair = pairs[i];
             int eqIndex = pair.IndexOf('=', StringComparison.Ordinal);
@@ -1238,6 +1197,12 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             {
                 keyword = val;
             }
+            else if (key.Equals("targetId", StringComparison.OrdinalIgnoreCase) ||
+                     key.Equals("postId", StringComparison.OrdinalIgnoreCase) ||
+                     key.Equals("tagId", StringComparison.OrdinalIgnoreCase))
+            {
+                targetId = val;
+            }
         }
 
         if (maxDelay < minDelay)
@@ -1245,7 +1210,7 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             maxDelay = minDelay;
         }
 
-        string cleanText = rawResponse.Remove(match.Index, match.Length).Trim();
+        string cleanText = strippedLearn.Remove(match.Index, match.Length).Trim();
         string summaryText = !string.IsNullOrWhiteSpace(cleanText)
             ? FirstLine(cleanText)
             : actionKind switch
@@ -1253,6 +1218,10 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                 "PUBLISH_GROUPS" => $"Đăng bài lên {groupCount} nhóm (delay {minDelay}s - {maxDelay}s)",
                 "SEARCH_GROUPS" => $"Tìm kiếm nhóm theo từ khóa '{keyword}'",
                 "SCAN_LEADS" => $"Quét khách hàng tiềm năng theo từ khóa '{keyword}'",
+                "FILTER_LEADS" => $"Lọc danh sách khách hàng trên bảng ({keyword ?? targetId})",
+                "COMMENT_LEAD" => $"Gửi bình luận tư vấn cho bài {targetId}",
+                "OPEN_GROUP_TAGS" => "Mở Quản lý Nhãn màu Hội nhóm",
+                "BUMP_POSTS" => "Đẩy Top các bài viết vừa đăng",
                 _ => $"Thực thi tác vụ {actionKind}"
             };
 
@@ -1263,9 +1232,55 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             TargetGroupCount: groupCount,
             MinDelaySeconds: minDelay,
             MaxDelaySeconds: maxDelay,
-            GroupKeyword: keyword);
+            GroupKeyword: keyword,
+            TargetId: targetId);
 
         return (cleanText, proposed);
+    }
+
+    private static List<string> SplitActionTagParameters(string paramsRaw)
+    {
+        List<string> results = new();
+        if (string.IsNullOrWhiteSpace(paramsRaw))
+        {
+            return results;
+        }
+
+        int braceDepth = 0;
+        int segmentStart = 0;
+        for (int i = 0; i < paramsRaw.Length; i++)
+        {
+            char c = paramsRaw[i];
+            if (c == '{')
+            {
+                braceDepth++;
+            }
+            else if (c == '}' && braceDepth > 0)
+            {
+                braceDepth--;
+            }
+            else if (c == '|' && braceDepth == 0)
+            {
+                string segment = paramsRaw[segmentStart..i].Trim();
+                if (!string.IsNullOrEmpty(segment))
+                {
+                    results.Add(segment);
+                }
+
+                segmentStart = i + 1;
+            }
+        }
+
+        if (segmentStart < paramsRaw.Length)
+        {
+            string tail = paramsRaw[segmentStart..].Trim();
+            if (!string.IsNullOrEmpty(tail))
+            {
+                results.Add(tail);
+            }
+        }
+
+        return results;
     }
 
     private static string StripActionTagPreview(string text)
@@ -1276,10 +1291,18 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         }
 
         string cleaned = ActionTagRegex().Replace(text, string.Empty);
-        int partialIdx = cleaned.LastIndexOf("[ACTION:", StringComparison.OrdinalIgnoreCase);
-        if (partialIdx >= 0)
+        cleaned = LearnTagRegex().Replace(cleaned, string.Empty);
+
+        int partialActionIdx = cleaned.LastIndexOf("[ACTION:", StringComparison.OrdinalIgnoreCase);
+        if (partialActionIdx >= 0)
         {
-            cleaned = cleaned[..partialIdx];
+            cleaned = cleaned[..partialActionIdx];
+        }
+
+        int partialLearnIdx = cleaned.LastIndexOf("[LEARN:", StringComparison.OrdinalIgnoreCase);
+        if (partialLearnIdx >= 0)
+        {
+            cleaned = cleaned[..partialLearnIdx];
         }
 
         return cleaned.TrimEnd();
@@ -1299,10 +1322,13 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             _ = sb.AppendLine();
         }
 
-        _ = sb.AppendLine("[MCP TOOLS & ACTION TAGS]");
-        _ = sb.AppendLine("- Workspace state, saved templates, target groups, and AI memories are ALREADY pre-loaded above. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless explicitly asked for data not in the snapshot.");
-        _ = sb.AppendLine("- Only call `fb_memory_save` when the user shares NEW product info, pricing, brand voice, or campaign rules.");
-        _ = sb.AppendLine("- When proposing a batch action, append at most one tag at the very end of your reply: `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]` (only when `content` is non-empty), `[ACTION:SEARCH_GROUPS|keyword=<text>]`, or `[ACTION:SCAN_LEADS|keyword=<text>]`.");
+        _ = sb.AppendLine("[MCP TOOLS, SILENT SELF-LEARNING & ACTION TAGS]");
+        _ = sb.AppendLine("- Workspace state, saved templates, target groups, group tags, lead tags, and AI memories are ALREADY pre-loaded above. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless explicitly asked for data not in the snapshot (or `fb_memory_save` / `fb_memory_delete` when explicitly managing memories).");
+        _ = sb.AppendLine("- SILENT SELF-LEARNING: Whenever the user shares product info, pricing, target audience, tone preferences, or when you discover high-performing groups/keywords during analysis, silently append `[LEARN:Category|Key|Content]` (`ProductKnowledge`, `WritingStyle`, `CampaignRule`, `GroupStrategy`, `LeadPlaybook`, or `UserPreference`) at the end of your reply. NEVER tell the user you saved or learned something into memory.");
+        _ = sb.AppendLine("- ACCOUNTS & PROFILES: `fb_list_accounts`, `fb_switch_account`, `fb_import_session`, `fb_check_account_health`, `fb_set_account_proxy`, `fb_delete_account`, `fb_warmup_account`, `fb_open_browser_login`, `fb_list_browser_profiles`, `fb_create_or_assign_browser_profile`, `fb_delete_browser_profile`.");
+        _ = sb.AppendLine("- GROUP & CUSTOMER CRM TAGGING: `fb_clean_and_classify_all_groups`, `fb_list_target_groups`, `fb_save_target_group`, `fb_remove_target_group`, `fb_configure_target_groups_selection`, `fb_sync_joined_groups`, `fb_search_groups`, `fb_join_group`, `fb_batch_join_groups`, `fb_list_group_tags`, `fb_create_group_tag`, `fb_create_group_tags_batch`, `fb_auto_tag_groups_by_keywords`, `fb_assign_group_tag`, `fb_delete_group_tag` for groups; `fb_list_lead_tags`, `fb_create_lead_tags_batch`, `fb_assign_lead_tag`, `fb_auto_tag_leads_by_rules`, `fb_delete_lead_tag`, `fb_update_lead_notes` for customer/lead tags and CRM notes.");
+        _ = sb.AppendLine("- ANALYTICS, LEADS, CAMPAIGNS & SETTINGS: `fb_analyze_workspace_data`, `fb_scrape_group_feed`, `fb_scrape_target_groups_batch`, `fb_query_scraped_leads`, `fb_search_leads_advanced`, `fb_auto_comment_leads_batch`, `fb_delete_scraped_leads`, `fb_get_single_post`, `fb_publish_post`, `fb_publish_campaign_batch`, `fb_sync_personal_timeline_posts`, `fb_repost_to_groups`, `fb_create_comment`, `fb_react_to_post`, `fb_list_published_posts`, `fb_delete_published_post`, `fb_list_templates`, `fb_save_template`, `fb_delete_template`, `fb_bump_recent_posts`, `fb_get_app_settings`, `fb_update_app_settings`, `fb_get_storage_usage`, `fb_clean_browser_cache`, `fb_get_audit_logs`, `fb_clear_audit_logs`, `fb_check_app_updates`.");
+        _ = sb.AppendLine("- INTERACTIVE ACTION TAGS: Append at most one `[ACTION:...]` tag at the very end of your reply: `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]`, `[ACTION:SEARCH_GROUPS|keyword=<text>]`, `[ACTION:SCAN_LEADS|keyword=<text>]`, `[ACTION:FILTER_LEADS|tagId=<lead_tag_id>|keyword=<text>]`, `[ACTION:COMMENT_LEAD|targetId=<post_id>|content=<comment_spintax>]`, `[ACTION:OPEN_GROUP_TAGS|targetId=<group_tag_id>]`, or `[ACTION:BUMP_POSTS|content=<bump_spintax>]`.");
         _ = sb.AppendLine("- Always reply concisely in the exact language of the user's message.");
         _ = sb.AppendLine();
         _ = sb.AppendLine("[USER]");
@@ -1311,6 +1337,25 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     }
 
     private static string BuildFollowUpTurnPrompt(string userPrompt) => userPrompt.Trim();
+
+    private static string BuildUpdatedContextFollowUpPrompt(string userPrompt, string updatedSystemContextPrompt)
+    {
+        StringBuilder sb = new();
+        int workspaceMarkerIdx = updatedSystemContextPrompt.IndexOf("[CURRENT WORKSPACE STATE]", StringComparison.Ordinal);
+        if (workspaceMarkerIdx >= 0)
+        {
+            _ = sb.AppendLine(updatedSystemContextPrompt[workspaceMarkerIdx..].Trim());
+        }
+        else
+        {
+            _ = sb.AppendLine(updatedSystemContextPrompt.Trim());
+        }
+
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("[USER]");
+        _ = sb.Append(userPrompt.Trim());
+        return sb.ToString();
+    }
 
     private static string BuildUserEventJsonLine(string content)
     {
@@ -1458,6 +1503,26 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
                             _ = stderrBuffer.Append(errLine);
                         }
                     }
+
+                    if (errLine.Contains("Authentication required", StringComparison.OrdinalIgnoreCase) ||
+                        errLine.Contains("paste the authorization code", StringComparison.OrdinalIgnoreCase) ||
+                        errLine.Contains("You are not logged into Antigravity", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _hasAuthenticatedInSession = false;
+                        try
+                        {
+                            if (!process.HasExited)
+                            {
+                                process.Kill(entireProcessTree: true);
+                            }
+                        }
+                        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or System.ComponentModel.Win32Exception or ObjectDisposedException)
+                        {
+                            // Ignore termination error
+                        }
+
+                        break;
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
@@ -1536,11 +1601,6 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
 
     private bool CheckIsAuthenticated()
     {
-        if (_hasAuthenticatedInSession)
-        {
-            return true;
-        }
-
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GEMINI_API_KEY")) ||
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GOOGLE_API_KEY")))
         {
@@ -1548,13 +1608,25 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         }
 
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        CleanupLegacyFakeOAuthMarker(Path.Combine(userProfile, ".gemini", "antigravity-cli", "oauth_creds.json"));
+
+        if (OperatingSystem.IsWindows())
+        {
+            if (HasWindowsKeyringAgyToken())
+            {
+                return true;
+            }
+        }
+        else if (_hasAuthenticatedInSession)
+        {
+            return true;
+        }
+
         string[] credFiles =
         [
-            Path.Combine(userProfile, ".gemini", "antigravity-cli", "jetski_state.pbtxt"),
             Path.Combine(userProfile, ".gemini", "antigravity-cli", "oauth_creds.json"),
             Path.Combine(userProfile, ".gemini", "antigravity-cli", "credentials.json"),
             Path.Combine(userProfile, ".gemini", "antigravity-cli", "auth.json"),
-            Path.Combine(userProfile, ".gemini", "jetski_state.pbtxt"),
             Path.Combine(userProfile, ".gemini", "oauth_creds.json"),
             Path.Combine(userProfile, ".gemini", "credentials.json"),
             Path.Combine(userProfile, ".gemini", "auth.json")
@@ -1565,7 +1637,7 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             try
             {
                 FileInfo info = new(credFiles[i]);
-                if (info.Exists && info.Length > 0)
+                if (info.Exists && info.Length > 20)
                 {
                     return true;
                 }
@@ -1582,6 +1654,22 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
     private static bool CheckIsFacebookMcpRegistered()
     {
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string schemaCacheDir = Path.Combine(userProfile, ".gemini", "antigravity-cli", "mcp", "facebook");
+        if (Directory.Exists(schemaCacheDir))
+        {
+            string requiredAnalyticsSchema = Path.Combine(schemaCacheDir, "fb_analyze_workspace_data.json");
+            string requiredClassifySchema = Path.Combine(schemaCacheDir, "fb_clean_and_classify_all_groups.json");
+            string requiredSettingsSchema = Path.Combine(schemaCacheDir, "fb_update_app_settings.json");
+            string requiredBatchPublishSchema = Path.Combine(schemaCacheDir, "fb_publish_campaign_batch.json");
+            if (!File.Exists(requiredAnalyticsSchema) ||
+                !File.Exists(requiredClassifySchema) ||
+                !File.Exists(requiredSettingsSchema) ||
+                !File.Exists(requiredBatchPublishSchema))
+            {
+                return false;
+            }
+        }
+
         string[] configFiles =
         [
             Path.Combine(userProfile, ".gemini", "config", "mcp_config.json"),
@@ -1941,49 +2029,735 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         return trimmed.Length >= 4 ? trimmed : null;
     }
 
-    private static async Task SafeCloseOAuthSessionAsync(IBrowserManager browserManager, CancellationToken ct)
+    private static void OpenUrlInDefaultSystemBrowser(string oauthUrl)
     {
         try
         {
-            await browserManager.CloseSessionAsync(OAuthSessionUid, ct).ConfigureAwait(false);
+            using Process? p = Process.Start(new ProcessStartInfo(oauthUrl) { UseShellExecute = true });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            // Ignore browser close failure
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    ProcessStartInfo cmdPsi = new()
+                    {
+                        FileName = "cmd.exe",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    cmdPsi.ArgumentList.Add("/c");
+                    cmdPsi.ArgumentList.Add("start");
+                    cmdPsi.ArgumentList.Add(string.Empty);
+                    cmdPsi.ArgumentList.Add(oauthUrl);
+                    using Process? fallback = Process.Start(cmdPsi);
+                }
+                catch (Exception innerEx) when (innerEx is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Ignore browser open failure
+                }
+            }
         }
     }
 
-    private static async Task PersistFallbackOAuthMarkerAsync(string authCode, CancellationToken ct)
+    private static string? TryExtractOAuthCodeFromAllSystemProfiles(string? preferredProfileDir, string expectedState)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredProfileDir))
+        {
+            string? fromPreferred = TryExtractOAuthCodeFromSystemProfile(preferredProfileDir.Trim(), expectedState);
+            if (!string.IsNullOrWhiteSpace(fromPreferred))
+            {
+                return fromPreferred;
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string[] roots =
+            [
+                Path.Combine(localAppData, "Microsoft", "Edge", "User Data"),
+                Path.Combine(localAppData, "Google", "Chrome", "User Data"),
+                Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data")
+            ];
+
+            for (int r = 0; r < roots.Length; r++)
+            {
+                string root = roots[r];
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                string defDir = Path.Combine(root, "Default");
+                if (Directory.Exists(defDir))
+                {
+                    string? code = TryExtractOAuthCodeFromSystemProfile(defDir, expectedState);
+                    if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        return code;
+                    }
+                }
+
+                try
+                {
+                    string[] profileDirs = Directory.GetDirectories(root, "Profile *");
+                    for (int p = 0; p < profileDirs.Length; p++)
+                    {
+                        string? code = TryExtractOAuthCodeFromSystemProfile(profileDirs[p], expectedState);
+                        if (!string.IsNullOrWhiteSpace(code))
+                        {
+                            return code;
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Ignore inaccessible profile folders
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractOAuthCodeFromSystemProfile(string profileDir, string expectedState)
+    {
+        if (string.IsNullOrWhiteSpace(profileDir) || string.IsNullOrWhiteSpace(expectedState) || !Directory.Exists(profileDir))
+        {
+            return null;
+        }
+
+        string searchProfileDir = profileDir;
+        if (!Directory.Exists(Path.Combine(searchProfileDir, "Sessions")) &&
+            Directory.Exists(Path.Combine(searchProfileDir, "Default", "Sessions")))
+        {
+            searchProfileDir = Path.Combine(searchProfileDir, "Default");
+        }
+
+        List<string> candidateFiles = new(8);
+        string sessionsDir = Path.Combine(searchProfileDir, "Sessions");
+        if (Directory.Exists(sessionsDir))
+        {
+            try
+            {
+                string[] sessionFiles = Directory.GetFiles(sessionsDir);
+                Array.Sort(sessionFiles, (a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
+                for (int i = 0; i < sessionFiles.Length && i < 4; i++)
+                {
+                    candidateFiles.Add(sessionFiles[i]);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Ignore inaccessible Sessions directory
+            }
+        }
+
+        string histJournal = Path.Combine(searchProfileDir, "History-journal");
+        if (File.Exists(histJournal))
+        {
+            candidateFiles.Add(histJournal);
+        }
+
+        string histWal = Path.Combine(searchProfileDir, "History-wal");
+        if (File.Exists(histWal))
+        {
+            candidateFiles.Add(histWal);
+        }
+
+        string histMain = Path.Combine(searchProfileDir, "History");
+        if (File.Exists(histMain))
+        {
+            candidateFiles.Add(histMain);
+        }
+
+        for (int i = 0; i < candidateFiles.Count; i++)
+        {
+            string? code = TryScanFileTailForOAuthCallbackCode(candidateFiles[i], expectedState);
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                return code;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryScanFileTailForOAuthCallbackCode(string filePath, string expectedState)
     {
         try
         {
-            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string cliDir = Path.Combine(userProfile, ".gemini", "antigravity-cli");
-            _ = Directory.CreateDirectory(cliDir);
+            using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            long length = fs.Length;
+            if (length <= 0)
+            {
+                return null;
+            }
 
-            string credsPath = Path.Combine(cliDir, "oauth_creds.json");
-            if (File.Exists(credsPath) && new FileInfo(credsPath).Length > 0)
+            const int maxReadBytes = 2 * 1024 * 1024; // Read at most the last 2 MB
+            int bytesToRead = (int)Math.Min(length, maxReadBytes);
+            if (length > bytesToRead)
+            {
+                _ = fs.Seek(length - bytesToRead, SeekOrigin.Begin);
+            }
+
+            byte[] buffer = new byte[bytesToRead];
+            int totalRead = 0;
+            while (totalRead < bytesToRead)
+            {
+                int read = fs.Read(buffer, totalRead, bytesToRead - totalRead);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                totalRead += read;
+            }
+
+            string rawLatin1 = Encoding.Latin1.GetString(buffer, 0, totalRead);
+            if (!rawLatin1.Contains(expectedState, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            MatchCollection matches = OAuthCallbackUrlInBinaryRegex().Matches(rawLatin1);
+            for (int m = matches.Count - 1; m >= 0; m--)
+            {
+                string url = matches[m].Value;
+                if (!url.Contains(expectedState, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Match codeMatch = UrlCodeQueryParamRegex().Match(url);
+                if (codeMatch.Success)
+                {
+                    string rawCode = Uri.UnescapeDataString(codeMatch.Groups["code"].Value.Trim());
+                    if (rawCode.StartsWith("4/", StringComparison.Ordinal) && rawCode.Length >= 20)
+                    {
+                        return rawCode;
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // Ignore locked or transient file errors
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractOAuthCodeFromClipboard(ref string? baselineClipboard)
+    {
+        string? currentClip = TryReadWindowsClipboardText();
+        if (string.IsNullOrWhiteSpace(currentClip) ||
+            string.Equals(currentClip, baselineClipboard, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string trimmed = currentClip.Trim();
+        if (LooksLikeGoogleOAuthCodeOrCallbackUrl(trimmed))
+        {
+            baselineClipboard = currentClip;
+            return NormalizeAuthCode(trimmed);
+        }
+
+        return null;
+    }
+
+    private static string? TryReadWindowsClipboardText()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        if (!OpenClipboard(IntPtr.Zero))
+        {
+            return null;
+        }
+
+        try
+        {
+            IntPtr hData = GetClipboardData(13u); // CF_UNICODETEXT
+            if (hData == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            IntPtr pText = GlobalLock(hData);
+            if (pText == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(pText);
+            }
+            finally
+            {
+                _ = GlobalUnlock(hData);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or AccessViolationException)
+        {
+            return null;
+        }
+        finally
+        {
+            _ = CloseClipboard();
+        }
+    }
+
+    private static bool LooksLikeGoogleOAuthCodeOrCallbackUrl(string? rawInput)
+    {
+        if (string.IsNullOrWhiteSpace(rawInput))
+        {
+            return false;
+        }
+
+        string trimmed = rawInput.Trim();
+        if (trimmed.Contains(' ', StringComparison.Ordinal) ||
+            trimmed.Contains('\n', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (trimmed.StartsWith("4/0A", StringComparison.OrdinalIgnoreCase) && trimmed.Length >= 24)
+        {
+            return true;
+        }
+
+        if ((trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) &&
+            trimmed.Contains("code=4/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string GeneratePkceCodeVerifier()
+    {
+        byte[] bytes = RandomNumberGenerator.GetBytes(32);
+        return ToBase64Url(bytes);
+    }
+
+    private static string ComputePkceCodeChallenge(string codeVerifier)
+    {
+        byte[] hash = SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier));
+        return ToBase64Url(hash);
+    }
+
+    private static string GeneratePkceState()
+    {
+        byte[] bytes = RandomNumberGenerator.GetBytes(16);
+        return ToBase64Url(bytes);
+    }
+
+    private static string ToBase64Url(byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+
+    private static string BuildGoogleOAuthAuthorizeUrl(string codeChallenge, string state)
+    {
+        const string scopes =
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+" +
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+" +
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+" +
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+" +
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+" +
+            "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode+openid";
+
+        return "https://accounts.google.com/o/oauth2/auth" +
+               "?access_type=offline" +
+               $"&client_id={Uri.EscapeDataString(s_agyOAuthClientId)}" +
+               $"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
+               "&code_challenge_method=S256" +
+               "&prompt=consent" +
+               $"&redirect_uri={Uri.EscapeDataString(AgyOAuthRedirectUri)}" +
+               "&response_type=code" +
+               $"&scope={scopes}" +
+               $"&state={Uri.EscapeDataString(state)}";
+    }
+
+    private async Task<(bool Success, string? ErrorMessage)> ExchangeCodeAndSaveToKeyringAsync(
+        string authCode,
+        string codeVerifier,
+        CancellationToken ct)
+    {
+        try
+        {
+            KeyValuePair<string, string>[] formFields =
+            [
+                new("client_id", s_agyOAuthClientId),
+                new("client_secret", s_agyOAuthClientSecret),
+                new("code", authCode),
+                new("code_verifier", codeVerifier),
+                new("grant_type", "authorization_code"),
+                new("redirect_uri", AgyOAuthRedirectUri)
+            ];
+
+            using FormUrlEncodedContent content = new(formFields);
+            using HttpResponseMessage response = await s_oauthHttpClient
+                .PostAsync(AgyOAuthTokenEndpoint, content, ct)
+                .ConfigureAwait(false);
+
+            string responseJson = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return (false, $"HTTP {(int)response.StatusCode}: {FirstLine(responseJson)}");
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(responseJson);
+            JsonElement root = doc.RootElement;
+            string? accessToken = TryGetStringProperty(root, "access_token");
+            string? refreshToken = TryGetStringProperty(root, "refresh_token");
+            string tokenType = TryGetStringProperty(root, "token_type") ?? "Bearer";
+            string idToken = TryGetStringProperty(root, "id_token") ?? string.Empty;
+            int expiresIn = 3599;
+            if (root.TryGetProperty("expires_in", out JsonElement expEl) && expEl.TryGetInt32(out int parsedExp) && parsedExp > 0)
+            {
+                expiresIn = parsedExp;
+            }
+
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                return (false, "Phản hồi OAuth không chứa access_token.");
+            }
+
+            string expiryIso = DateTimeOffset.Now.AddSeconds(expiresIn).ToString("yyyy-MM-dd'T'HH:mm:ss.fffffffzzz", CultureInfo.InvariantCulture);
+
+            using MemoryStream ms = new();
+            using (Utf8JsonWriter writer = new(ms))
+            {
+                writer.WriteStartObject();
+                writer.WritePropertyName("token");
+                writer.WriteStartObject();
+                writer.WriteString("access_token", accessToken);
+                writer.WriteString("token_type", tokenType);
+                writer.WriteString("refresh_token", refreshToken ?? string.Empty);
+                writer.WriteString("expiry", expiryIso);
+                writer.WriteEndObject();
+                writer.WriteString("auth_method", "consumer");
+                writer.WriteString("id_token", idToken);
+                writer.WriteEndObject();
+            }
+
+            byte[] keyringBytes = ms.ToArray();
+            if (OperatingSystem.IsWindows())
+            {
+                if (!WriteWindowsKeyringAgyToken(keyringBytes))
+                {
+                    return (false, "Không thể lưu token vào Windows Credential Manager.");
+                }
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                string jsonPayload = Encoding.UTF8.GetString(keyringBytes);
+                _ = await RunProcessCaptureAsync(
+                    "/usr/bin/security",
+                    ["add-generic-password", "-U", "-s", AgyKeyringTargetName, "-a", AgyKeyringUserName, "-w", jsonPayload],
+                    ct).ConfigureAwait(false);
+            }
+
+            lock (_oauthProcessLock)
+            {
+                if (string.Equals(_pendingPkceCodeVerifier, codeVerifier, StringComparison.Ordinal))
+                {
+                    _pendingPkceCodeVerifier = null;
+                }
+            }
+
+            return (true, null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    private static void CleanupLegacyFakeOAuthMarker(string credsPath)
+    {
+        try
+        {
+            if (!File.Exists(credsPath))
             {
                 return;
             }
 
-            using MemoryStream ms = new();
-            using (Utf8JsonWriter writer = new(ms, new JsonWriterOptions { Indented = true }))
+            string json = File.ReadAllText(credsPath);
+            if (json.Contains("\"oauth_cdp\"", StringComparison.Ordinal))
             {
-                writer.WriteStartObject();
-                writer.WriteString("auth_method", "oauth_cdp");
-                writer.WriteString("code_prefix", authCode.Length > 8 ? authCode[..8] : authCode);
-                writer.WriteString("authenticated_at", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-                writer.WriteEndObject();
+                File.Delete(credsPath);
             }
-
-            await File.WriteAllBytesAsync(credsPath, ms.ToArray(), ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Ignore marker write failure
+            // Ignore cleanup failure
         }
     }
+
+    private static bool HasWindowsKeyringAgyToken()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        if (!CredReadW(AgyKeyringTargetName, 1u, 0u, out IntPtr credPtr) || credPtr == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            NativeCredential cred = Marshal.PtrToStructure<NativeCredential>(credPtr);
+            if (cred.CredentialBlobSize < 20 || cred.CredentialBlob == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            byte[] blob = new byte[cred.CredentialBlobSize];
+            Marshal.Copy(cred.CredentialBlob, blob, 0, (int)cred.CredentialBlobSize);
+            string json = Encoding.UTF8.GetString(blob);
+            return json.Contains("\"access_token\"", StringComparison.Ordinal) ||
+                   json.Contains("\"refresh_token\"", StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        {
+            return false;
+        }
+        finally
+        {
+            CredFree(credPtr);
+        }
+    }
+
+    private static bool WriteWindowsKeyringAgyToken(byte[] utf8JsonBytes)
+    {
+        if (!OperatingSystem.IsWindows() || utf8JsonBytes.Length == 0)
+        {
+            return false;
+        }
+
+        IntPtr blobPtr = Marshal.AllocHGlobal(utf8JsonBytes.Length);
+        try
+        {
+            Marshal.Copy(utf8JsonBytes, 0, blobPtr, utf8JsonBytes.Length);
+            NativeCredential cred = new()
+            {
+                Flags = 0u,
+                Type = 1u, // CRED_TYPE_GENERIC
+                TargetName = AgyKeyringTargetName,
+                Comment = null,
+                LastWritten = default,
+                CredentialBlobSize = (uint)utf8JsonBytes.Length,
+                CredentialBlob = blobPtr,
+                Persist = 2u, // CRED_PERSIST_LOCAL_MACHINE
+                AttributeCount = 0u,
+                Attributes = IntPtr.Zero,
+                TargetAlias = null,
+                UserName = AgyKeyringUserName
+            };
+
+            return CredWriteW(ref cred, 0u);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(blobPtr);
+        }
+    }
+
+    private static bool TryWriteLineToProcessConIn(uint processId, string text)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = FreeConsole();
+            if (!AttachConsole(processId))
+            {
+                return false;
+            }
+
+            IntPtr hConIn = CreateFileW("CONIN$", 0x80000000u | 0x40000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
+            if (hConIn == IntPtr.Zero || hConIn == new IntPtr(-1))
+            {
+                _ = FreeConsole();
+                return false;
+            }
+
+            try
+            {
+                string full = text + "\r\n";
+                NativeInputRecord[] records = new NativeInputRecord[full.Length * 2];
+                for (int i = 0; i < full.Length; i++)
+                {
+                    char ch = full[i];
+                    ushort vk = (ch == '\r' || ch == '\n') ? (ushort)0x0D : (ushort)0;
+                    ushort scan = (ch == '\r' || ch == '\n') ? (ushort)0x1C : (ushort)0;
+                    records[i * 2] = new NativeInputRecord
+                    {
+                        EventType = 1,
+                        KeyEvent = new NativeKeyEventRecord
+                        {
+                            bKeyDown = 1,
+                            wRepeatCount = 1,
+                            wVirtualKeyCode = vk,
+                            wVirtualScanCode = scan,
+                            UnicodeChar = ch,
+                            dwControlKeyState = 0
+                        }
+                    };
+                    records[(i * 2) + 1] = new NativeInputRecord
+                    {
+                        EventType = 1,
+                        KeyEvent = new NativeKeyEventRecord
+                        {
+                            bKeyDown = 0,
+                            wRepeatCount = 1,
+                            wVirtualKeyCode = vk,
+                            wVirtualScanCode = scan,
+                            UnicodeChar = ch,
+                            dwControlKeyState = 0
+                        }
+                    };
+                }
+
+                return WriteConsoleInputW(hConIn, records, (uint)records.Length, out _);
+            }
+            finally
+            {
+                _ = CloseHandle(hConIn);
+                _ = FreeConsole();
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeCredential
+    {
+        public uint Flags;
+        public uint Type;
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string TargetName;
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string? Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string? TargetAlias;
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string UserName;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct NativeInputRecord
+    {
+        [FieldOffset(0)]
+        public ushort EventType;
+
+        [FieldOffset(4)]
+        public NativeKeyEventRecord KeyEvent;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeKeyEventRecord
+    {
+        public int bKeyDown;
+        public ushort wRepeatCount;
+        public ushort wVirtualKeyCode;
+        public ushort wVirtualScanCode;
+        public char UnicodeChar;
+        public uint dwControlKeyState;
+    }
+
+#pragma warning disable SYSLIB1054 // Struct marshalling for CREDENTIALW and INPUT_RECORD uses classic DllImport
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredReadW(string target, uint type, uint reservedFlag, out IntPtr credentialPtr);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredWriteW(ref NativeCredential userCredential, uint flags);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern void CredFree(IntPtr cred);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FreeConsole();
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(uint dwProcessId);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool WriteConsoleInputW(
+        IntPtr hConsoleInput,
+        NativeInputRecord[] lpBuffer,
+        uint nLength,
+        out uint lpNumberOfEventsWritten);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr GetClipboardData(uint uFormat);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr hMem);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr hMem);
+#pragma warning restore SYSLIB1054
 
     private static string FirstLine(string text)
     {
@@ -1996,14 +2770,17 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         return newlineIdx >= 0 ? text[..newlineIdx].Trim() : text.Trim();
     }
 
-    [GeneratedRegex(@"https://accounts\.google\.com/[^\s""'<>]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex GoogleOAuthUrlRegex();
+    [GeneratedRegex(@"antigravity\.google/oauth-callback\?[^\x00-\x20""'<>]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OAuthCallbackUrlInBinaryRegex();
 
-    [GeneratedRegex(@"[?&]code=(?<code>[^&#\s]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[?&]code=(?<code>[^&#\s\x00-\x1f""'<>]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UrlCodeQueryParamRegex();
 
     [GeneratedRegex(@"\[ACTION:(?<kind>[A-Za-z0-9_]+)(?:\|(?<params>[^\]]*))?\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ActionTagRegex();
+
+    [GeneratedRegex(@"\[LEARN:(?<category>[A-Za-z0-9_]+)\|(?<key>[^\|\]\r\n]+)\|(?<content>[^\]]+)\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex LearnTagRegex();
 
     [GeneratedRegex(@"(?:đăng(?:\s+bài)?\s+(?:lên|vào)|publish\s+to)\s+(?<count>\d+)\s+(?:nhóm|groups?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NaturalPublishGroupsRegex();

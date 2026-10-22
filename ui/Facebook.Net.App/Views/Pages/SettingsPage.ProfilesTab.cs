@@ -83,6 +83,7 @@ public sealed partial class SettingsPage
 
         // Row 1: Unified 2-Level Search & Filter Bar
         BulkObservableCollection<BrowserProfileOption> filteredProfiles = new();
+        List<BrowserProfileOption> cachedProfiles = new();
         Dictionary<string, long> profileSizeCache = new(StringComparer.OrdinalIgnoreCase);
         string? sourceFilter = null; // "managed", "system", or null
         SearchFilterBar profileSearchBar = null!;
@@ -94,16 +95,18 @@ public sealed partial class SettingsPage
             headerTitleTb.Text = $"{this._i18n["Settings.ProfilesHeader"]} — {browserLabel}";
         }
 
+        void ReloadProfilesFromDisk() =>
+            cachedProfiles = this._vm.GetAvailableBrowserProfiles();
+
         void RefreshFilteredProfiles()
         {
             UpdateHeaderWithActiveBrowser();
-            List<BrowserProfileOption> allProfiles = this._vm.GetAvailableBrowserProfiles();
             string q = (profileSearchBar?.SearchTextBox.Text ?? string.Empty).Trim();
-            List<BrowserProfileOption> matches = new(allProfiles.Count);
+            List<BrowserProfileOption> matches = new(cachedProfiles.Count);
 
-            for (int i = 0; i < allProfiles.Count; i++)
+            for (int i = 0; i < cachedProfiles.Count; i++)
             {
-                BrowserProfileOption opt = allProfiles[i];
+                BrowserProfileOption opt = cachedProfiles[i];
                 if (string.Equals(sourceFilter, "managed", StringComparison.OrdinalIgnoreCase) && !opt.IsManagedByApp)
                 {
                     continue;
@@ -157,6 +160,7 @@ public sealed partial class SettingsPage
         Grid.SetRow(profileSearchBar, 1);
         pageGrid.Children.Add(profileSearchBar);
 
+        ReloadProfilesFromDisk();
         RefreshFilteredProfiles();
 
         // Row 2: Profiles ListBox with Per-Row Use & Conditional Delete (App-Managed Only)
@@ -303,6 +307,7 @@ public sealed partial class SettingsPage
                     useProfileBtn.Click += async (_, _) =>
                     {
                         await this._vm.AssignBrowserProfileToSelectedAccountAsync(opt.DirectoryPath, opt.DisplayName).ConfigureAwait(true);
+                        ReloadProfilesFromDisk();
                         RefreshFilteredProfiles();
                     };
                     Grid.SetColumn(useProfileBtn, 3);
@@ -337,6 +342,7 @@ public sealed partial class SettingsPage
                                 async () =>
                                 {
                                     _ = await this._vm.DeleteManagedBrowserProfileAsync(opt).ConfigureAwait(true);
+                                    ReloadProfilesFromDisk();
                                     RefreshFilteredProfiles();
                                 });
                         },
@@ -439,6 +445,7 @@ public sealed partial class SettingsPage
 
             CloseCreateModal();
             _ = await this._vm.CreateAndAssignBrowserProfileAsync(rawName).ConfigureAwait(true);
+            ReloadProfilesFromDisk();
             RefreshFilteredProfiles();
         };
 
@@ -466,6 +473,7 @@ public sealed partial class SettingsPage
         {
             profileSizeCache.Clear();
             StorageUsageAnalyzer.InvalidateCache();
+            ReloadProfilesFromDisk();
             RefreshFilteredProfiles();
         };
         browseFolderBtn.Click += async (_, _) =>
@@ -474,6 +482,7 @@ public sealed partial class SettingsPage
             if (!string.IsNullOrWhiteSpace(folderPath))
             {
                 await this._vm.AssignBrowserProfileToSelectedAccountAsync(folderPath).ConfigureAwait(true);
+                ReloadProfilesFromDisk();
                 RefreshFilteredProfiles();
             }
         };
@@ -481,13 +490,21 @@ public sealed partial class SettingsPage
         this._vm.PropertyChanged += (_, e) =>
         {
             if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedBrowserKind), StringComparison.Ordinal) ||
-                string.Equals(e.PropertyName, nameof(ShellViewModel.CustomBrowserExecutablePath), StringComparison.Ordinal) ||
-                string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
+                string.Equals(e.PropertyName, nameof(ShellViewModel.CustomBrowserExecutablePath), StringComparison.Ordinal))
+            {
+                ReloadProfilesFromDisk();
+                RefreshFilteredProfiles();
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.SelectedAccount), StringComparison.Ordinal))
             {
                 RefreshFilteredProfiles();
             }
         };
-        this._vm.Accounts.CollectionChanged += (_, _) => RefreshFilteredProfiles();
+        this._vm.Accounts.CollectionChanged += (_, _) =>
+        {
+            ReloadProfilesFromDisk();
+            RefreshFilteredProfiles();
+        };
 
         tabOverlayHost.Children.Add(pageGrid);
         tabOverlayHost.Children.Add(createModalBackdrop);

@@ -7,8 +7,10 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Components.Controls;
 using Facebook.Net.UI.Components.Icons;
@@ -98,6 +100,7 @@ public sealed partial class AuditLogsPage : UserControl
             drawerVm.SuccessCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Success,
             out TextBlock okCountTb);
+        okPill.Cursor = new Cursor(StandardCursorType.Hand);
 
         Border warnPill = IconMetricPill.Create(
             this._theme,
@@ -105,6 +108,7 @@ public sealed partial class AuditLogsPage : UserControl
             drawerVm.WarningCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Warning,
             out TextBlock warnCountTb);
+        warnPill.Cursor = new Cursor(StandardCursorType.Hand);
 
         Border errPill = IconMetricPill.Create(
             this._theme,
@@ -112,6 +116,7 @@ public sealed partial class AuditLogsPage : UserControl
             drawerVm.ErrorCount.ToString(CultureInfo.InvariantCulture),
             AuditSeverity.Error,
             out TextBlock errCountTb);
+        errPill.Cursor = new Cursor(StandardCursorType.Hand);
 
         countersRow.Children.Add(okPill);
         countersRow.Children.Add(warnPill);
@@ -124,10 +129,10 @@ public sealed partial class AuditLogsPage : UserControl
         Grid.SetRow(topHeaderRow, 0);
         pageGrid.Children.Add(topHeaderRow);
 
-        // Row 1: Unified 2-Level Search & Filter Bar ([ ▽ Bộ lọc (N) | [Chip ×] Tìm hoặc lọc | 🔍 ]) + Refresh + Clear
+        // Row 1: Unified 2-Level Search & Filter Bar ([ ▽ Bộ lọc (N) | [Chip ×] Tìm hoặc lọc | 🔍 ]) + Export CSV + Refresh + Clear
         Grid filterBarRow = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
             ColumnSpacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -162,6 +167,44 @@ public sealed partial class AuditLogsPage : UserControl
             },
             allowMultiple: false,
             initialSelectedIds: drawerVm.SelectedCategory is { } initCat ? [initCat.ToString()] : null);
+
+        FilterCategoryDefinition severityCategory = new(
+            "severity",
+            this._i18n["Audit.FilterCatSeverity"],
+            VectorIcons.InfoCircle,
+            () =>
+            [
+                new FilterOptionItem(nameof(AuditSeverity.Success), nameof(AuditSeverity.Success), "#10B981"),
+                new FilterOptionItem(nameof(AuditSeverity.Warning), nameof(AuditSeverity.Warning), "#F59E0B"),
+                new FilterOptionItem(nameof(AuditSeverity.Error), nameof(AuditSeverity.Error), "#EF4444"),
+                new FilterOptionItem(nameof(AuditSeverity.Info), nameof(AuditSeverity.Info), "#3B82F6")
+            ],
+            selectedIds =>
+            {
+                drawerVm.SelectedSeverity = selectedIds.Count > 0 && Enum.TryParse<AuditSeverity>(selectedIds[0], out AuditSeverity parsedSev)
+                    ? parsedSev
+                    : null;
+                _ = drawerVm.RefreshLogsAsync();
+            },
+            allowMultiple: false,
+            initialSelectedIds: drawerVm.SelectedSeverity is { } initSev ? [initSev.ToString()] : null);
+
+        void ToggleSeverityFilter(AuditSeverity targetSeverity)
+        {
+            drawerVm.SelectedSeverity = drawerVm.SelectedSeverity == targetSeverity ? null : targetSeverity;
+            severityCategory.SelectedIds.Clear();
+            if (drawerVm.SelectedSeverity is { } activeSev)
+            {
+                severityCategory.SelectedIds.Add(activeSev.ToString());
+            }
+
+            searchFilterBar.RefreshFilterChips();
+            _ = drawerVm.RefreshLogsAsync();
+        }
+
+        okPill.PointerPressed += (_, _) => ToggleSeverityFilter(AuditSeverity.Success);
+        warnPill.PointerPressed += (_, _) => ToggleSeverityFilter(AuditSeverity.Warning);
+        errPill.PointerPressed += (_, _) => ToggleSeverityFilter(AuditSeverity.Error);
 
         FilterCategoryDefinition timeCategory = new(
             "time",
@@ -207,7 +250,7 @@ public sealed partial class AuditLogsPage : UserControl
             initialSelectedIds: !string.IsNullOrEmpty(drawerVm.SelectedAccountUid) ? [drawerVm.SelectedAccountUid] : null);
 
         searchFilterBar.SetFilterCategories(
-            [catCategory, timeCategory, accountCategory],
+            [catCategory, severityCategory, timeCategory, accountCategory],
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
 
@@ -245,6 +288,42 @@ public sealed partial class AuditLogsPage : UserControl
             await drawerVm.RefreshLogsAsync().ConfigureAwait(true);
         };
 
+        Button exportCsvBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Audit.BtnExportCsv"],
+            command: null,
+            iconSvg: VectorIcons.Download);
+        exportCsvBtn.Height = 36;
+        exportCsvBtn.Click += async (_, _) =>
+        {
+            TopLevel? topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel?.StorageProvider is null)
+            {
+                return;
+            }
+
+            string defaultFileName = $"audit_logs_{DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)}.csv";
+            IStorageFile? file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = this._i18n["Audit.BtnExportCsv"],
+                SuggestedFileName = defaultFileName,
+                DefaultExtension = "csv",
+                FileTypeChoices =
+                [
+                    new FilePickerFileType("CSV") { Patterns = ["*.csv"] }
+                ]
+            }).ConfigureAwait(true);
+
+            if (file is not null)
+            {
+                string? localPath = file.TryGetLocalPath();
+                if (!string.IsNullOrWhiteSpace(localPath))
+                {
+                    _ = await drawerVm.ExportFilteredLogsToCsvAsync(localPath).ConfigureAwait(true);
+                }
+            }
+        };
+
         Button refreshBtn = AppButton.CreateIcon(
             this._theme,
             VectorIcons.Sync,
@@ -273,8 +352,11 @@ public sealed partial class AuditLogsPage : UserControl
                 async () =>
                 {
                     drawerVm.SelectedCategory = null;
+                    drawerVm.SelectedSeverity = null;
                     drawerVm.SelectedTimeRange = AuditTimeRange.AllTime;
                     drawerVm.SelectedAccountUid = null;
+                    drawerVm.SearchKeyword = string.Empty;
+                    searchFilterBar.SearchTextBox.Text = string.Empty;
                     searchFilterBar.ClearAllFilters(invokeCallbacks: false);
                     if (drawerVm.ClearLogsCommand.CanExecute(null))
                     {
@@ -284,9 +366,11 @@ public sealed partial class AuditLogsPage : UserControl
         };
 
         Grid.SetColumn(searchFilterBar, 0);
-        Grid.SetColumn(refreshBtn, 1);
-        Grid.SetColumn(clearBtn, 2);
+        Grid.SetColumn(exportCsvBtn, 1);
+        Grid.SetColumn(refreshBtn, 2);
+        Grid.SetColumn(clearBtn, 3);
         filterBarRow.Children.Add(searchFilterBar);
+        filterBarRow.Children.Add(exportCsvBtn);
         filterBarRow.Children.Add(refreshBtn);
         filterBarRow.Children.Add(clearBtn);
         Grid.SetRow(filterBarRow, 1);
@@ -296,7 +380,7 @@ public sealed partial class AuditLogsPage : UserControl
         DataTableView<AuditLogRecord> auditTable = new(
             this._theme,
             [
-                new DataTableColumn("66", this._i18n["Table.ColTime"]),
+                new DataTableColumn("96", this._i18n["Table.ColTime"]),
                 new DataTableColumn("115", this._i18n["Table.ColAccount"]),
                 new DataTableColumn("105", this._i18n["Table.ColCategory"]),
                 new DataTableColumn("130", this._i18n["Table.ColTarget"]),
@@ -315,6 +399,7 @@ public sealed partial class AuditLogsPage : UserControl
             titleTb.Text = this._i18n["Audit.TaskbarTitle"];
             infoTb.Text = this._i18n["Audit.SearchPlaceholder"];
             catCategory.Title = this._i18n["Audit.FilterCatCategory"];
+            severityCategory.Title = this._i18n["Audit.FilterCatSeverity"];
             timeCategory.Title = this._i18n["Audit.FilterCatTimeRange"];
             accountCategory.Title = this._i18n["Audit.FilterCatAccount"];
             searchFilterBar.UpdateLocalization(
@@ -331,6 +416,7 @@ public sealed partial class AuditLogsPage : UserControl
                     this._i18n["Table.ColMessage"]
                 ],
                 this._i18n["Empty.AuditLogs"]);
+            AppButton.SetText(exportCsvBtn, this._i18n["Audit.BtnExportCsv"]);
             AppButton.SetText(refreshBtn, this._i18n["Audit.BtnRefresh"]);
             AppButton.SetText(clearBtn, this._i18n["Audit.BtnClear"]);
         };

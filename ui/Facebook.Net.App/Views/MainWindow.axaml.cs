@@ -434,7 +434,26 @@ public sealed partial class MainWindow : Window
 
             if (!isConnected)
             {
-                disconnectedStatusDots.Add(statusDotHalo);
+                statusDotHalo.AttachedToVisualTree += (_, _) =>
+                {
+                    if (!disconnectedStatusDots.Contains(statusDotHalo))
+                    {
+                        disconnectedStatusDots.Add(statusDotHalo);
+                    }
+
+                    if (!pulseTimer.IsEnabled)
+                    {
+                        pulseTimer.Start();
+                    }
+                };
+                statusDotHalo.DetachedFromVisualTree += (_, _) =>
+                {
+                    _ = disconnectedStatusDots.Remove(statusDotHalo);
+                    if (disconnectedStatusDots.Count == 0 && pulseTimer.IsEnabled)
+                    {
+                        pulseTimer.Stop();
+                    }
+                };
             }
 
             Grid.SetColumn(av, 0);

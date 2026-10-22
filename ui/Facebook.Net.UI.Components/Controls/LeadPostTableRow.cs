@@ -2,8 +2,13 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -17,7 +22,7 @@ namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
 /// Spacious, structured table row component for <see cref="PostSummary"/> inside <see cref="DataTableView{T}"/>.
-/// Displays Author, Group Badge, Post Content Preview, Buyer-Intent Score, Timestamp, and Comment Status Pill.
+/// Displays Author, Group Badge, Post Content Preview, Buyer-Intent Score, Timestamp, Comment Status Pill, and Customer Color Tags.
 /// </summary>
 public static class LeadPostTableRow
 {
@@ -35,7 +40,11 @@ public static class LeadPostTableRow
         string? quickReplyLabel = null,
         Action? onOpenInBrowser = null,
         string? openBrowserLabel = null,
-        string? detectedPhone = null)
+        string? detectedPhone = null,
+        IReadOnlyList<GroupTag>? assignedLeadTags = null,
+        IReadOnlyList<GroupTag>? allLeadTags = null,
+        Func<string, Task>? onToggleLeadTag = null,
+        Func<string, string, Task>? onCreateQuickLeadTag = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(i18n);
@@ -133,10 +142,23 @@ public static class LeadPostTableRow
 
         StackPanel messageTextStack = new()
         {
-            Spacing = 3,
+            Spacing = 4,
             VerticalAlignment = VerticalAlignment.Center,
             Children = { bodyTb, engagementTb }
         };
+
+        if ((assignedLeadTags is { Count: > 0 }) || onToggleLeadTag is not null || onCreateQuickLeadTag is not null)
+        {
+            WrapPanel leadTagsWrap = BuildLeadTagsWrapRow(
+                theme,
+                i18n,
+                post,
+                assignedLeadTags,
+                allLeadTags,
+                onToggleLeadTag,
+                onCreateQuickLeadTag);
+            messageTextStack.Children.Add(leadTagsWrap);
+        }
 
         Grid messageCell = new()
         {
@@ -246,7 +268,7 @@ public static class LeadPostTableRow
                 Button quickReplyBtn = AppButton.CreateRowIcon(
                     theme,
                     VectorIcons.SalesComment,
-                    quickReplyLabel ?? "Tư vấn",
+                    quickReplyLabel ?? i18n["Leads.BtnSendCommentSelected"],
                     onQuickReply,
                     AuditSeverity.Success);
                 actionRow.Children.Add(quickReplyBtn);
@@ -257,7 +279,7 @@ public static class LeadPostTableRow
                 Button openBrowserBtn = AppButton.CreateRowIcon(
                     theme,
                     VectorIcons.ExternalLink,
-                    openBrowserLabel ?? "Mở bài",
+                    openBrowserLabel ?? i18n["Leads.BtnOpenPostInBrowser"],
                     onOpenInBrowser);
                 actionRow.Children.Add(openBrowserBtn);
             }
@@ -312,5 +334,315 @@ public static class LeadPostTableRow
         ThemeLifecycle.Bind(rowContainer, theme, ApplyRowBorder);
 
         return rowContainer;
+    }
+
+    /// <summary>
+    /// Creates a compact wrap panel of assigned customer color tags and a <c>+ Gán nhãn</c> Flyout button
+    /// with 1-click tag toggling and inline quick tag creation.
+    /// </summary>
+    public static WrapPanel BuildLeadTagsWrapRow(
+        ThemeService theme,
+        LocalizationService i18n,
+        PostSummary post,
+        IReadOnlyList<GroupTag>? assignedLeadTags,
+        IReadOnlyList<GroupTag>? allLeadTags,
+        Func<string, Task>? onToggleLeadTag,
+        Func<string, string, Task>? onCreateQuickLeadTag)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(i18n);
+        ArgumentNullException.ThrowIfNull(post);
+
+        WrapPanel tagsWrap = new()
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 5,
+            LineSpacing = 4,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (assignedLeadTags is not null)
+        {
+            for (int i = 0; i < assignedLeadTags.Count; i++)
+            {
+                GroupTag assignedTag = assignedLeadTags[i];
+                Border pill = GroupRowCard.CreateTagPill(
+                    assignedTag,
+                    isActive: true,
+                    onClick: onToggleLeadTag is not null ? () => _ = onToggleLeadTag(assignedTag.Id) : null);
+                tagsWrap.Children.Add(pill);
+            }
+        }
+
+        if (onToggleLeadTag is not null || onCreateQuickLeadTag is not null)
+        {
+            Button assignTagBtn = CreateAssignLeadTagFlyoutButton(
+                theme,
+                i18n,
+                post,
+                allLeadTags,
+                onToggleLeadTag,
+                onCreateQuickLeadTag);
+            tagsWrap.Children.Add(assignTagBtn);
+        }
+
+        return tagsWrap;
+    }
+
+    private static Button CreateAssignLeadTagFlyoutButton(
+        ThemeService theme,
+        LocalizationService i18n,
+        PostSummary post,
+        IReadOnlyList<GroupTag>? allLeadTags,
+        Func<string, Task>? onToggleLeadTag,
+        Func<string, string, Task>? onCreateQuickLeadTag)
+    {
+        TextBlock btnLabel = new()
+        {
+            Text = $"+ {i18n["Leads.BtnAssignTag"]}",
+            FontSize = 10.5,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Flyout flyout = new()
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            ShowMode = FlyoutShowMode.Standard
+        };
+
+        StackPanel flyoutStack = new()
+        {
+            Spacing = 7,
+            Width = 248
+        };
+
+        Border flyoutCard = SurfaceCard.Create(theme, flyoutStack, new Thickness(10));
+        flyout.Content = flyoutCard;
+
+        string selectedColorHex = GroupRowCard.PresetTagColors[0];
+
+        void RebuildFlyoutContent()
+        {
+            flyoutStack.Children.Clear();
+
+            TextBlock headerTb = SectionHeader.CreateLabel(
+                theme,
+                i18n["Leads.TagPickerHeader"],
+                11.5,
+                FontWeight.Bold);
+            flyoutStack.Children.Add(headerTb);
+
+            StackPanel tagListStack = new() { Spacing = 4 };
+            if (allLeadTags is { Count: > 0 })
+            {
+                for (int i = 0; i < allLeadTags.Count; i++)
+                {
+                    GroupTag tag = allLeadTags[i];
+                    bool hasTag = post.HasTag(tag.Id);
+
+                    Color parsedColor = Color.TryParse(tag.ColorHex, out Color c)
+                        ? c
+                        : Color.FromRgb(59, 130, 246);
+
+                    Border dot = new()
+                    {
+                        Width = 9,
+                        Height = 9,
+                        CornerRadius = new CornerRadius(999),
+                        Background = new SolidColorBrush(parsedColor),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+
+                    TextBlock nameTb = SectionHeader.CreateLabel(
+                        theme,
+                        tag.Name,
+                        11.5,
+                        hasTag ? FontWeight.Bold : FontWeight.Medium);
+                    nameTb.VerticalAlignment = VerticalAlignment.Center;
+                    nameTb.TextTrimming = TextTrimming.CharacterEllipsis;
+
+                    TextBlock checkTb = new()
+                    {
+                        Text = hasTag ? "✓" : string.Empty,
+                        FontSize = 12,
+                        FontWeight = FontWeight.Bold,
+                        Foreground = new SolidColorBrush(parsedColor),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+
+                    Grid rowGrid = new()
+                    {
+                        ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                        ColumnSpacing = 8,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(dot, 0);
+                    Grid.SetColumn(nameTb, 1);
+                    Grid.SetColumn(checkTb, 2);
+                    rowGrid.Children.Add(dot);
+                    rowGrid.Children.Add(nameTb);
+                    rowGrid.Children.Add(checkTb);
+
+                    Button tagOptionBtn = new()
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        CornerRadius = new CornerRadius(6),
+                        BorderThickness = new Thickness(1),
+                        Padding = new Thickness(8, 5),
+                        Background = hasTag
+                            ? new SolidColorBrush(Color.FromArgb(36, parsedColor.R, parsedColor.G, parsedColor.B))
+                            : theme.Palette.SecondarySurface,
+                        BorderBrush = hasTag
+                            ? new SolidColorBrush(Color.FromArgb(140, parsedColor.R, parsedColor.G, parsedColor.B))
+                            : theme.Palette.SubtleBorder,
+                        Content = rowGrid,
+                        Cursor = new Cursor(StandardCursorType.Hand)
+                    };
+
+                    tagOptionBtn.Click += async (_, _) =>
+                    {
+                        flyout.Hide();
+                        if (onToggleLeadTag is not null)
+                        {
+                            await onToggleLeadTag(tag.Id).ConfigureAwait(true);
+                        }
+                    };
+
+                    tagListStack.Children.Add(tagOptionBtn);
+                }
+            }
+
+            ScrollViewer listScroll = new()
+            {
+                MaxHeight = 175,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = tagListStack
+            };
+            flyoutStack.Children.Add(listScroll);
+
+            if (onCreateQuickLeadTag is not null)
+            {
+                Border divider = new()
+                {
+                    Height = 1,
+                    Background = theme.Palette.SubtleBorder,
+                    Margin = new Thickness(0, 2)
+                };
+                flyoutStack.Children.Add(divider);
+
+                TextBox newTagNameBox = FormField.CreateTextBox(
+                    theme,
+                    i18n["Leads.QuickNewTagWatermark"]);
+                newTagNameBox.FontSize = 11.5;
+
+                StackPanel colorDotsRow = new()
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                List<Border> dotBorders = new(6);
+                int colorCount = Math.Min(6, GroupRowCard.PresetTagColors.Length);
+
+                void UpdateSelectedColorVisuals()
+                {
+                    for (int idx = 0; idx < dotBorders.Count; idx++)
+                    {
+                        string hex = GroupRowCard.PresetTagColors[idx];
+                        bool isSel = string.Equals(hex, selectedColorHex, StringComparison.OrdinalIgnoreCase);
+                        dotBorders[idx].BorderThickness = isSel ? new Thickness(2) : new Thickness(0);
+                        dotBorders[idx].BorderBrush = isSel ? theme.Palette.TextPrimary : Brushes.Transparent;
+                    }
+                }
+
+                for (int cIdx = 0; cIdx < colorCount; cIdx++)
+                {
+                    string colorHex = GroupRowCard.PresetTagColors[cIdx];
+                    Color dotColor = Color.TryParse(colorHex, out Color parsed) ? parsed : Color.FromRgb(59, 130, 246);
+                    Border colorDot = new()
+                    {
+                        Width = 18,
+                        Height = 18,
+                        CornerRadius = new CornerRadius(999),
+                        Background = new SolidColorBrush(dotColor),
+                        Cursor = new Cursor(StandardCursorType.Hand)
+                    };
+                    colorDot.PointerPressed += (_, _) =>
+                    {
+                        selectedColorHex = colorHex;
+                        UpdateSelectedColorVisuals();
+                    };
+                    dotBorders.Add(colorDot);
+                    colorDotsRow.Children.Add(colorDot);
+                }
+
+                UpdateSelectedColorVisuals();
+
+                Button createBtn = AppButton.CreatePrimary(
+                    theme,
+                    i18n["Leads.BtnCreateQuickTag"],
+                    iconSvg: VectorIcons.Plus);
+                createBtn.Padding = new Thickness(8, 4);
+                createBtn.HorizontalAlignment = HorizontalAlignment.Right;
+
+                createBtn.Click += async (_, _) =>
+                {
+                    string rawName = (newTagNameBox.Text ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(rawName))
+                    {
+                        return;
+                    }
+
+                    flyout.Hide();
+                    await onCreateQuickLeadTag(rawName, selectedColorHex).ConfigureAwait(true);
+                };
+
+                Grid bottomActionRow = new()
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                    ColumnSpacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(colorDotsRow, 0);
+                Grid.SetColumn(createBtn, 1);
+                bottomActionRow.Children.Add(colorDotsRow);
+                bottomActionRow.Children.Add(createBtn);
+
+                flyoutStack.Children.Add(newTagNameBox);
+                flyoutStack.Children.Add(bottomActionRow);
+            }
+        }
+
+        flyout.Opening += (_, _) => RebuildFlyoutContent();
+
+        Button btn = new()
+        {
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(7, 2),
+            MinHeight = 20,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Content = btnLabel,
+            Flyout = flyout,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+
+        void ApplyStyle()
+        {
+            btn.Background = theme.Palette.SecondarySurface;
+            btn.BorderBrush = theme.Palette.InteractiveBorder;
+            btnLabel.Foreground = theme.Palette.TextSecondary;
+        }
+
+        ApplyStyle();
+        ThemeLifecycle.Bind(btn, theme, ApplyStyle);
+
+        i18n.LanguageChanged += (_, _) => btnLabel.Text = $"+ {i18n["Leads.BtnAssignTag"]}";
+        return btn;
     }
 }

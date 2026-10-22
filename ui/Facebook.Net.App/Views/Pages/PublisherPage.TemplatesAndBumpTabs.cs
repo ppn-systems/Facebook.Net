@@ -25,7 +25,7 @@ namespace Facebook.Net.App.Views.Pages;
 /// </summary>
 public sealed partial class PublisherPage
 {
-    private Control BuildPublishedPostsAndRepostTab(out Action refreshI18n)
+    private Control BuildPublishedPostsAndRepostTab(Action? onSwitchToComposeTab, out Action refreshI18n)
     {
         Grid tabGrid = new()
         {
@@ -360,7 +360,7 @@ public sealed partial class PublisherPage
         // Right Column: Repost Selected Post to Groups / Colored Tags
         Grid repostCardGrid = new()
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
             RowSpacing = 8
         };
 
@@ -417,9 +417,11 @@ public sealed partial class PublisherPage
                 }
             }
 
-            AppButton.SetText(
-                repostNowBtn,
-                this._i18n.Format("Publisher.BtnRepostToGroupsDynamic", enabledGroups));
+            string repostLabel = !string.IsNullOrWhiteSpace(this._vm.CampaignProgressText)
+                ? this._vm.CampaignProgressText
+                : this._i18n.Format("Publisher.BtnRepostToGroupsDynamic", enabledGroups);
+
+            AppButton.SetText(repostNowBtn, repostLabel);
         }
 
         Control embeddedGroupTagPicker = this.BuildTargetGroupAndTagPickerCard(
@@ -427,6 +429,38 @@ public sealed partial class PublisherPage
             onSelectionChanged: UpdateRepostButtonLabel);
         Grid.SetRow(embeddedGroupTagPicker, 2);
         repostCardGrid.Children.Add(embeddedGroupTagPicker);
+
+        Grid quickPostActionsRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 8
+        };
+
+        Button cloneToComposerBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnCloneToComposer"],
+            command: null,
+            iconSvg: VectorIcons.Edit);
+        cloneToComposerBtn.Click += (_, _) =>
+        {
+            this._vm.ClonePublishedPostToComposer(this._vm.SelectedPublishedPost);
+            onSwitchToComposeTab?.Invoke();
+        };
+
+        Button bumpSingleNowBtn = AppButton.CreateSecondary(
+            this._theme,
+            this._i18n["Publisher.BtnBumpSelectedNow"],
+            command: null,
+            iconSvg: VectorIcons.SalesComment);
+        bumpSingleNowBtn.Click += async (_, _) =>
+            await this._vm.BumpSinglePublishedPostAsync(this._vm.SelectedPublishedPost).ConfigureAwait(true);
+
+        Grid.SetColumn(cloneToComposerBtn, 0);
+        Grid.SetColumn(bumpSingleNowBtn, 1);
+        quickPostActionsRow.Children.Add(cloneToComposerBtn);
+        quickPostActionsRow.Children.Add(bumpSingleNowBtn);
+        Grid.SetRow(quickPostActionsRow, 3);
+        repostCardGrid.Children.Add(quickPostActionsRow);
 
         repostNowBtn = AppButton.CreatePrimary(
             this._theme,
@@ -436,7 +470,7 @@ public sealed partial class PublisherPage
         repostNowBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
         UpdateRepostButtonLabel();
 
-        Grid.SetRow(repostNowBtn, 3);
+        Grid.SetRow(repostNowBtn, 4);
         repostCardGrid.Children.Add(repostNowBtn);
 
         Border rightRepostCard = SurfaceCard.Create(this._theme, repostCardGrid, new Thickness(14));
@@ -452,6 +486,10 @@ public sealed partial class PublisherPage
                      !string.Equals(repostCaptionBox.Text, this._vm.RepostCustomSpintaxText, StringComparison.Ordinal))
             {
                 repostCaptionBox.Text = this._vm.RepostCustomSpintaxText;
+            }
+            else if (string.Equals(e.PropertyName, nameof(ShellViewModel.CampaignProgressText), StringComparison.Ordinal))
+            {
+                UpdateRepostButtonLabel();
             }
         };
 
@@ -479,6 +517,8 @@ public sealed partial class PublisherPage
             emptyPostsTb.Text = this._i18n["Empty.PublishedPosts"];
             repostHeaderTb.Text = this._i18n["Publisher.RepostPanelTitle"];
             repostCaptionBox.PlaceholderText = this._i18n["Publisher.RepostCaptionPlaceholder"];
+            AppButton.SetText(cloneToComposerBtn, this._i18n["Publisher.BtnCloneToComposer"]);
+            AppButton.SetText(bumpSingleNowBtn, this._i18n["Publisher.BtnBumpSelectedNow"]);
             rebuildRepostVars();
             refreshRepostPicker();
             RefreshFilteredPosts();
@@ -614,13 +654,13 @@ public sealed partial class PublisherPage
             {
                 Grid cardGrid = new()
                 {
-                    RowDefinitions = new RowDefinitions("Auto,Auto"),
+                    RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
                     RowSpacing = 6
                 };
 
                 Grid topRow = new()
                 {
-                    ColumnDefinitions = new ColumnDefinitions("*,110,108,28"),
+                    ColumnDefinitions = new ColumnDefinitions("*,110,108,52,28"),
                     ColumnSpacing = 8,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -684,6 +724,76 @@ public sealed partial class PublisherPage
                     }
                 };
 
+                StackPanel inlineEditPanel = new()
+                {
+                    Spacing = 6,
+                    IsVisible = false,
+                    Margin = new Thickness(0, 4, 0, 0)
+                };
+
+                TextBox editTitleBox = FormField.CreateTextBox(
+                    this._theme,
+                    this._i18n["Publisher.TemplatesTitle"],
+                    tpl.Title);
+                TextBox editContentBox = FormField.CreateTextBox(
+                    this._theme,
+                    this._i18n["Publisher.ContentPlaceholder"],
+                    tpl.SpintaxContent,
+                    multiline: true,
+                    height: 76);
+
+                StackPanel editActionsRow = new()
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    HorizontalAlignment = HorizontalAlignment.Right
+                };
+
+                Button saveEditBtn = AppButton.CreatePrimary(
+                    this._theme,
+                    this._i18n["Publisher.BtnSaveEditTemplate"],
+                    new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
+                    {
+                        inlineEditPanel.IsVisible = false;
+                        await this._vm.UpdateTemplateContentAsync(
+                            tpl,
+                            editTitleBox.Text ?? tpl.Title,
+                            editContentBox.Text ?? tpl.SpintaxContent).ConfigureAwait(true);
+                    }),
+                    VectorIcons.CheckCircle);
+
+                Button cancelEditBtn = AppButton.CreateSecondary(
+                    this._theme,
+                    this._i18n["Groups.BtnCancelEditTag"],
+                    new CommunityToolkit.Mvvm.Input.RelayCommand(() =>
+                    {
+                        editTitleBox.Text = tpl.Title;
+                        editContentBox.Text = tpl.SpintaxContent;
+                        inlineEditPanel.IsVisible = false;
+                    }));
+
+                editActionsRow.Children.Add(cancelEditBtn);
+                editActionsRow.Children.Add(saveEditBtn);
+                inlineEditPanel.Children.Add(editTitleBox);
+                inlineEditPanel.Children.Add(editContentBox);
+                inlineEditPanel.Children.Add(editActionsRow);
+
+                Button editRowBtn = new()
+                {
+                    Content = SectionHeader.CreateLabel(this._theme, this._i18n["Publisher.BtnEditTemplateShort"], 11, FontWeight.SemiBold),
+                    Background = this._theme.Palette.SecondarySurface,
+                    BorderBrush = this._theme.Palette.SubtleBorder,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Height = 28,
+                    Padding = new Thickness(8, 0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                editRowBtn.Click += (_, _) => inlineEditPanel.IsVisible = !inlineEditPanel.IsVisible;
+
                 Button deleteRowBtn = AppButton.CreateRowIcon(
                     this._theme,
                     VectorIcons.Trash,
@@ -711,10 +821,12 @@ public sealed partial class PublisherPage
                 Grid.SetColumn(tplTitleTb, 0);
                 Grid.SetColumn(typePill, 1);
                 Grid.SetColumn(useBtn, 2);
-                Grid.SetColumn(deleteRowBtn, 3);
+                Grid.SetColumn(editRowBtn, 3);
+                Grid.SetColumn(deleteRowBtn, 4);
                 topRow.Children.Add(tplTitleTb);
                 topRow.Children.Add(typePill);
                 topRow.Children.Add(useBtn);
+                topRow.Children.Add(editRowBtn);
                 topRow.Children.Add(deleteRowBtn);
 
                 TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, tpl.SpintaxContent, 12, FontWeight.Normal, isSecondary: true);
@@ -724,8 +836,10 @@ public sealed partial class PublisherPage
 
                 Grid.SetRow(topRow, 0);
                 Grid.SetRow(bodyTb, 1);
+                Grid.SetRow(inlineEditPanel, 2);
                 cardGrid.Children.Add(topRow);
                 cardGrid.Children.Add(bodyTb);
+                cardGrid.Children.Add(inlineEditPanel);
 
                 return SurfaceCard.Create(this._theme, cardGrid, new Thickness(12, 10));
             },
@@ -737,20 +851,6 @@ public sealed partial class PublisherPage
             if (tplList.SelectedItem is CampaignTemplate selectedTpl)
             {
                 this._vm.SelectedTemplate = selectedTpl;
-                if (!selectedTpl.IsCommentTemplate)
-                {
-                    contentBox.Text = selectedTpl.SpintaxContent;
-                    this._vm.PostSpintaxText = selectedTpl.SpintaxContent;
-
-                    string mediaPath = selectedTpl.MediaFilePath ?? string.Empty;
-                    photoBox.Text = mediaPath;
-                    this._vm.PostMediaFilePath = mediaPath;
-                }
-                else
-                {
-                    this._vm.BumpCommentSpintaxText = selectedTpl.SpintaxContent;
-                    this._vm.SalesCommentSpintaxText = selectedTpl.SpintaxContent;
-                }
             }
         };
 

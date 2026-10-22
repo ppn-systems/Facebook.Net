@@ -2,9 +2,11 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -75,9 +77,11 @@ public sealed partial class OverviewPage : UserControl
                 new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.CheckCircle, tab2View)
             ]);
 
+        bool IsOverviewActive() => this._vm.CurrentSection == NavigationSection.Overview;
+
         void RefreshTab2IfVisible()
         {
-            if (subTabBar.SelectedIndex == 1)
+            if (IsOverviewActive() && subTabBar.SelectedIndex == 1)
             {
                 refreshTab2();
             }
@@ -99,9 +103,30 @@ public sealed partial class OverviewPage : UserControl
             }
         };
 
-        this._theme.ThemeChanged += (_, _) => RefreshAll();
+        this._theme.ThemeChanged += (_, _) =>
+        {
+            if (IsOverviewActive())
+            {
+                RefreshAll();
+            }
+        };
         this._vm.PropertyChanged += (_, e) =>
         {
+            if (string.Equals(e.PropertyName, nameof(ShellViewModel.CurrentSection), StringComparison.Ordinal))
+            {
+                if (IsOverviewActive())
+                {
+                    RefreshAll();
+                }
+
+                return;
+            }
+
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             if (string.IsNullOrEmpty(e.PropertyName) ||
                 string.Equals(e.PropertyName, nameof(ShellViewModel.BuyerIntentKeywords), StringComparison.Ordinal))
@@ -113,27 +138,52 @@ public sealed partial class OverviewPage : UserControl
         };
         this._vm.Accounts.CollectionChanged += (_, _) =>
         {
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             RefreshTab2IfVisible();
         };
         this._vm.TargetGroups.CollectionChanged += (_, _) =>
         {
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             RefreshTab2IfVisible();
         };
         this._vm.ScrapedPosts.CollectionChanged += (_, _) =>
         {
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             refreshLeadsWidget();
             RefreshTab2IfVisible();
         };
         this._vm.AuditDrawer.FilteredLogs.CollectionChanged += (_, _) =>
         {
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             RefreshTab2IfVisible();
         };
         this._vm.AuditDrawer.PropertyChanged += (_, _) =>
         {
+            if (!IsOverviewActive())
+            {
+                return;
+            }
+
             refreshTab1Lightweight();
             RefreshTab2IfVisible();
         };
@@ -291,18 +341,27 @@ public sealed partial class OverviewPage : UserControl
             this._i18n["Overview.CheckAccountMissing"],
             AuditSeverity.Warning,
             out TextBlock accReadyTb);
+        accReadyPill.Cursor = new Cursor(StandardCursorType.Hand);
+        accReadyPill.PointerPressed += (_, _) => this._vm.Navigation.NavigateTo(NavigationSection.Accounts);
+
         Border grpReadyPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.Groups,
             this._i18n["Overview.CheckGroupsMissing"],
             AuditSeverity.Info,
             out TextBlock grpReadyTb);
+        grpReadyPill.Cursor = new Cursor(StandardCursorType.Hand);
+        grpReadyPill.PointerPressed += (_, _) => this._vm.Navigation.NavigateTo(NavigationSection.Groups);
+
         Border delayReadyPill = IconMetricPill.Create(
             this._theme,
             VectorIcons.Shield,
             $"{this._i18n["Overview.CheckDelayReady"]}: {this._vm.MinDelaySeconds}s – {this._vm.MaxDelaySeconds}s",
             AuditSeverity.Success,
             out TextBlock delayReadyTb);
+        delayReadyPill.Cursor = new Cursor(StandardCursorType.Hand);
+        delayReadyPill.PointerPressed += (_, _) => this._vm.Navigation.NavigateTo(NavigationSection.Settings);
+
         checklistStack.Children.Add(accReadyPill);
         checklistStack.Children.Add(grpReadyPill);
         checklistStack.Children.Add(delayReadyPill);
@@ -501,22 +560,30 @@ public sealed partial class OverviewPage : UserControl
             StackPanel leadsListStack = new() { Spacing = 8 };
             int shownLeads = 0;
 
+            List<(PostSummary Post, int Score)> pendingCandidates = new();
             for (int i = 0; i < this._vm.ScrapedPosts.Count; i++)
             {
-                PostSummary post = this._vm.ScrapedPosts[i];
-                if (this._vm.IsPostCommented(post.PostId))
+                PostSummary candidate = this._vm.ScrapedPosts[i];
+                if (this._vm.IsPostCommented(candidate.PostId))
                 {
                     continue;
                 }
 
-                if (shownLeads >= 8)
-                {
-                    break;
-                }
+                int candidateScore = ShellViewModel.CalculateBuyerIntentScore(candidate.MessageText, this._vm.BuyerIntentKeywords);
+                pendingCandidates.Add((candidate, candidateScore));
+            }
 
+            if (pendingCandidates.Count > 1)
+            {
+                pendingCandidates.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+            }
+
+            int takeCount = Math.Min(8, pendingCandidates.Count);
+            for (int i = 0; i < takeCount; i++)
+            {
+                (PostSummary post, int score) = pendingCandidates[i];
                 shownLeads++;
                 PostSummary capturedPost = post;
-                int score = ShellViewModel.CalculateBuyerIntentScore(post.MessageText, this._vm.BuyerIntentKeywords);
                 string author = string.IsNullOrWhiteSpace(post.AuthorName) ? this._i18n["Leads.DefaultAuthor"] : post.AuthorName;
                 string snippet = string.IsNullOrWhiteSpace(post.MessageText)
                     ? this._i18n["Leads.EmptyPostText"]

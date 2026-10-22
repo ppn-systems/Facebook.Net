@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.UI.Core.AiAssistant;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using ModelContextProtocol.Server;
 
@@ -42,6 +43,14 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
             content: content.Trim(),
             importance: Math.Clamp(importance, 1, 5),
             accountUid: string.IsNullOrWhiteSpace(accountUid) ? null : accountUid.Trim(),
+            ct: ct).ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            account: null,
+            record.Key,
+            $"MCP saved AI context memory [{record.Category}] '{record.Key}'.",
             ct: ct).ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
@@ -106,6 +115,17 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
         bool deleted = await _manager.AiMemoryStore.DeleteMemoryAsync(idOrKey.Trim(), ct).ConfigureAwait(false);
+        if (deleted)
+        {
+            _ = await _manager.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Warning,
+                account: null,
+                idOrKey.Trim(),
+                $"MCP deleted AI context memory '{idOrKey.Trim()}'.",
+                ct: ct).ConfigureAwait(false);
+        }
+
         return JsonSerializer.Serialize(new
         {
             status = deleted ? "deleted" : "not_found",
@@ -135,6 +155,7 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
 
         IReadOnlyList<SavedTargetGroup> targetGroups = await _manager.AccountStore.GetAllTargetGroupsAsync(ct).ConfigureAwait(false);
         IReadOnlyList<GroupTag> groupTags = await _manager.AccountStore.GetAllGroupTagsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<GroupTag> leadTags = await _manager.AccountStore.GetAllLeadTagsAsync(ct).ConfigureAwait(false);
         IReadOnlyList<CampaignTemplate> templates = await _manager.AccountStore.GetAllCampaignTemplatesAsync(ct).ConfigureAwait(false);
         AppConfig cfg = _manager.Settings.Current;
 
@@ -178,6 +199,12 @@ public sealed class AiMemoryTools(FacebookMcpSessionManager manager)
                 })
             },
             group_tags = groupTags.Select(t => new
+            {
+                id = t.Id,
+                name = t.Name,
+                color_hex = t.ColorHex
+            }),
+            lead_tags = leadTags.Select(t => new
             {
                 id = t.Id,
                 name = t.Name,

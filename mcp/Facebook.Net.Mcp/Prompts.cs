@@ -30,10 +30,11 @@ public sealed class Prompts
                     Content = new TextContentBlock
                     {
                         Text = $"""
-                            Call the `fb_query_scraped_leads` tool with keywords = "{keywords}" and commentStatus = "pending".
-                            Review the highest-scoring buyer-intent posts and present a concise summary in {language}:
-                            1. Author name, Group name, Buyer-Intent Score, and key inquiry details.
-                            2. A natural, helpful sales comment draft (with Spintax variations) ready to send via `fb_create_comment`.
+                            1. Call `fb_search_leads_advanced` (with keywords = "{keywords}" and commentStatus = "pending") and `fb_analyze_workspace_data` (with buyerKeywords = "{keywords}").
+                            2. Review the highest-scoring buyer-intent posts (including extracted Vietnamese phone numbers and zero-comment first-mover opportunities) and present a concise summary in {language}:
+                               - Author name, Group name, Buyer-Intent Score, Extracted Phones, and key inquiry details.
+                               - Offer to auto-tag high-value leads via `fb_auto_tag_leads_by_rules` or `fb_assign_lead_tag`.
+                               - Draft a natural, helpful sales comment (with Spintax variations) ready to send via `fb_create_comment`.
                             """
                     }
                 }
@@ -64,7 +65,7 @@ public sealed class Prompts
                             Requirements:
                             - Tone: {{tone}}
                             - Use valid Spintax syntax (`{option1|option2|option3}`) for greetings, call-to-actions, and key phrases so every group post is unique.
-                            - Provide 1 main post template and 1 short bump/sales comment template, and offer to save them via `fb_save_template`.
+                            - Provide 1 main post template and 1 short bump/sales comment template (supporting `{group_name}`, `{date}`, `{time}`, `{random_id}`), and offer to save them via `fb_save_template` or bump existing group posts via `fb_bump_recent_posts`.
                             """
                     }
                 }

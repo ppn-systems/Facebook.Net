@@ -15,6 +15,7 @@ using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Groups;
 using Facebook.Net.UI.Core.Leads;
+using Facebook.Net.UI.Core.Publisher;
 using Microsoft.Extensions.Logging;
 
 namespace Facebook.Net.Mcp;
@@ -64,7 +65,9 @@ public sealed class FacebookMcpSessionManager : IDisposable
         this.LeadScoring = LeadScoringService.Instance;
         this.AccountVault = AccountVaultDomainService.Instance;
         this.GroupTagService = GroupTagDomainService.Instance;
+        this.CampaignPublisher = CampaignPublisherDomainService.Instance;
         this.StorageUsage = StorageUsageService.Instance;
+        this.AppRelease = GitHubAppReleaseService.Instance;
         _activeAccountUid = this.Settings.Current.LastSelectedAccountUid;
     }
 
@@ -101,8 +104,14 @@ public sealed class FacebookMcpSessionManager : IDisposable
     /// <summary>Gets the group tag domain service.</summary>
     public IGroupTagDomainService GroupTagService { get; }
 
+    /// <summary>Gets the campaign publisher domain service.</summary>
+    public ICampaignPublisherDomainService CampaignPublisher { get; }
+
     /// <summary>Gets the storage usage analysis domain service.</summary>
     public IStorageUsageService StorageUsage { get; }
+
+    /// <summary>Gets the application release update check domain service.</summary>
+    public IAppReleaseService AppRelease { get; }
 
     /// <summary>Gets the currently selected active account UID.</summary>
     public string? ActiveAccountUid => _activeAccountUid;
@@ -175,18 +184,25 @@ public sealed class FacebookMcpSessionManager : IDisposable
         if (_bootstrapStarted == 0)
         {
             await this.InitializeAsync(ct).ConfigureAwait(false);
-            return;
+        }
+        else
+        {
+            using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _bootstrapCompletion.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Continue even if bootstrap timed out
+            }
         }
 
-        using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-        try
+        AppConfig reloaded = this.Settings.Reload();
+        if (!string.IsNullOrWhiteSpace(reloaded.LastSelectedAccountUid))
         {
-            await _bootstrapCompletion.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Continue even if bootstrap timed out
+            _activeAccountUid = reloaded.LastSelectedAccountUid;
         }
     }
 

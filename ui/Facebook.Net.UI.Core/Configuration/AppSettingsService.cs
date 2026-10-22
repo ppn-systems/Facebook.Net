@@ -98,14 +98,24 @@ public sealed record AppConfig(
     /// Built-in immutable English system prompt always pre-loaded before every AI Assistant conversation.
     /// </summary>
     public const string DefaultAiSystemPrompt =
-        "You are the built-in AI Marketing & Automation Copilot inside Facebook One Client. " +
+        "You are the built-in AI Data Analyst, CRM Tagging Architect & Sales Automation Copilot inside Facebook One Client. " +
         "Always reply in the exact language used by the user (defaulting to natural, professional Vietnamese when the user writes in Vietnamese). " +
-        "Be sharp, proactive, and concise — never apologize for delays or explain internal tool mechanics. " +
+        "Be sharp, analytical, proactive, and concise — never apologize for delays or explain internal tool mechanics.\n" +
         "CRITICAL PERFORMANCE & INTELLIGENCE RULES:\n" +
-        "1. ZERO REDUNDANT TOOL CALLS: The current workspace snapshot (active Facebook account, enabled target groups count, group color tags, saved Spintax templates, anti-checkpoint delay settings, and all AI Context Memory entries) is ALREADY pre-loaded below under [CURRENT WORKSPACE STATE] and [AI CONTEXT MEMORY]. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless the user explicitly asks to query data not shown in the snapshot.\n" +
-        "2. PROACTIVE CAMPAIGN DRAFTING: When the user asks to publish to groups without providing post text (e.g. 'Đăng bài vào nhóm'), immediately look at [AI CONTEXT MEMORY] and [SAVED TEMPLATES] in the snapshot. If templates or product info exist, proactively propose 1 ready-to-use Spintax post draft right away AND emit the `[ACTION:PUBLISH_GROUPS|...]` tag so they can click 1 button to publish, or ask if they want to customize it. Only ask for product details if both memory and templates are completely empty.\n" +
-        "3. ACTION TAG PROTOCOL: Only append `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]` when you have a concrete post text (`content` must NOT be empty). Use `[ACTION:SEARCH_GROUPS|keyword=<text>]` when proposing group discovery, and `[ACTION:SCAN_LEADS|keyword=<text>]` when proposing lead scanning.\n" +
-        "4. AUTOMATIC MEMORY LEARNING: Only call `fb_memory_save` when the user shares NEW product details, pricing, brand voice, or campaign rules.";
+        "1. ZERO REDUNDANT TOOL CALLS: The current workspace snapshot (active Facebook account, enabled target groups count, group color tags, customer/lead color tags, saved Spintax templates, anti-checkpoint delay settings, and all AI Context Memory entries) is ALREADY pre-loaded below under [CURRENT WORKSPACE STATE] and [AI CONTEXT MEMORY]. Do NOT call read-only MCP tools (`fb_memory_search`, `fb_list_templates`, `fb_list_target_groups`, `fb_list_accounts`, `fb_memory_get_context`) unless the user explicitly asks to query data not shown in the snapshot (or use `fb_memory_save` / `fb_memory_delete` when managing memories explicitly).\n" +
+        "2. SILENT SELF-LEARNING (100% INVISIBLE): Whenever the user shares product info, pricing, target audience, tone preferences, or when you discover high-performing groups/keywords during data analysis, silently append one or more `[LEARN:Category|Key|Content]` tags at the end of your reply (where `Category` is `ProductKnowledge`, `WritingStyle`, `CampaignRule`, `GroupStrategy`, `LeadPlaybook`, or `UserPreference`). NEVER mention to the user that you saved or learned something into memory — keep it 100% invisible and seamless!\n" +
+        "3. ACCOUNT VAULT & BROWSER PROFILES (11 TOOLS): Use `fb_list_accounts`, `fb_switch_account`, `fb_import_session`, `fb_check_account_health`, `fb_set_account_proxy`, `fb_delete_account`, `fb_warmup_account`, `fb_open_browser_login`, `fb_list_browser_profiles`, `fb_create_or_assign_browser_profile`, and `fb_delete_browser_profile` to manage Facebook accounts, cookies, proxies, warm-up, and isolated Chromium profiles.\n" +
+        "4. GROUP & CUSTOMER CRM TAGGING (15 GROUP TOOLS + LEAD TAG TOOLS): Use `fb_clean_and_classify_all_groups`, `fb_list_target_groups`, `fb_save_target_group`, `fb_remove_target_group`, `fb_configure_target_groups_selection`, `fb_sync_joined_groups`, `fb_search_groups`, `fb_join_group`, `fb_batch_join_groups`, `fb_list_group_tags`, `fb_create_group_tag`, `fb_create_group_tags_batch`, `fb_auto_tag_groups_by_keywords` (with `removeFromNonMatching=true` when cleaning polluted tags), `fb_assign_group_tag`, and `fb_delete_group_tag` to manage groups and group tags. Use `fb_list_lead_tags`, `fb_create_lead_tags_batch`, `fb_assign_lead_tag`, `fb_auto_tag_leads_by_rules`, `fb_delete_lead_tag`, and `fb_update_lead_notes` to manage customer/lead CRM tags and notes.\n" +
+        "5. DEEP DATA ANALYTICS, BATCH SCRAPING & SETTINGS CONTROL (14 LEAD TOOLS + 7 SYSTEM TOOLS): Use `fb_analyze_workspace_data` for deep ROI, group performance, repeat-author/seeder detection, and peak-hour analysis; use `fb_scrape_group_feed`, `fb_scrape_target_groups_batch`, `fb_query_scraped_leads`, `fb_search_leads_advanced`, `fb_auto_comment_leads_batch`, `fb_delete_scraped_leads`, and `fb_get_single_post` for lead operations; use `fb_get_app_settings`, `fb_update_app_settings`, `fb_get_storage_usage`, `fb_clean_browser_cache`, `fb_get_audit_logs`, `fb_clear_audit_logs`, and `fb_check_app_updates` for full application, storage, audit log, and update control.\n" +
+        "6. PROACTIVE CAMPAIGN DRAFTING, BATCH PUBLISHING & UP-TOP BUMP (12 PUBLISHER TOOLS): When the user asks to publish to groups without providing post text (e.g. 'Đăng bài vào nhóm'), immediately look at [AI CONTEXT MEMORY] and [SAVED TEMPLATES] in the snapshot. If templates or product info exist, proactively propose 1 ready-to-use Spintax post draft right away AND emit `[ACTION:PUBLISH_GROUPS|...]` so they can click 1 button to publish (or use `fb_publish_post`, `fb_publish_campaign_batch`, `fb_sync_personal_timeline_posts`, `fb_repost_to_groups`, `fb_create_comment`, `fb_react_to_post`, `fb_list_published_posts`, `fb_delete_published_post`, `fb_list_templates`, `fb_save_template`, `fb_delete_template`, and `fb_bump_recent_posts`).\n" +
+        "7. INTERACTIVE ACTION TAGS: Append at most one `[ACTION:...]` tag at the very end of your reply when appropriate:\n" +
+        "   - `[ACTION:PUBLISH_GROUPS|count=<int>|minDelay=<sec>|maxDelay=<sec>|content=<full_post_text>]` (only when `content` is non-empty)\n" +
+        "   - `[ACTION:SEARCH_GROUPS|keyword=<text>]`\n" +
+        "   - `[ACTION:SCAN_LEADS|keyword=<text>]`\n" +
+        "   - `[ACTION:FILTER_LEADS|tagId=<lead_tag_id>|keyword=<text>]` (after tagging or finding leads so the user can view them on the table in 1 click)\n" +
+        "   - `[ACTION:COMMENT_LEAD|targetId=<post_id>|content=<comment_spintax>]` (when drafting a sales comment for a specific post)\n" +
+        "   - `[ACTION:OPEN_GROUP_TAGS|targetId=<group_tag_id>]` (after creating group tags so the user can inspect/assign them)\n" +
+        "   - `[ACTION:BUMP_POSTS|content=<bump_spintax>]` (to bump recent group posts)";
 
     /// <summary>
     /// Default lightweight, fast AI model ID for <c>agy --model</c>.
@@ -191,6 +201,9 @@ public interface IAppSettingsService
     /// <summary>Gets the current active configuration.</summary>
     AppConfig Current { get; }
 
+    /// <summary>Reloads <see cref="AppConfig"/> from disk (synchronizing cross-process changes made by the MCP server or desktop UI) and updates <see cref="Current"/>.</summary>
+    AppConfig Reload();
+
     /// <summary>Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.</summary>
     void Save(AppConfig updated);
 
@@ -229,6 +242,13 @@ public sealed class AppSettingsService : IAppSettingsService
     /// Gets the current active configuration.
     /// </summary>
     public AppConfig Current { get; private set; }
+
+    /// <inheritdoc />
+    public AppConfig Reload()
+    {
+        this.Current = this.LoadOrDefault();
+        return this.Current;
+    }
 
     /// <summary>
     /// Synchronously saves the updated <see cref="AppConfig"/> to disk using an atomic temporary file swap.
@@ -528,14 +548,14 @@ public sealed class AppSettingsService : IAppSettingsService
     }
 
     /// <summary>
-    /// Discovers all isolated browser profiles inside <paramref name="appProfilesRootDir"/> as well as
-    /// existing local user profile folders strictly matching <paramref name="effectiveBrowserKind"/>,
-    /// enriching system profiles with their real human-readable names from Chromium's <c>Local State</c>.
+    /// Discovers all isolated application-managed browser profiles inside <paramref name="appProfilesRootDir"/>.
+    /// System browser <c>User Data</c> directories are intentionally excluded to protect OS browser App-Bound Encryption state.
     /// </summary>
     public static List<BrowserProfileOption> DiscoverBrowserProfiles(
         string appProfilesRootDir,
         PreferredBrowserKind effectiveBrowserKind = PreferredBrowserKind.AutoDetect)
     {
+        _ = effectiveBrowserKind;
         List<BrowserProfileOption> results = new();
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -562,161 +582,7 @@ public sealed class AppSettingsService : IAppSettingsService
             }
         }
 
-        (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] systemRoots = GetSystemUserDataRoots();
-
-        for (int r = 0; r < systemRoots.Length; r++)
-        {
-            if (effectiveBrowserKind != PreferredBrowserKind.AutoDetect &&
-                systemRoots[r].Kind != effectiveBrowserKind)
-            {
-                continue;
-            }
-
-            string rootPath = systemRoots[r].UserDataRoot;
-            if (!Directory.Exists(rootPath))
-            {
-                continue;
-            }
-
-            Dictionary<string, string> localStateNames = ReadChromiumProfileFriendlyNames(rootPath);
-
-            string defaultProfileDir = Path.Combine(rootPath, "Default");
-            if (Directory.Exists(defaultProfileDir) && seenPaths.Add(defaultProfileDir))
-            {
-                bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(defaultProfileDir);
-                string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, "Default", localStateNames);
-                results.Add(new BrowserProfileOption(friendlyLabel, defaultProfileDir, IsManagedByApp: false, HasFacebookSession: hasFb));
-            }
-
-            try
-            {
-                string[] profileDirs = Directory.GetDirectories(rootPath, "Profile *");
-                Array.Sort(profileDirs, StringComparer.OrdinalIgnoreCase);
-                for (int p = 0; p < profileDirs.Length; p++)
-                {
-                    string pDir = profileDirs[p];
-                    string pName = Path.GetFileName(pDir);
-                    if (!string.IsNullOrWhiteSpace(pName) && seenPaths.Add(pDir))
-                    {
-                        bool hasFb = AccountVaultDomainService.Instance.HasProfileAuthenticatedCookieStore(pDir);
-                        string friendlyLabel = FormatSystemProfileDisplayName(systemRoots[r].BrowserLabel, pName, localStateNames);
-                        results.Add(new BrowserProfileOption(friendlyLabel, pDir, IsManagedByApp: false, HasFacebookSession: hasFb));
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Ignore inaccessible system profile folders
-            }
-        }
-
         return results;
-    }
-
-    private static (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] GetSystemUserDataRoots()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return
-            [
-                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
-                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
-                (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
-            ];
-        }
-
-        if (OperatingSystem.IsMacOS())
-        {
-            string appSupport = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
-            return
-            [
-                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(appSupport, "Microsoft Edge")),
-                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(appSupport, "Google", "Chrome")),
-                (PreferredBrowserKind.Brave, "Brave", Path.Combine(appSupport, "BraveSoftware", "Brave-Browser"))
-            ];
-        }
-
-        return [];
-    }
-
-    private static string FormatSystemProfileDisplayName(
-        string browserLabel,
-        string folderKey,
-        Dictionary<string, string> localStateNames)
-    {
-        if (localStateNames.TryGetValue(folderKey, out string? friendly) &&
-            !string.IsNullOrWhiteSpace(friendly) &&
-            !string.Equals(friendly, folderKey, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{browserLabel} — {friendly} · {folderKey}";
-        }
-
-        return $"{browserLabel} — {folderKey}";
-    }
-
-    private static Dictionary<string, string> ReadChromiumProfileFriendlyNames(string userDataRoot)
-    {
-        Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase);
-        string localStatePath = Path.Combine(userDataRoot, "Local State");
-        if (!File.Exists(localStatePath))
-        {
-            return map;
-        }
-
-        try
-        {
-            using FileStream fs = new(localStatePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using JsonDocument doc = JsonDocument.Parse(fs);
-            if (!doc.RootElement.TryGetProperty("profile", out JsonElement profileEl) ||
-                !profileEl.TryGetProperty("info_cache", out JsonElement cacheEl) ||
-                cacheEl.ValueKind != JsonValueKind.Object)
-            {
-                return map;
-            }
-
-            foreach (JsonProperty prop in cacheEl.EnumerateObject())
-            {
-                JsonElement val = prop.Value;
-                if (val.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                string? shortcutName = val.TryGetProperty("shortcut_name", out JsonElement snEl) ? snEl.GetString() : null;
-                string? name = val.TryGetProperty("name", out JsonElement nameEl) ? nameEl.GetString() : null;
-                string? userName = val.TryGetProperty("user_name", out JsonElement unEl) ? unEl.GetString() : null;
-
-                string chosen = !string.IsNullOrWhiteSpace(shortcutName) &&
-                                !string.Equals(shortcutName, "Person 1", StringComparison.OrdinalIgnoreCase)
-                    ? shortcutName.Trim()
-                    : (!string.IsNullOrWhiteSpace(name) ? name.Trim() : string.Empty);
-
-                // Strip any parentheses to keep UI labels clean
-                chosen = chosen.Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal).Trim();
-
-                if (!string.IsNullOrWhiteSpace(userName))
-                {
-                    string cleanUser = userName.Trim().Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal);
-                    chosen = !string.IsNullOrWhiteSpace(chosen) &&
-                             !string.Equals(chosen, "Person 1", StringComparison.OrdinalIgnoreCase) &&
-                             !string.Equals(chosen, cleanUser, StringComparison.OrdinalIgnoreCase)
-                        ? $"{chosen} · {cleanUser}"
-                        : cleanUser;
-                }
-
-                if (!string.IsNullOrWhiteSpace(chosen))
-                {
-                    map[prop.Name] = chosen;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // Ignore unreadable Local State
-        }
-
-        return map;
     }
 
     private static PreferredBrowserKind? TryGetOsDefaultBrowserKind()
@@ -837,6 +703,33 @@ public sealed class AppSettingsService : IAppSettingsService
                 }
             }
         }
+    }
+
+    private static (PreferredBrowserKind Kind, string BrowserLabel, string UserDataRoot)[] GetSystemUserDataRoots()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(localAppData, "Microsoft", "Edge", "User Data")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(localAppData, "Google", "Chrome", "User Data")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data"))
+            ];
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            string appSupport = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
+            return
+            [
+                (PreferredBrowserKind.Edge, "Microsoft Edge", Path.Combine(appSupport, "Microsoft Edge")),
+                (PreferredBrowserKind.Chrome, "Google Chrome", Path.Combine(appSupport, "Google", "Chrome")),
+                (PreferredBrowserKind.Brave, "Brave", Path.Combine(appSupport, "BraveSoftware", "Brave-Browser"))
+            ];
+        }
+
+        return [];
     }
 
     private static DateTimeOffset GetLastProfileActivityUtc(PreferredBrowserKind kind)
