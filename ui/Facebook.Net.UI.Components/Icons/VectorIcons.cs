@@ -182,6 +182,8 @@ public static class VectorIcons
         return icon;
     }
 
+    private static Avalonia.Media.Imaging.Bitmap? s_aiAssistantBitmap;
+
     /// <summary>
     /// Creates an image control displaying the cropped, transparent-background AI Assistant mascot icon (<c>ai-assistant.png</c>),
     /// falling back to <see cref="AiSparkle"/> in headless environments.
@@ -190,11 +192,23 @@ public static class VectorIcons
     {
         try
         {
-            Assembly asm = typeof(VectorIcons).Assembly;
-            using Stream? stream = asm.GetManifestResourceStream("Assets.Icons.ai-assistant.png");
-            if (stream is not null)
+            Avalonia.Media.Imaging.Bitmap? bitmap = s_aiAssistantBitmap;
+            if (bitmap is null)
             {
-                Avalonia.Media.Imaging.Bitmap bitmap = new(stream);
+                Assembly asm = typeof(VectorIcons).Assembly;
+                using Stream? stream = asm.GetManifestResourceStream("Assets.Icons.ai-assistant.png");
+                if (stream is not null)
+                {
+                    bitmap = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(
+                        stream,
+                        64,
+                        Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+                    s_aiAssistantBitmap = bitmap;
+                }
+            }
+
+            if (bitmap is not null)
+            {
                 Image img = new()
                 {
                     Source = bitmap,
@@ -253,6 +267,8 @@ public static class VectorIcons
         private readonly double _strokeWidth;
         private readonly PenLineCap _lineCap;
         private readonly PenLineJoin _lineJoin;
+        private IBrush? _cachedBrush;
+        private Pen? _cachedPen;
 
         static SvgStrokeIcon() => AffectsRender<SvgStrokeIcon>(ForegroundProperty);
 
@@ -290,7 +306,11 @@ public static class VectorIcons
             double offsetY = (this.Bounds.Height - (this._viewBox.Height * scale)) / 2;
 
             IBrush brush = this.Foreground ?? Brushes.White;
-            Pen pen = new(brush, _strokeWidth, null, _lineCap, _lineJoin);
+            if (!ReferenceEquals(brush, this._cachedBrush) || this._cachedPen is null)
+            {
+                this._cachedBrush = brush;
+                this._cachedPen = new Pen(brush, _strokeWidth, null, _lineCap, _lineJoin);
+            }
 
             Matrix transform =
                 Matrix.CreateTranslation(-_viewBox.X, -_viewBox.Y) *
@@ -299,7 +319,7 @@ public static class VectorIcons
 
             using (context.PushTransform(transform))
             {
-                context.DrawGeometry(null, pen, _geometry);
+                context.DrawGeometry(null, this._cachedPen, _geometry);
             }
         }
     }

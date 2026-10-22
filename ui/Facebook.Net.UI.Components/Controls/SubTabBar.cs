@@ -16,11 +16,48 @@ namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
 /// Descriptor for a single tab item in <see cref="SubTabBar"/>.
+/// Supports both eager <see cref="Control"/> instances and lazy <see cref="Func{TResult}"/> factories.
 /// </summary>
-/// <param name="Title">Initial localized tab title.</param>
-/// <param name="IconSvg">SVG icon filename from <see cref="VectorIcons"/>.</param>
-/// <param name="Content">The <see cref="Control"/> view displayed when this sub-tab is active.</param>
-public sealed record SubTabItem(string Title, string IconSvg, Control Content);
+public sealed class SubTabItem
+{
+    private Control? _content;
+    private readonly Func<Control>? _contentFactory;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SubTabItem"/> class with an eagerly constructed view.
+    /// </summary>
+    public SubTabItem(string title, string iconSvg, Control content)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(iconSvg);
+        ArgumentNullException.ThrowIfNull(content);
+        this.Title = title;
+        this.IconSvg = iconSvg;
+        this._content = content;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SubTabItem"/> class with a lazy factory invoked only when the tab is first selected.
+    /// </summary>
+    public SubTabItem(string title, string iconSvg, Func<Control> contentFactory)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(iconSvg);
+        ArgumentNullException.ThrowIfNull(contentFactory);
+        this.Title = title;
+        this.IconSvg = iconSvg;
+        this._contentFactory = contentFactory;
+    }
+
+    /// <summary>Gets the initial localized tab title.</summary>
+    public string Title { get; }
+
+    /// <summary>Gets the SVG icon filename from <see cref="VectorIcons"/>.</summary>
+    public string IconSvg { get; }
+
+    /// <summary>Gets or lazily creates the <see cref="Control"/> view displayed when this sub-tab is active.</summary>
+    public Control Content => this._content ??= this._contentFactory!();
+}
 
 /// <summary>
 /// Horizontal Top Pill Sub-Navigation Bar (<c>[ 🗪 Tab 1 ]   ✉ Tab 2   🔔 Tab 3</c>)
@@ -29,7 +66,7 @@ public sealed record SubTabItem(string Title, string IconSvg, Control Content);
 public sealed class SubTabBar : Grid
 {
     private readonly ThemeService _theme;
-    private readonly List<(Button Button, TextBlock Label, Control Icon, Control View)> _tabs = new();
+    private readonly List<(Button Button, TextBlock Label, Control Icon, SubTabItem Spec)> _tabs = new();
     private readonly ContentControl _viewHost;
     private int _selectedIndex;
 
@@ -91,7 +128,7 @@ public sealed class SubTabBar : Grid
 
             tabBtn.Click += (_, _) => this.SelectTab(capturedIndex);
 
-            this._tabs.Add((tabBtn, lbl, icon, spec.Content));
+            this._tabs.Add((tabBtn, lbl, icon, spec));
             tabStripStack.Children.Add(tabBtn);
         }
 
@@ -158,7 +195,7 @@ public sealed class SubTabBar : Grid
         }
 
         this._selectedIndex = index;
-        this._viewHost.Content = this._tabs[index].View;
+        this._viewHost.Content = this._tabs[index].Spec.Content;
         this.RefreshTabVisuals();
         this.SelectedIndexChanged?.Invoke(this, index);
     }

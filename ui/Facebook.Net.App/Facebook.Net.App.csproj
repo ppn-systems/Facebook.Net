@@ -16,7 +16,9 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <TieredPGO>true</TieredPGO>
     <DebugType Condition="'$(PublishSingleFile)' == 'true'">embedded</DebugType>
+    <NoWarn>$(NoWarn);IL2026;IL3050;IL2104;IL3053</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,7 +44,7 @@
     <ProjectReference Include="..\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
     <ProjectReference Include="..\Facebook.Net.UI.Components\Facebook.Net.UI.Components.csproj" />
     <ProjectReference Include="..\Facebook.Net.UI.ViewModels\Facebook.Net.UI.ViewModels.csproj" />
-    <ProjectReference Include="..\..\mcp\Facebook.Net.Mcp\Facebook.Net.Mcp.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\mcp\Facebook.Net.Mcp\Facebook.Net.Mcp.csproj" />
   </ItemGroup>
 
   <Target Name="RemovePdbAndXmlFromSingleFilePublish"

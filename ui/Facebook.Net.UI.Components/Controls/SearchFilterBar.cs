@@ -383,13 +383,16 @@ public sealed class SearchFilterBar : Border
             if (this._categories.Count > 0)
             {
                 this.RefreshFilterChips();
-                if (this._activeDrillDownCategory is not null)
+                if (this._filterFlyout is { IsOpen: true })
                 {
-                    this.ShowLevel2DrillDown(this._activeDrillDownCategory);
-                }
-                else
-                {
-                    this.ShowLevel1Menu();
+                    if (this._activeDrillDownCategory is not null)
+                    {
+                        this.ShowLevel2DrillDown(this._activeDrillDownCategory);
+                    }
+                    else
+                    {
+                        this.ShowLevel1Menu();
+                    }
                 }
             }
         }
@@ -406,6 +409,55 @@ public sealed class SearchFilterBar : Border
 
     /// <summary>Gets the right magnifier search <see cref="Button"/>.</summary>
     public Button SearchButton { get; }
+
+    /// <summary>
+    /// Attaches a debounced <see cref="TextBox.TextChanged"/> handler to <see cref="SearchTextBox"/> so rapid typing
+    /// does not rebuild virtualized lists on every keystroke, while clearing (<c>""</c>) executes immediately.
+    /// </summary>
+    public void BindDebouncedSearch(Action<string?> onSearch, int delayMs = 150)
+    {
+        ArgumentNullException.ThrowIfNull(onSearch);
+
+        System.Threading.CancellationTokenSource? debounceCts = null;
+        this.SearchTextBox.TextChanged += async (_, _) =>
+        {
+            string? text = this.SearchTextBox.Text;
+            if (debounceCts is not null)
+            {
+                System.Threading.CancellationTokenSource prev = debounceCts;
+                debounceCts = null;
+                await prev.CancelAsync().ConfigureAwait(true);
+                prev.Dispose();
+            }
+
+            if (string.IsNullOrEmpty(text))
+            {
+                onSearch(string.Empty);
+                return;
+            }
+
+            System.Threading.CancellationTokenSource cts = new();
+            debounceCts = cts;
+            try
+            {
+                await System.Threading.Tasks.Task.Delay(delayMs, cts.Token).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            finally
+            {
+                if (ReferenceEquals(debounceCts, cts))
+                {
+                    debounceCts = null;
+                    cts.Dispose();
+                }
+            }
+
+            onSearch(this.SearchTextBox.Text);
+        };
+    }
 
     /// <summary>
     /// Configures the built-in 2-level drill-down filter categories for the popover menu and inline filter chips.
@@ -436,7 +488,6 @@ public sealed class SearchFilterBar : Border
         }
 
         this.FilterButton.Flyout = this._filterFlyout;
-        this.ShowLevel1Menu();
         this.RefreshFilterChips();
     }
 

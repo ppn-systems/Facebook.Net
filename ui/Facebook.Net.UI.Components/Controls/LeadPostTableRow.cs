@@ -188,7 +188,7 @@ public static class LeadPostTableRow
             {
                 Border playBadge = new()
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)),
+                    Background = ThemeLifecycle.GetCachedBrush(Color.FromArgb(190, 0, 0, 0)),
                     CornerRadius = new Avalonia.CornerRadius(10),
                     Padding = new Avalonia.Thickness(5, 2),
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -217,7 +217,7 @@ public static class LeadPostTableRow
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            RemoteImageLoader.Attach(thumbImg, post.MediaPreviewUrl, thumbBorder);
+            RemoteImageLoader.Attach(thumbImg, post.MediaPreviewUrl, thumbBorder, decodeWidth: 360);
             Grid.SetColumn(thumbBorder, 0);
             messageCell.Children.Add(thumbBorder);
         }
@@ -287,7 +287,28 @@ public static class LeadPostTableRow
             statusStack.Children.Add(actionRow);
         }
 
-        i18n.LanguageChanged += (_, _) =>
+        Grid.SetColumn(authorCell, 0);
+        Grid.SetColumn(groupCell, 1);
+        Grid.SetColumn(messageCell, 2);
+        Grid.SetColumn(statusStack, 3);
+
+        row.Children.Add(authorCell);
+        row.Children.Add(groupCell);
+        row.Children.Add(messageCell);
+        row.Children.Add(statusStack);
+
+        Border rowContainer = new()
+        {
+            BorderThickness = new Avalonia.Thickness(0, 0, 0, 1),
+            Padding = new Avalonia.Thickness(0, 4, 0, 6),
+            Child = row
+        };
+
+        void ApplyRowBorder() => rowContainer.BorderBrush = theme.Palette.SubtleBorder;
+        ApplyRowBorder();
+        ThemeLifecycle.Bind(rowContainer, theme, ApplyRowBorder);
+
+        ThemeLifecycle.BindLanguage(rowContainer, i18n, () =>
         {
             if (string.IsNullOrWhiteSpace(post.AuthorName))
             {
@@ -310,28 +331,7 @@ public static class LeadPostTableRow
             {
                 StatusPill.SetText(phonePill, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}");
             }
-        };
-
-        Grid.SetColumn(authorCell, 0);
-        Grid.SetColumn(groupCell, 1);
-        Grid.SetColumn(messageCell, 2);
-        Grid.SetColumn(statusStack, 3);
-
-        row.Children.Add(authorCell);
-        row.Children.Add(groupCell);
-        row.Children.Add(messageCell);
-        row.Children.Add(statusStack);
-
-        Border rowContainer = new()
-        {
-            BorderThickness = new Avalonia.Thickness(0, 0, 0, 1),
-            Padding = new Avalonia.Thickness(0, 4, 0, 6),
-            Child = row
-        };
-
-        void ApplyRowBorder() => rowContainer.BorderBrush = theme.Palette.SubtleBorder;
-        ApplyRowBorder();
-        ThemeLifecycle.Bind(rowContainer, theme, ApplyRowBorder);
+        });
 
         return rowContainer;
     }
@@ -411,20 +411,24 @@ public static class LeadPostTableRow
             ShowMode = FlyoutShowMode.Standard
         };
 
-        StackPanel flyoutStack = new()
-        {
-            Spacing = 7,
-            Width = 248
-        };
-
-        Border flyoutCard = SurfaceCard.Create(theme, flyoutStack, new Thickness(10));
-        flyout.Content = flyoutCard;
-
+        StackPanel? flyoutStack = null;
         string selectedColorHex = GroupRowCard.PresetTagColors[0];
 
         void RebuildFlyoutContent()
         {
-            flyoutStack.Children.Clear();
+            if (flyoutStack is null)
+            {
+                flyoutStack = new StackPanel
+                {
+                    Spacing = 7,
+                    Width = 248
+                };
+                flyout.Content = SurfaceCard.Create(theme, flyoutStack, new Thickness(10));
+            }
+            else
+            {
+                flyoutStack.Children.Clear();
+            }
 
             TextBlock headerTb = SectionHeader.CreateLabel(
                 theme,
@@ -444,13 +448,14 @@ public static class LeadPostTableRow
                     Color parsedColor = Color.TryParse(tag.ColorHex, out Color c)
                         ? c
                         : Color.FromRgb(59, 130, 246);
+                    IImmutableSolidColorBrush parsedBrush = ThemeLifecycle.GetCachedBrush(parsedColor);
 
                     Border dot = new()
                     {
                         Width = 9,
                         Height = 9,
                         CornerRadius = new CornerRadius(999),
-                        Background = new SolidColorBrush(parsedColor),
+                        Background = parsedBrush,
                         VerticalAlignment = VerticalAlignment.Center
                     };
 
@@ -467,7 +472,7 @@ public static class LeadPostTableRow
                         Text = hasTag ? "✓" : string.Empty,
                         FontSize = 12,
                         FontWeight = FontWeight.Bold,
-                        Foreground = new SolidColorBrush(parsedColor),
+                        Foreground = parsedBrush,
                         VerticalAlignment = VerticalAlignment.Center
                     };
 
@@ -492,10 +497,10 @@ public static class LeadPostTableRow
                         BorderThickness = new Thickness(1),
                         Padding = new Thickness(8, 5),
                         Background = hasTag
-                            ? new SolidColorBrush(Color.FromArgb(36, parsedColor.R, parsedColor.G, parsedColor.B))
+                            ? ThemeLifecycle.GetCachedBrush(Color.FromArgb(36, parsedColor.R, parsedColor.G, parsedColor.B))
                             : theme.Palette.SecondarySurface,
                         BorderBrush = hasTag
-                            ? new SolidColorBrush(Color.FromArgb(140, parsedColor.R, parsedColor.G, parsedColor.B))
+                            ? ThemeLifecycle.GetCachedBrush(Color.FromArgb(140, parsedColor.R, parsedColor.G, parsedColor.B))
                             : theme.Palette.SubtleBorder,
                         Content = rowGrid,
                         Cursor = new Cursor(StandardCursorType.Hand)
@@ -568,7 +573,7 @@ public static class LeadPostTableRow
                         Width = 18,
                         Height = 18,
                         CornerRadius = new CornerRadius(999),
-                        Background = new SolidColorBrush(dotColor),
+                        Background = ThemeLifecycle.GetCachedBrush(dotColor),
                         Cursor = new Cursor(StandardCursorType.Hand)
                     };
                     colorDot.PointerPressed += (_, _) =>
@@ -641,8 +646,7 @@ public static class LeadPostTableRow
 
         ApplyStyle();
         ThemeLifecycle.Bind(btn, theme, ApplyStyle);
-
-        i18n.LanguageChanged += (_, _) => btnLabel.Text = $"+ {i18n["Leads.BtnAssignTag"]}";
+        ThemeLifecycle.BindLanguage(btn, i18n, () => btnLabel.Text = $"+ {i18n["Leads.BtnAssignTag"]}");
         return btn;
     }
 }

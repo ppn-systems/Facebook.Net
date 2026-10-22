@@ -61,18 +61,18 @@ public sealed partial class AccountsPage : UserControl
 
     private Control BuildLayout()
     {
-        Control tab1View = this.BuildVaultTab(out Action refreshTab1);
-        Control tab2View = this.BuildImportTab(out Action refreshTab2);
-        Control tab3View = this.BuildProxyTab(out Action refreshTab3);
-        Control tab4View = this.BuildFriendRequestsTab(out Action refreshTab4);
+        Action? refreshTab1 = null;
+        Action? refreshTab2 = null;
+        Action? refreshTab3 = null;
+        Action? refreshTab4 = null;
 
         SubTabBar subTabBar = new(
             this._theme,
             [
-                new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, tab1View),
-                new SubTabItem(this._i18n["Accounts.TabImport"], VectorIcons.Plus, tab2View),
-                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, tab3View),
-                new SubTabItem(this._i18n["Accounts.TabFriendRequests"], VectorIcons.Personal, tab4View)
+                new SubTabItem(this._i18n["Accounts.TabVault"], VectorIcons.Accounts, () => this.BuildVaultTab(out refreshTab1)),
+                new SubTabItem(this._i18n["Accounts.TabImport"], VectorIcons.Plus, () => this.BuildImportTab(out refreshTab2)),
+                new SubTabItem(this._i18n["Accounts.TabProxy"], VectorIcons.Shield, () => this.BuildProxyTab(out refreshTab3)),
+                new SubTabItem(this._i18n["Accounts.TabFriendRequests"], VectorIcons.Personal, () => this.BuildFriendRequestsTab(out refreshTab4))
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -84,10 +84,10 @@ public sealed partial class AccountsPage : UserControl
                 this._i18n["Accounts.TabProxy"],
                 this._i18n["Accounts.TabFriendRequests"]
             ]);
-            refreshTab1();
-            refreshTab2();
-            refreshTab3();
-            refreshTab4();
+            refreshTab1?.Invoke();
+            refreshTab2?.Invoke();
+            refreshTab3?.Invoke();
+            refreshTab4?.Invoke();
         };
 
         return subTabBar;

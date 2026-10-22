@@ -2,17 +2,31 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System;
+using System.Collections.Concurrent;
 using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
 
 namespace Facebook.Net.UI.Components.Controls;
 
 /// <summary>
-/// Manages automatic subscription and cleanup of <see cref="ThemeService.ThemeChanged"/> handlers
-/// when a <see cref="Control"/> attaches to or detaches from the Avalonia visual tree.
+/// Manages automatic subscription and cleanup of <see cref="ThemeService.ThemeChanged"/> and
+/// <see cref="LocalizationService.LanguageChanged"/> handlers when a <see cref="Control"/> attaches to
+/// or detaches from the Avalonia visual tree, and provides a shared immutable brush cache.
 /// </summary>
 public static class ThemeLifecycle
 {
+    private static readonly ConcurrentDictionary<uint, IImmutableSolidColorBrush> s_brushCache = new();
+
+    /// <summary>
+    /// Returns a cached <see cref="IImmutableSolidColorBrush"/> for the specified <paramref name="color"/>,
+    /// avoiding repeated per-row <see cref="SolidColorBrush"/> allocations during virtualized scrolling.
+    /// </summary>
+    public static IImmutableSolidColorBrush GetCachedBrush(Color color) =>
+        s_brushCache.GetOrAdd(color.ToUInt32(), static argb => new ImmutableSolidColorBrush(Color.FromUInt32(argb)));
+
     /// <summary>
     /// Subscribes <paramref name="applyColors"/> to <see cref="ThemeService.ThemeChanged"/> while
     /// <paramref name="control"/> is attached to the visual tree.
@@ -42,6 +56,40 @@ public static class ThemeLifecycle
             if (isSubscribed)
             {
                 theme.ThemeChanged -= OnThemeChanged;
+                isSubscribed = false;
+            }
+        };
+    }
+
+    /// <summary>
+    /// Subscribes <paramref name="applyLanguage"/> to <see cref="LocalizationService.LanguageChanged"/> while
+    /// <paramref name="control"/> is attached to the visual tree, preventing event handler memory leaks on virtualized rows.
+    /// </summary>
+    public static void BindLanguage(Control control, LocalizationService i18n, Action applyLanguage)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(i18n);
+        ArgumentNullException.ThrowIfNull(applyLanguage);
+
+        void OnLanguageChanged(object? sender, AppLanguage language) => applyLanguage();
+        bool isSubscribed = true;
+        i18n.LanguageChanged += OnLanguageChanged;
+
+        control.AttachedToVisualTree += (_, _) =>
+        {
+            if (!isSubscribed)
+            {
+                i18n.LanguageChanged += OnLanguageChanged;
+                isSubscribed = true;
+                applyLanguage();
+            }
+        };
+
+        control.DetachedFromVisualTree += (_, _) =>
+        {
+            if (isSubscribed)
+            {
+                i18n.LanguageChanged -= OnLanguageChanged;
                 isSubscribed = false;
             }
         };

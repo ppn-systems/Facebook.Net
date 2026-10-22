@@ -68,16 +68,25 @@ public sealed partial class SalesLeadsPage : UserControl
     private Control BuildLayout()
     {
         SubTabBar? subTabBar = null;
-        Control tab1View = this.BuildRepositoryAndFilterTab(() => subTabBar?.SelectTab(2), out Action refreshTab1I18n);
-        Control tab2View = this.BuildMultiGroupAndScraperConfigTab(out Action refreshTab2I18n);
-        Control tab3View = this.BuildSalesAutoCommentTab(out Action refreshTab3I18n);
+        Action? refreshTab1I18n = null;
+        Action? refreshTab2I18n = null;
+        Action? refreshTab3I18n = null;
 
         subTabBar = new SubTabBar(
             this._theme,
             [
-                new SubTabItem(this._i18n["Leads.TabRepository"], VectorIcons.Search, tab1View),
-                new SubTabItem(this._i18n["Leads.TabScraperConfig"], VectorIcons.Settings, tab2View),
-                new SubTabItem(this._i18n["Leads.TabAutoComment"], VectorIcons.SalesComment, tab3View)
+                new SubTabItem(
+                    this._i18n["Leads.TabRepository"],
+                    VectorIcons.Search,
+                    () => this.BuildRepositoryAndFilterTab(() => subTabBar?.SelectTab(2), out refreshTab1I18n)),
+                new SubTabItem(
+                    this._i18n["Leads.TabScraperConfig"],
+                    VectorIcons.Settings,
+                    () => this.BuildMultiGroupAndScraperConfigTab(out refreshTab2I18n)),
+                new SubTabItem(
+                    this._i18n["Leads.TabAutoComment"],
+                    VectorIcons.SalesComment,
+                    () => this.BuildSalesAutoCommentTab(out refreshTab3I18n))
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -88,9 +97,9 @@ public sealed partial class SalesLeadsPage : UserControl
                 this._i18n["Leads.TabScraperConfig"],
                 this._i18n["Leads.TabAutoComment"]
             ]);
-            refreshTab1I18n();
-            refreshTab2I18n();
-            refreshTab3I18n();
+            refreshTab1I18n?.Invoke();
+            refreshTab2I18n?.Invoke();
+            refreshTab3I18n?.Invoke();
         };
 
         return subTabBar;
@@ -321,8 +330,7 @@ public sealed partial class SalesLeadsPage : UserControl
         this._vm.GroupTags.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
         this._vm.LeadTags.CollectionChanged += (_, _) => searchFilterBar.RefreshFilterChips();
 
-        searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
-            this._vm.ApplyLocalLeadFilter(searchFilterBar.SearchTextBox.Text);
+        searchFilterBar.BindDebouncedSearch(this._vm.ApplyLocalLeadFilter);
 
         Grid.SetRow(searchFilterBar, 1);
         tabGrid.Children.Add(searchFilterBar);

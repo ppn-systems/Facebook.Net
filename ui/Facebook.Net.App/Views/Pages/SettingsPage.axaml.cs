@@ -65,27 +65,27 @@ public sealed partial class SettingsPage : UserControl
 
     private Control BuildLayout()
     {
-        Control tab1View = this.BuildGeneralSettingsTab(out Action refreshTab1);
-        Control tabAiView = this.BuildAiContextTab(out Action refreshTabAi);
-        Control tab2View = this.BuildBrowserProfilesTab(out Action refreshTab2);
-        AuditLogsPage tab3View = new(_vm);
-        Control tab4View = this.BuildStorageMonitorTab(out Action refreshTab4, out Action refreshStorageStats);
+        Action? refreshTab1 = null;
+        Action? refreshTabAi = null;
+        Action? refreshTab2 = null;
+        Action? refreshTab4 = null;
+        Action? refreshStorageStats = null;
 
         SubTabBar subTabBar = new(
             _theme,
             [
-                new SubTabItem(_i18n["Settings.TabGeneral"], VectorIcons.Settings, tab1View),
-                new SubTabItem(_i18n["Settings.TabAiContext"], VectorIcons.AiContext, tabAiView),
-                new SubTabItem(_i18n["Settings.TabProfiles"], VectorIcons.Browser, tab2View),
-                new SubTabItem(_i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, tab3View),
-                new SubTabItem(_i18n["Settings.TabStorage"], VectorIcons.Folder, tab4View)
+                new SubTabItem(_i18n["Settings.TabGeneral"], VectorIcons.Settings, () => this.BuildGeneralSettingsTab(out refreshTab1)),
+                new SubTabItem(_i18n["Settings.TabAiContext"], VectorIcons.AiContext, () => this.BuildAiContextTab(out refreshTabAi)),
+                new SubTabItem(_i18n["Settings.TabProfiles"], VectorIcons.Browser, () => this.BuildBrowserProfilesTab(out refreshTab2)),
+                new SubTabItem(_i18n["Settings.TabAuditLogs"], VectorIcons.AuditLog, () => new AuditLogsPage(_vm)),
+                new SubTabItem(_i18n["Settings.TabStorage"], VectorIcons.Folder, () => this.BuildStorageMonitorTab(out refreshTab4, out refreshStorageStats))
             ]);
 
         subTabBar.SelectedIndexChanged += (_, idx) =>
         {
             if (idx == 4)
             {
-                refreshStorageStats();
+                refreshStorageStats?.Invoke();
             }
         };
 
@@ -99,10 +99,10 @@ public sealed partial class SettingsPage : UserControl
                 _i18n["Settings.TabAuditLogs"],
                 _i18n["Settings.TabStorage"]
             ]);
-            refreshTab1();
-            refreshTabAi();
-            refreshTab2();
-            refreshTab4();
+            refreshTab1?.Invoke();
+            refreshTabAi?.Invoke();
+            refreshTab2?.Invoke();
+            refreshTab4?.Invoke();
         };
 
         return subTabBar;

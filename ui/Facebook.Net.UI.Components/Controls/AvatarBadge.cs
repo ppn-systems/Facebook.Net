@@ -58,7 +58,8 @@ public static class AvatarBadge
                 IsVisible = false
             };
             rootPanel.Children.Add(imgClip);
-            RemoteImageLoader.Attach(avatarImg, imageUrl, imgClip, text);
+            int targetDecodeWidth = Math.Max(64, (int)Math.Ceiling(size * 2.5));
+            RemoteImageLoader.Attach(avatarImg, imageUrl, imgClip, text, decodeWidth: targetDecodeWidth);
         }
 
         Border badge = new()

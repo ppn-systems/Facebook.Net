@@ -68,13 +68,22 @@ public sealed partial class OverviewPage : UserControl
             out Action refreshTab1Lightweight,
             out Action refreshLeadsWidget,
             out Action refreshTab1I18n);
-        Control tab2View = this.BuildDataAnalyticsTab(out Action refreshTab2, out Action refreshTab2I18n);
+        Action? refreshTab2 = null;
+        Action? refreshTab2I18n = null;
 
         SubTabBar subTabBar = new(
             this._theme,
             [
                 new SubTabItem(this._i18n["Overview.TabDashboard"], VectorIcons.BrandMark, tab1View),
-                new SubTabItem(this._i18n["Settings.TabAnalytics"], VectorIcons.CheckCircle, tab2View)
+                new SubTabItem(
+                    this._i18n["Settings.TabAnalytics"],
+                    VectorIcons.CheckCircle,
+                    () =>
+                    {
+                        Control view = this.BuildDataAnalyticsTab(out refreshTab2, out refreshTab2I18n);
+                        refreshTab2?.Invoke();
+                        return view;
+                    })
             ]);
 
         bool IsOverviewActive() => this._vm.CurrentSection == NavigationSection.Overview;
@@ -83,7 +92,7 @@ public sealed partial class OverviewPage : UserControl
         {
             if (IsOverviewActive() && subTabBar.SelectedIndex == 1)
             {
-                refreshTab2();
+                refreshTab2?.Invoke();
             }
         }
 
@@ -91,7 +100,7 @@ public sealed partial class OverviewPage : UserControl
         {
             refreshTab1Lightweight();
             refreshLeadsWidget();
-            refreshTab2();
+            refreshTab2?.Invoke();
         }
 
         RefreshAll();
@@ -99,7 +108,7 @@ public sealed partial class OverviewPage : UserControl
         {
             if (idx == 1)
             {
-                refreshTab2();
+                refreshTab2?.Invoke();
             }
         };
 
@@ -196,7 +205,7 @@ public sealed partial class OverviewPage : UserControl
                 this._i18n["Settings.TabAnalytics"]
             ]);
             refreshTab1I18n();
-            refreshTab2I18n();
+            refreshTab2I18n?.Invoke();
             RefreshAll();
         };
 

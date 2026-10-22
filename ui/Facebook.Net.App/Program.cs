@@ -17,11 +17,29 @@ internal static class Program
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        if (args is { Length: > 0 } && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
+        {
+            Facebook.Net.Mcp.Program.RunAsync(args[1..]).GetAwaiter().GetResult();
+            return;
+        }
+
+        _ = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
 
     /// <summary>
     /// Avalonia configuration, also used by visual designer.
     /// </summary>
     /// <returns>Configured <see cref="AppBuilder"/>.</returns>
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace();
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        AppBuilder builder = AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .WithInterFont();
+#if DEBUG
+        builder = builder.LogToTrace();
+#endif
+        return builder;
+    }
 }

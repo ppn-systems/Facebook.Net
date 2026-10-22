@@ -225,6 +225,11 @@ public interface IAppSettingsService
 /// </summary>
 public sealed class AppSettingsService : IAppSettingsService
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<PreferredBrowserKind, string?> s_resolvedBrowserExeCache = new();
+    private static SmartBrowserDetectionResult? s_cachedBestBrowser;
+    private static long s_cachedBestBrowserTick = long.MinValue;
+    private const long BestBrowserCacheTtlMs = 30_000;
+
     private readonly string _settingsFilePath;
 
     /// <summary>
@@ -257,6 +262,11 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         ArgumentNullException.ThrowIfNull(updated);
         AppConfig normalized = updated.Normalize();
+        if (normalized == this.Current && File.Exists(_settingsFilePath))
+        {
+            return;
+        }
+
         this.Current = normalized;
 
         string? dir = Path.GetDirectoryName(_settingsFilePath);
@@ -278,6 +288,11 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         ArgumentNullException.ThrowIfNull(updated);
         AppConfig normalized = updated.Normalize();
+        if (normalized == this.Current && File.Exists(_settingsFilePath))
+        {
+            return;
+        }
+
         this.Current = normalized;
 
         string? dir = Path.GetDirectoryName(_settingsFilePath);
@@ -311,9 +326,17 @@ public sealed class AppSettingsService : IAppSettingsService
     /// <summary>
     /// Evaluates installed Chromium browsers using OS Default Browser registration, currently running process uptime/window activity,
     /// and recent user profile write timestamps to select the user's true primary browser.
+    /// Results are cached for 30 seconds to avoid repeated OS process enumeration on the UI thread.
     /// </summary>
     public static SmartBrowserDetectionResult DetectBestBrowser()
     {
+        long nowTick = Environment.TickCount64;
+        SmartBrowserDetectionResult? cached = s_cachedBestBrowser;
+        if (cached is not null && (nowTick - s_cachedBestBrowserTick) < BestBrowserCacheTtlMs)
+        {
+            return cached;
+        }
+
         PreferredBrowserKind? osDefault = TryGetOsDefaultBrowserKind();
         PreferredBrowserKind[] candidates =
         [
@@ -395,7 +418,7 @@ public sealed class AppSettingsService : IAppSettingsService
             }
         }
 
-        return best ?? new SmartBrowserDetectionResult(
+        SmartBrowserDetectionResult result = best ?? new SmartBrowserDetectionResult(
             PreferredBrowserKind.Edge,
             ResolveExecutableForKind(PreferredBrowserKind.Edge),
             IsOsDefaultBrowser: false,
@@ -403,12 +426,19 @@ public sealed class AppSettingsService : IAppSettingsService
             ActiveUptime: TimeSpan.Zero,
             RunningProcessCount: 0,
             LastProfileActivityUtc: DateTimeOffset.MinValue);
+
+        s_cachedBestBrowser = result;
+        s_cachedBestBrowserTick = nowTick;
+        return result;
     }
 
     /// <summary>
     /// Resolves the executable path on disk for a specific <see cref="PreferredBrowserKind"/>, or <see langword="null"/> if not installed.
     /// </summary>
-    public static string? ResolveExecutableForKind(PreferredBrowserKind kind)
+    public static string? ResolveExecutableForKind(PreferredBrowserKind kind) =>
+        s_resolvedBrowserExeCache.GetOrAdd(kind, ResolveExecutableForKindUncached);
+
+    private static string? ResolveExecutableForKindUncached(PreferredBrowserKind kind)
     {
         if (OperatingSystem.IsWindows())
         {

@@ -11,6 +11,11 @@ namespace Facebook.Net.Protocol;
 
 public static partial class ResponseParser
 {
+    private static readonly string[] s_permalinkKeys = ["wwwURL", "permalink_url", "url"];
+    private static readonly string[] s_postUrlMarkers = ["/posts/", "/permalink/", "story_fbid=", "multi_permalinks="];
+    private static readonly string[] s_avatarFieldNames = ["profile_picture", "icon_image", "group_icon", "avatar", "image"];
+    private static readonly string[] s_mediaImageContainers = ["photo_image", "image", "preferred_thumbnail", "thumbnailImage", "viewer_image", "flexible_height_image"];
+    private static readonly string[] s_singleActorKeys = ["actor", "author", "owner", "seller"];
     /// <summary>
     /// Extracts feed or group <see cref="PostSummary"/> items from a <see cref="GraphQlResult"/>.
     /// Merges fields across multiple Relay fragments sharing the same <c>post_id</c> so partial
@@ -218,6 +223,8 @@ public static partial class ResponseParser
                             IsVideo: mergedIsVideo,
                             AuthorAvatarUrl: mergedAuthorAvatar);
                     }
+
+                    return;
                 }
             }
 
@@ -362,7 +369,7 @@ public static partial class ResponseParser
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (string key in new[] { "wwwURL", "permalink_url", "url" })
+            foreach (string key in s_permalinkKeys)
             {
                 if (element.TryGetProperty(key, out JsonElement uEl) &&
                     uEl.ValueKind == JsonValueKind.String)
@@ -411,7 +418,7 @@ public static partial class ResponseParser
         }
 
         ReadOnlySpan<char> span = url.AsSpan();
-        foreach (string marker in new[] { "/posts/", "/permalink/", "story_fbid=", "multi_permalinks=" })
+        foreach (string marker in s_postUrlMarkers)
         {
             int idx = span.IndexOf(marker.AsSpan(), StringComparison.OrdinalIgnoreCase);
             if (idx >= 0)
@@ -566,8 +573,7 @@ public static partial class ResponseParser
             return null;
         }
 
-        string[] avatarFieldNames = ["profile_picture", "icon_image", "group_icon", "avatar", "image"];
-        foreach (string fieldName in avatarFieldNames)
+        foreach (string fieldName in s_avatarFieldNames)
         {
             if (obj.TryGetProperty(fieldName, out JsonElement picEl) &&
                 picEl.ValueKind == JsonValueKind.Object &&
@@ -655,8 +661,7 @@ public static partial class ResponseParser
                        mediaNode.TryGetProperty("playable_url"u8, out _) ||
                        (mediaNode.TryGetProperty("is_playable"u8, out JsonElement playEl) && playEl.ValueKind == JsonValueKind.True);
 
-        string[] imageContainers = ["photo_image", "image", "preferred_thumbnail", "thumbnailImage", "viewer_image", "flexible_height_image"];
-        foreach (string container in imageContainers)
+        foreach (string container in s_mediaImageContainers)
         {
             if (mediaNode.TryGetProperty(container, out JsonElement imgEl) &&
                 imgEl.ValueKind == JsonValueKind.Object)
@@ -710,7 +715,7 @@ public static partial class ResponseParser
                 }
             }
 
-            foreach (string singleActorKey in new[] { "actor", "author", "owner", "seller" })
+            foreach (string singleActorKey in s_singleActorKeys)
             {
                 if (element.TryGetProperty(singleActorKey, out JsonElement singleActorEl) &&
                     singleActorEl.ValueKind == JsonValueKind.Object &&

@@ -420,17 +420,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task InitializeAsync()
     {
-        await _context.AccountStore.InitializeAsync().ConfigureAwait(true);
-        await _context.AuditStore.InitializeAsync().ConfigureAwait(true);
-        await this.AiAssistant.EnsureMemoryLoadedAsync().ConfigureAwait(true);
+        await Task.WhenAll(
+            _context.AccountStore.InitializeAsync(),
+            _context.AuditStore.InitializeAsync(),
+            this.AiAssistant.EnsureMemoryLoadedAsync()).ConfigureAwait(true);
 
         this.LoadSettingsIntoProperties();
         IReadOnlyList<GroupTag> leadTags = await _context.AccountStore.GetAllLeadTagsAsync().ConfigureAwait(true);
         this.LeadTags.ReplaceAll(leadTags);
         this.RebuildLeadTagIndex();
         await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
-        await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
-        await this.AuditDrawer.RefreshLogsAsync().ConfigureAwait(true);
+        await Task.WhenAll(
+            this.QueryLocalScrapedPostsAsync(),
+            this.AuditDrawer.RefreshLogsAsync()).ConfigureAwait(true);
         this.SyncBackgroundScraperLoop();
 
         _ = await this.LogAuditAsync(

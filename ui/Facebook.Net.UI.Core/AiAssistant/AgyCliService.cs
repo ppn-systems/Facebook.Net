@@ -438,6 +438,31 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             }
         }
 
+        string[] unifiedCandidates = OperatingSystem.IsWindows()
+            ? ["FacebookOneClient.exe"]
+            : ["FacebookOneClient", "FacebookOneClient.exe"];
+
+        if (!string.IsNullOrWhiteSpace(processDir))
+        {
+            for (int i = 0; i < unifiedCandidates.Length; i++)
+            {
+                string candidate = Path.Combine(processDir, unifiedCandidates[i]);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        for (int i = 0; i < unifiedCandidates.Length; i++)
+        {
+            string candidate = Path.Combine(baseDir, unifiedCandidates[i]);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
         return null;
     }
 
@@ -452,12 +477,16 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
         {
             resolvedPath = Path.Combine(
                 AppContext.BaseDirectory,
-                OperatingSystem.IsWindows() ? "Facebook.Net.Mcp.exe" : "Facebook.Net.Mcp");
+                OperatingSystem.IsWindows() ? "FacebookOneClient.exe" : "FacebookOneClient");
         }
 
         bool isDll = resolvedPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+        bool isUnifiedClient = string.Equals(
+            Path.GetFileNameWithoutExtension(resolvedPath),
+            "FacebookOneClient",
+            StringComparison.OrdinalIgnoreCase);
         string command = isDll ? "dotnet" : resolvedPath;
-        string[] args = isDll ? [resolvedPath] : [];
+        string[] args = isDll ? [resolvedPath] : (isUnifiedClient ? ["--mcp"] : []);
 
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string primaryConfigPath = Path.Combine(userProfile, ".gemini", "config", "mcp_config.json");
@@ -479,7 +508,9 @@ public sealed partial class AgyCliService : IAgyCliService, IDisposable
             {
                 string[] mcpAddArgs = isDll
                     ? ["mcp", "add", "facebook", "dotnet", resolvedPath]
-                    : ["mcp", "add", "facebook", resolvedPath];
+                    : (isUnifiedClient
+                        ? ["mcp", "add", "facebook", resolvedPath, "--mcp"]
+                        : ["mcp", "add", "facebook", resolvedPath]);
                 _ = await RunProcessCaptureAsync(agyExe, mcpAddArgs, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is OperationCanceledException or IOException or InvalidOperationException or System.ComponentModel.Win32Exception)

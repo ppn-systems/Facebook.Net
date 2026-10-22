@@ -54,10 +54,10 @@ public static class GroupRowCard
             baseColor = Color.FromRgb(246, 130, 31);
         }
 
-        SolidColorBrush dotBrush = new(baseColor);
-        SolidColorBrush bgBrush = new(Color.FromArgb(isActive ? (byte)46 : (byte)18, baseColor.R, baseColor.G, baseColor.B));
-        SolidColorBrush borderBrush = new(Color.FromArgb(isActive ? (byte)175 : (byte)80, baseColor.R, baseColor.G, baseColor.B));
-        SolidColorBrush textBrush = new(Color.FromRgb(
+        IImmutableSolidColorBrush dotBrush = ThemeLifecycle.GetCachedBrush(baseColor);
+        IImmutableSolidColorBrush bgBrush = ThemeLifecycle.GetCachedBrush(Color.FromArgb(isActive ? (byte)46 : (byte)18, baseColor.R, baseColor.G, baseColor.B));
+        IImmutableSolidColorBrush borderBrush = ThemeLifecycle.GetCachedBrush(Color.FromArgb(isActive ? (byte)175 : (byte)80, baseColor.R, baseColor.G, baseColor.B));
+        IImmutableSolidColorBrush textBrush = ThemeLifecycle.GetCachedBrush(Color.FromRgb(
             (byte)Math.Min(255, baseColor.R + 35),
             (byte)Math.Min(255, baseColor.G + 35),
             (byte)Math.Min(255, baseColor.B + 35)));
@@ -413,45 +413,55 @@ public static class GroupRowCard
         Action<string> onToggleTag,
         string buttonLabel)
     {
-        HashSet<string> assignedSet = new(StringComparer.OrdinalIgnoreCase);
-        if (assignedTags is not null)
-        {
-            for (int i = 0; i < assignedTags.Count; i++)
-            {
-                _ = assignedSet.Add(assignedTags[i].Id);
-            }
-        }
-
-        StackPanel flyoutStack = new()
-        {
-            Spacing = 6,
-            MinWidth = 195
-        };
-
         Flyout flyout = new()
         {
             Placement = PlacementMode.BottomEdgeAlignedRight
         };
 
-        for (int i = 0; i < allTags.Count; i++)
+        StackPanel? flyoutStack = null;
+        flyout.Opening += (_, _) =>
         {
-            GroupTag tag = allTags[i];
-            bool hasTag = assignedSet.Contains(tag.Id);
-            string suffix = hasTag ? "✓" : string.Empty;
-            Border chip = CreateTagPill(
-                tag,
-                suffixText: suffix,
-                isActive: hasTag,
-                onClick: () =>
+            if (flyoutStack is null)
+            {
+                flyoutStack = new StackPanel
                 {
-                    flyout.Hide();
-                    onToggleTag(tag.Id);
-                });
-            chip.HorizontalAlignment = HorizontalAlignment.Stretch;
-            flyoutStack.Children.Add(chip);
-        }
+                    Spacing = 6,
+                    MinWidth = 195
+                };
+                flyout.Content = SurfaceCard.Create(theme, flyoutStack, new Thickness(10));
+            }
+            else
+            {
+                flyoutStack.Children.Clear();
+            }
 
-        flyout.Content = SurfaceCard.Create(theme, flyoutStack, new Thickness(10));
+            HashSet<string> assignedSet = new(StringComparer.OrdinalIgnoreCase);
+            if (assignedTags is not null)
+            {
+                for (int i = 0; i < assignedTags.Count; i++)
+                {
+                    _ = assignedSet.Add(assignedTags[i].Id);
+                }
+            }
+
+            for (int i = 0; i < allTags.Count; i++)
+            {
+                GroupTag tag = allTags[i];
+                bool hasTag = assignedSet.Contains(tag.Id);
+                string suffix = hasTag ? "✓" : string.Empty;
+                Border chip = CreateTagPill(
+                    tag,
+                    suffixText: suffix,
+                    isActive: hasTag,
+                    onClick: () =>
+                    {
+                        flyout.Hide();
+                        onToggleTag(tag.Id);
+                    });
+                chip.HorizontalAlignment = HorizontalAlignment.Stretch;
+                flyoutStack.Children.Add(chip);
+            }
+        };
 
         Button btn = new()
         {

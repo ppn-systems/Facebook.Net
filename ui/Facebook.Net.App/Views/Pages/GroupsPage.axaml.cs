@@ -61,16 +61,16 @@ public sealed partial class GroupsPage : UserControl
 
     private Control BuildLayout()
     {
-        Control tab1View = this.BuildTargetsTab(out Action refreshTab1);
-        Control tab2View = this.BuildDiscoverTab(out Action refreshTab2);
-        Control tab3View = this.BuildTagManagerTab(out Action refreshTab3);
+        Action? refreshTab1 = null;
+        Action? refreshTab2 = null;
+        Action? refreshTab3 = null;
 
         SubTabBar subTabBar = new(
             this._theme,
             [
-                new SubTabItem(this._i18n["Groups.TabTargets"], VectorIcons.CheckCircle, tab1View),
-                new SubTabItem(this._i18n["Groups.TabDiscover"], VectorIcons.Groups, tab2View),
-                new SubTabItem(this._i18n["Groups.TabTagManager"], VectorIcons.Bookmark, tab3View)
+                new SubTabItem(this._i18n["Groups.TabTargets"], VectorIcons.CheckCircle, () => this.BuildTargetsTab(out refreshTab1)),
+                new SubTabItem(this._i18n["Groups.TabDiscover"], VectorIcons.Groups, () => this.BuildDiscoverTab(out refreshTab2)),
+                new SubTabItem(this._i18n["Groups.TabTagManager"], VectorIcons.Bookmark, () => this.BuildTagManagerTab(out refreshTab3))
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -81,9 +81,9 @@ public sealed partial class GroupsPage : UserControl
                 this._i18n["Groups.TabDiscover"],
                 this._i18n["Groups.TabTagManager"]
             ]);
-            refreshTab1();
-            refreshTab2();
-            refreshTab3();
+            refreshTab1?.Invoke();
+            refreshTab2?.Invoke();
+            refreshTab3?.Invoke();
         };
 
         return subTabBar;
@@ -306,7 +306,7 @@ public sealed partial class GroupsPage : UserControl
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
 
-        targetSearchBar.SearchTextBox.TextChanged += (_, _) => RefreshFilteredTargets();
+        targetSearchBar.BindDebouncedSearch(_ => RefreshFilteredTargets());
         targetSearchBar.SearchButton.Click += (_, _) => RefreshFilteredTargets();
         Grid.SetRow(targetSearchBar, 1);
         targetsPane.Children.Add(targetSearchBar);
@@ -622,11 +622,11 @@ public sealed partial class GroupsPage : UserControl
             this._i18n["Common.SearchInList"],
             this._i18n["Common.BtnApplyFilter"]);
 
-        searchFilterBar.SearchTextBox.TextChanged += (_, _) =>
+        searchFilterBar.BindDebouncedSearch(text =>
         {
-            this._vm.GroupSearchKeyword = searchFilterBar.SearchTextBox.Text ?? string.Empty;
+            this._vm.GroupSearchKeyword = text ?? string.Empty;
             RefreshCatalogFilter();
-        };
+        });
 
         Grid.SetRow(searchFilterBar, 1);
         catalogPane.Children.Add(searchFilterBar);

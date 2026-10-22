@@ -71,19 +71,25 @@ public sealed partial class PublisherPage : UserControl
     {
         SubTabBar? subTabBar = null;
         Control tab1View = this.BuildComposeTab(out TextBox contentBox, out TextBox photoBox, out Action refreshTab1);
-        Control tab2View = this.BuildPublishedPostsAndRepostTab(() => subTabBar?.SelectTab(0), out Action refreshTab2);
-        Control tab3View = this.BuildTemplatesAndBumpCombinedTab(
-            contentBox,
-            photoBox,
-            () => subTabBar?.SelectTab(0),
-            out Action refreshTab3);
+        Action? refreshTab2 = null;
+        Action? refreshTab3 = null;
 
         subTabBar = new SubTabBar(
             this._theme,
             [
                 new SubTabItem(this._i18n["Publisher.TabCompose"], VectorIcons.Publish, tab1View),
-                new SubTabItem(this._i18n["Publisher.TabPostManager"], VectorIcons.Groups, tab2View),
-                new SubTabItem(this._i18n["Publisher.TabTemplatesAndBump"], VectorIcons.Bookmark, tab3View)
+                new SubTabItem(
+                    this._i18n["Publisher.TabPostManager"],
+                    VectorIcons.Groups,
+                    () => this.BuildPublishedPostsAndRepostTab(() => subTabBar?.SelectTab(0), out refreshTab2)),
+                new SubTabItem(
+                    this._i18n["Publisher.TabTemplatesAndBump"],
+                    VectorIcons.Bookmark,
+                    () => this.BuildTemplatesAndBumpCombinedTab(
+                        contentBox,
+                        photoBox,
+                        () => subTabBar?.SelectTab(0),
+                        out refreshTab3))
             ]);
 
         this._i18n.LanguageChanged += (_, _) =>
@@ -95,8 +101,8 @@ public sealed partial class PublisherPage : UserControl
                 this._i18n["Publisher.TabTemplatesAndBump"]
             ]);
             refreshTab1();
-            refreshTab2();
-            refreshTab3();
+            refreshTab2?.Invoke();
+            refreshTab3?.Invoke();
         };
 
         return subTabBar;

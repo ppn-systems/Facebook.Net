@@ -8,9 +8,21 @@ using Microsoft.Extensions.Logging;
 
 namespace Facebook.Net.Mcp;
 
-internal static class Program
+/// <summary>
+/// Entry point and host runner for the companion MCP stdio server.
+/// </summary>
+public static class Program
 {
-    private static async Task Main(string[] args)
+    /// <summary>
+    /// Runs the MCP stdio server asynchronously.
+    /// </summary>
+    public static async Task Main(string[] args) =>
+        await RunAsync(args).ConfigureAwait(false);
+
+    /// <summary>
+    /// Configures and runs the MCP stdio host with all Facebook One Client tools, prompts, and resources.
+    /// </summary>
+    public static async Task RunAsync(string[] args)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 

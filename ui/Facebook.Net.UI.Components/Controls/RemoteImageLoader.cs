@@ -30,12 +30,14 @@ public static class RemoteImageLoader
     /// <summary>
     /// Asynchronously loads an image from <paramref name="imageUrl"/> into <paramref name="targetImage"/>.
     /// Optionally toggles visibility of <paramref name="containerToShow"/> and hides <paramref name="fallbackToHide"/> upon success.
+    /// Decodes the bitmap to <paramref name="decodeWidth"/> pixels to minimize unmanaged BGRA32 memory footprint.
     /// </summary>
     public static void Attach(
         Image targetImage,
         string? imageUrl,
         Control? containerToShow = null,
-        Control? fallbackToHide = null)
+        Control? fallbackToHide = null,
+        int decodeWidth = 360)
     {
         ArgumentNullException.ThrowIfNull(targetImage);
 
@@ -56,18 +58,19 @@ public static class RemoteImageLoader
             return;
         }
 
-        _ = LoadAndApplyAsync(targetImage, imageUrl, containerToShow, fallbackToHide);
+        _ = LoadAndApplyAsync(targetImage, imageUrl, containerToShow, fallbackToHide, decodeWidth);
     }
 
     private static async Task LoadAndApplyAsync(
         Image targetImage,
         string imageUrl,
         Control? containerToShow,
-        Control? fallbackToHide)
+        Control? fallbackToHide,
+        int decodeWidth)
     {
         try
         {
-            Task<Bitmap?> loadTask = s_inFlightLoads.GetOrAdd(imageUrl, DownloadBitmapAsync);
+            Task<Bitmap?> loadTask = s_inFlightLoads.GetOrAdd(imageUrl, url => DownloadBitmapAsync(url, decodeWidth));
             Bitmap? bitmap = await loadTask.ConfigureAwait(false);
             _ = s_inFlightLoads.TryRemove(imageUrl, out _);
 
@@ -90,7 +93,7 @@ public static class RemoteImageLoader
         }
     }
 
-    private static async Task<Bitmap?> DownloadBitmapAsync(string url)
+    private static async Task<Bitmap?> DownloadBitmapAsync(string url, int decodeWidth)
     {
         try
         {
@@ -104,11 +107,11 @@ public static class RemoteImageLoader
             {
                 try
                 {
-                    byte[] cachedBytes = await File.ReadAllBytesAsync(diskPath).ConfigureAwait(false);
-                    if (cachedBytes.Length > 0 && cachedBytes.Length <= 8 * 1024 * 1024)
+                    FileInfo fi = new(diskPath);
+                    if (fi.Length > 0 && fi.Length <= 8 * 1024 * 1024)
                     {
-                        using MemoryStream cachedStream = new(cachedBytes);
-                        Bitmap cachedBitmap = new(cachedStream);
+                        using FileStream cachedStream = new(diskPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
+                        Bitmap cachedBitmap = DecodeStream(cachedStream, decodeWidth);
                         CacheBitmapInMemory(url, cachedBitmap);
                         return cachedBitmap;
                     }
@@ -133,8 +136,8 @@ public static class RemoteImageLoader
                     return null;
                 }
 
-                using MemoryStream ms = new(bytes);
-                Bitmap bitmap = new(ms);
+                using MemoryStream ms = new(bytes, writable: false);
+                Bitmap bitmap = DecodeStream(ms, decodeWidth);
 
                 try
                 {
@@ -157,6 +160,16 @@ public static class RemoteImageLoader
         {
             return null;
         }
+    }
+
+    private static Bitmap DecodeStream(Stream stream, int decodeWidth)
+    {
+        if (decodeWidth > 0)
+        {
+            return Bitmap.DecodeToWidth(stream, decodeWidth, BitmapInterpolationMode.MediumQuality);
+        }
+
+        return new Bitmap(stream);
     }
 
     private static void CacheBitmapInMemory(string url, Bitmap bitmap)
