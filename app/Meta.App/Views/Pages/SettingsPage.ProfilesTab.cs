@@ -3,16 +3,11 @@
 
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Threading;
 using Meta.UI.Components.Controls;
 using Meta.UI.Components.Icons;
-using Meta.UI.Core.Audit;
 using Meta.UI.Core.Collections;
 using Meta.UI.Core.Configuration;
 using Meta.UI.ViewModels.Shell;
@@ -172,186 +167,43 @@ public sealed partial class SettingsPage
                 bool isCurrentlyAssigned = !string.IsNullOrWhiteSpace(this._vm.SelectedAccount?.ProfileDirectory) &&
                     string.Equals(this._vm.SelectedAccount!.ProfileDirectory, opt.DirectoryPath, StringComparison.OrdinalIgnoreCase);
 
-                Grid rowGrid = new()
+                Action? deleteAction = null;
+                if (opt.IsManagedByApp)
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,128,142,28,28"),
-                    ColumnSpacing = 10,
-                    Margin = new Thickness(4, 4),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                Border iconCircle = new()
-                {
-                    Width = 34,
-                    Height = 34,
-                    CornerRadius = new CornerRadius(10),
-                    Background = opt.IsManagedByApp ? this._theme.Palette.BrandSubtleFill : this._theme.Palette.SecondarySurface,
-                    BorderBrush = opt.IsManagedByApp ? this._theme.Palette.BrandPrimary : this._theme.Palette.SubtleBorder,
-                    BorderThickness = new Thickness(1),
-                    Child = VectorIcons.Create(
-                        VectorIcons.Browser,
-                        16,
-                        opt.IsManagedByApp ? this._theme.Palette.BrandPrimary : this._theme.Palette.TextSecondary),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                StackPanel infoStack = new()
-                {
-                    Spacing = 2,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                StackPanel nameAndSizeRow = new()
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                TextBlock nameTb = SectionHeader.CreateLabel(this._theme, opt.DisplayName, 13, FontWeight.SemiBold);
-                nameTb.MaxLines = 1;
-                nameTb.TextTrimming = TextTrimming.CharacterEllipsis;
-                nameAndSizeRow.Children.Add(nameTb);
-
-                string initialSizeText = profileSizeCache.TryGetValue(opt.DirectoryPath, out long cachedBytes)
-                    ? $"•  {ShellViewModel.FormatByteSize(cachedBytes)}"
-                    : string.Empty;
-                TextBlock sizeTb = SectionHeader.CreateLabel(
-                    this._theme,
-                    initialSizeText,
-                    11.5,
-                    FontWeight.Medium,
-                    isSecondary: true);
-                nameAndSizeRow.Children.Add(sizeTb);
-
-                if (string.IsNullOrEmpty(initialSizeText))
-                {
-                    string dirPath = opt.DirectoryPath;
-                    _ = Task.Run(() =>
+                    deleteAction = () =>
                     {
-                        long bytes = ShellViewModel.GetProfileDirectorySizeBytes(dirPath);
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            profileSizeCache[dirPath] = bytes;
-                            sizeTb.Text = $"•  {ShellViewModel.FormatByteSize(bytes)}";
-                        });
-                    });
-                }
-
-                if (opt.HasFacebookSession)
-                {
-                    Border fbSessionBadge = StatusPill.Create(
-                        this._theme,
-                        this._i18n["Settings.BadgeHasFbSession"],
-                        AuditSeverity.Success);
-                    nameAndSizeRow.Children.Add(fbSessionBadge);
-                }
-
-                TextBlock pathTb = SectionHeader.CreateLabel(this._theme, opt.DirectoryPath, 11.5, FontWeight.Normal, isSecondary: true);
-                pathTb.MaxLines = 1;
-                pathTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                infoStack.Children.Add(nameAndSizeRow);
-                infoStack.Children.Add(pathTb);
-
-                Border sourceBadge = StatusPill.Create(
-                    this._theme,
-                    opt.IsManagedByApp ? this._i18n["Settings.BadgeManagedProfile"] : this._i18n["Settings.BadgeSystemProfile"],
-                    opt.IsManagedByApp ? AuditSeverity.Success : AuditSeverity.Info);
-                sourceBadge.HorizontalAlignment = HorizontalAlignment.Stretch;
-                sourceBadge.Height = 28;
-
-                Grid.SetColumn(iconCircle, 0);
-                Grid.SetColumn(infoStack, 1);
-                Grid.SetColumn(sourceBadge, 2);
-                rowGrid.Children.Add(iconCircle);
-                rowGrid.Children.Add(infoStack);
-                rowGrid.Children.Add(sourceBadge);
-
-                if (isCurrentlyAssigned)
-                {
-                    Border activePill = StatusPill.Create(
-                        this._theme,
-                        this._i18n["Settings.BadgeActiveProfile"],
-                        AuditSeverity.Success);
-                    activePill.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    activePill.Height = 28;
-                    Grid.SetColumn(activePill, 3);
-                    rowGrid.Children.Add(activePill);
-                }
-                else
-                {
-                    Button useProfileBtn = new()
-                    {
-                        Content = new TextBlock
-                        {
-                            Text = this._i18n["Settings.BtnUseProfile"],
-                            FontSize = 11,
-                            FontWeight = FontWeight.SemiBold,
-                            Foreground = this._theme.Palette.BrandPrimary,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center
-                        },
-                        Background = this._theme.Palette.BrandSubtleFill,
-                        BorderBrush = this._theme.Palette.BrandPrimary,
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(8),
-                        Height = 28,
-                        Padding = new Thickness(10, 0),
-                        HorizontalAlignment = HorizontalAlignment.Stretch,
-                        HorizontalContentAlignment = HorizontalAlignment.Center,
-                        VerticalContentAlignment = VerticalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Cursor = new Cursor(StandardCursorType.Hand)
+                        ConfirmDialogModal.ShowAsync(
+                            this,
+                            this._theme,
+                            this._i18n["Confirm.DeleteProfileTitle"],
+                            this._i18n.Format("Confirm.DeleteProfileMessage", opt.DisplayName),
+                            this._i18n["Confirm.BtnConfirmDelete"],
+                            this._i18n["Groups.BtnCancelEditTag"],
+                            async () =>
+                            {
+                                _ = await this._vm.DeleteManagedBrowserProfileAsync(opt).ConfigureAwait(true);
+                                ReloadProfilesFromDisk();
+                                RefreshFilteredProfiles();
+                            });
                     };
-                    useProfileBtn.Click += async (_, _) =>
+                }
+
+                return BrowserProfileRowCard.Create(
+                    this._theme,
+                    this._i18n,
+                    opt,
+                    isCurrentlyAssigned,
+                    profileSizeCache,
+                    ShellViewModel.GetProfileDirectorySizeBytes,
+                    ShellViewModel.FormatByteSize,
+                    onUseProfileAsync: async () =>
                     {
                         await this._vm.AssignBrowserProfileToSelectedAccountAsync(opt.DirectoryPath, opt.DisplayName).ConfigureAwait(true);
                         ReloadProfilesFromDisk();
                         RefreshFilteredProfiles();
-                    };
-                    Grid.SetColumn(useProfileBtn, 3);
-                    rowGrid.Children.Add(useProfileBtn);
-                }
-
-                Button openFolderRowBtn = AppButton.CreateRowIcon(
-                    this._theme,
-                    VectorIcons.Folder,
-                    this._i18n["Settings.BtnOpenProfileFolderTip"],
-                    () => ShellViewModel.OpenProfileFolderInExplorer(opt.DirectoryPath),
-                    AuditSeverity.Info);
-                Grid.SetColumn(openFolderRowBtn, 4);
-                rowGrid.Children.Add(openFolderRowBtn);
-
-                // Strictly allow deletion ONLY for profiles created by our app inside ProfilesRootDirectory
-                if (opt.IsManagedByApp)
-                {
-                    Button deleteProfileBtn = AppButton.CreateRowIcon(
-                        this._theme,
-                        VectorIcons.Trash,
-                        this._i18n["Accounts.BtnRowDelete"],
-                        () =>
-                        {
-                            ConfirmDialogModal.ShowAsync(
-                                this,
-                                this._theme,
-                                this._i18n["Confirm.DeleteProfileTitle"],
-                                this._i18n.Format("Confirm.DeleteProfileMessage", opt.DisplayName),
-                                this._i18n["Confirm.BtnConfirmDelete"],
-                                this._i18n["Groups.BtnCancelEditTag"],
-                                async () =>
-                                {
-                                    _ = await this._vm.DeleteManagedBrowserProfileAsync(opt).ConfigureAwait(true);
-                                    ReloadProfilesFromDisk();
-                                    RefreshFilteredProfiles();
-                                });
-                        },
-                        AuditSeverity.Error);
-                    Grid.SetColumn(deleteProfileBtn, 5);
-                    rowGrid.Children.Add(deleteProfileBtn);
-                }
-
-                return rowGrid;
+                    },
+                    onOpenFolder: () => ShellViewModel.OpenProfileFolderInExplorer(opt.DirectoryPath),
+                    onDeleteManagedProfile: deleteAction);
             },
             isVisible: filteredProfiles.Count > 0);
 
@@ -374,14 +226,6 @@ public sealed partial class SettingsPage
         pageGrid.Children.Add(listHost);
 
         // ───────────────────────────── Modal Popup Overlay (Create New Profile) ─────────────────────────────
-        Border createModalBackdrop = new()
-        {
-            IsVisible = false,
-            Background = new SolidColorBrush(Color.FromArgb(155, 8, 12, 22)),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch
-        };
-
         StackPanel modalStack = new() { Spacing = 14 };
 
         TextBlock modalTitleTb = SectionHeader.CreateLabel(
@@ -418,6 +262,8 @@ public sealed partial class SettingsPage
             this._i18n["Settings.BtnConfirmCreateProfile"],
             null,
             VectorIcons.CheckCircle);
+
+        Border createModalBackdrop = null!;
 
         void CloseCreateModal()
         {
@@ -459,15 +305,7 @@ public sealed partial class SettingsPage
         modalStack.Children.Add(newProfileNameBox);
         modalStack.Children.Add(modalBtnRow);
 
-        Border modalCard = SurfaceCard.Create(this._theme, modalStack, new Thickness(22, 18));
-        modalCard.Width = 420;
-        modalCard.CornerRadius = new CornerRadius(14);
-        modalCard.HorizontalAlignment = HorizontalAlignment.Center;
-        modalCard.VerticalAlignment = VerticalAlignment.Center;
-        modalCard.PointerPressed += (_, e) => e.Handled = true;
-
-        createModalBackdrop.PointerPressed += (_, _) => CloseCreateModal();
-        createModalBackdrop.Child = modalCard;
+        createModalBackdrop = ModalOverlayHost.Create(this._theme, modalStack, CloseCreateModal);
 
         rescanProfilesBtn.Click += (_, _) =>
         {

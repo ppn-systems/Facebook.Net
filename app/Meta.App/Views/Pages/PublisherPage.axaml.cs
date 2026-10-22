@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,7 +11,6 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Facebook.Net.Contracts.Models;
 using Meta.UI.Components.Controls;
@@ -276,7 +274,11 @@ public sealed partial class PublisherPage : UserControl
         contentBox = localContentBox;
 
         // Row 2: 1-Button Dynamic Variable Picker Flyout + Simulated Facebook Post Preview
-        Button insertVarBtn = this.CreateVariableInsertFlyoutButton(localContentBox, out Action rebuildComposeVars);
+        Button insertVarBtn = SpintaxVariablePicker.CreateButton(
+            this._theme,
+            this._i18n,
+            localContentBox,
+            out Action rebuildComposeVars);
 
         Button previewSpintaxBtn = AppButton.CreateSecondary(
             this._theme,
@@ -305,133 +307,18 @@ public sealed partial class PublisherPage : UserControl
             out TextBox localPhotoBox,
             out Button pickPhotoBtn);
 
-        Border photoPreviewContainer = new()
-        {
-            IsVisible = false,
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            BorderBrush = this._theme.Palette.SubtleBorder,
-            Padding = new Thickness(8),
-            Background = this._theme.Palette.SecondarySurface
-        };
-
-        StackPanel thumbnailStrip = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock attachedFileNameTb = SectionHeader.CreateLabel(this._theme, string.Empty, 12, FontWeight.SemiBold);
-        attachedFileNameTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        attachedFileNameTb.MaxLines = 1;
-        attachedFileNameTb.VerticalAlignment = VerticalAlignment.Center;
-
-        Button clearPhotoBtn = AppButton.CreateSecondary(
+        Border photoPreviewContainer = MediaThumbnailStrip.Create(
             this._theme,
-            "✕",
-            new CommunityToolkit.Mvvm.Input.RelayCommand(() =>
+            this._i18n,
+            onClearClicked: () =>
             {
                 localPhotoBox.Text = string.Empty;
                 this._vm.PostMediaFilePath = string.Empty;
-            }));
+            },
+            out Action<IReadOnlyList<string>> refreshStripFiles);
 
-        Grid previewInnerGrid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 10,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(thumbnailStrip, 0);
-        Grid.SetColumn(attachedFileNameTb, 1);
-        Grid.SetColumn(clearPhotoBtn, 2);
-        previewInnerGrid.Children.Add(thumbnailStrip);
-        previewInnerGrid.Children.Add(attachedFileNameTb);
-        previewInnerGrid.Children.Add(clearPhotoBtn);
-        photoPreviewContainer.Child = previewInnerGrid;
-
-        static void DisposeStripBitmaps(Panel strip)
-        {
-            for (int i = 0; i < strip.Children.Count; i++)
-            {
-                if (strip.Children[i] is Border { Child: Image img } && img.Source is IDisposable disp)
-                {
-                    img.Source = null;
-                    disp.Dispose();
-                }
-            }
-
-            strip.Children.Clear();
-        }
-
-        void RefreshPhotoPreview()
-        {
-            DisposeStripBitmaps(thumbnailStrip);
-            List<string> files = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
-            if (files.Count > 0)
-            {
-                int maxThumbs = Math.Min(files.Count, 5);
-                int validBitmaps = 0;
-                for (int i = 0; i < maxThumbs; i++)
-                {
-                    try
-                    {
-                        Image thumbImg = new()
-                        {
-                            Width = 64,
-                            Height = 48,
-                            Stretch = Stretch.UniformToFill,
-                            Source = new Bitmap(files[i])
-                        };
-                        Border thumbClip = new()
-                        {
-                            CornerRadius = new CornerRadius(6),
-                            ClipToBounds = true,
-                            Child = thumbImg
-                        };
-                        thumbnailStrip.Children.Add(thumbClip);
-                        validBitmaps++;
-                    }
-                    catch
-                    {
-                        // Ignore unreadable bitmap
-                    }
-                }
-
-                if (files.Count > maxThumbs)
-                {
-                    Border overflowBadge = StatusPill.Create(
-                        this._theme,
-                        this._i18n.Format("Publisher.PhotosOverflowBadge", files.Count - maxThumbs),
-                        AuditSeverity.Info);
-                    overflowBadge.VerticalAlignment = VerticalAlignment.Center;
-                    thumbnailStrip.Children.Add(overflowBadge);
-                }
-
-                if (validBitmaps > 0)
-                {
-                    if (files.Count == 1)
-                    {
-                        attachedFileNameTb.Text = Path.GetFileName(files[0]);
-                    }
-                    else
-                    {
-                        List<string> fileNames = new(files.Count);
-                        for (int i = 0; i < files.Count; i++)
-                        {
-                            fileNames.Add(Path.GetFileName(files[i]));
-                        }
-
-                        attachedFileNameTb.Text = $"{this._i18n.Format("Publisher.PhotosAttachedCount", files.Count)}: {string.Join(", ", fileNames)}";
-                    }
-
-                    photoPreviewContainer.IsVisible = true;
-                    return;
-                }
-            }
-
-            photoPreviewContainer.IsVisible = false;
-        }
+        void RefreshPhotoPreview() =>
+            refreshStripFiles(ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text));
 
         localPhotoBox.TextChanged += (_, _) =>
         {
@@ -613,173 +500,7 @@ public sealed partial class PublisherPage : UserControl
             Content = splitGrid
         };
 
-        Grid previewPageGrid = new()
-        {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            RowSpacing = 14
-        };
-
-        Grid previewTopBar = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            ColumnSpacing = 12,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        Button backToComposerBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Publisher.BtnBackToComposer"]);
-
-        TextBlock previewPageTitleTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._i18n["Publisher.PreviewPageTitle"],
-            16,
-            FontWeight.Bold);
-        previewPageTitleTb.HorizontalAlignment = HorizontalAlignment.Center;
-
-        Button spinAnotherBtn = AppButton.CreatePrimary(
-            this._theme,
-            this._i18n["Publisher.BtnSpinAnotherVariant"],
-            null,
-            VectorIcons.Sync);
-
-        Grid.SetColumn(backToComposerBtn, 0);
-        Grid.SetColumn(previewPageTitleTb, 1);
-        Grid.SetColumn(spinAnotherBtn, 2);
-        previewTopBar.Children.Add(backToComposerBtn);
-        previewTopBar.Children.Add(previewPageTitleTb);
-        previewTopBar.Children.Add(spinAnotherBtn);
-        Grid.SetRow(previewTopBar, 0);
-        previewPageGrid.Children.Add(previewTopBar);
-
-        // Simulated Facebook Feed Post Card
-        StackPanel fbPostCardStack = new()
-        {
-            Spacing = 14
-        };
-
-        Grid fbPostHeader = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 12,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        ContentControl fbPreviewAvatarHost = new()
-        {
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        StackPanel fbHeaderMeta = new()
-        {
-            Spacing = 3,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        TextBlock fbAuthorAndGroupTb = SectionHeader.CreateLabel(
-            this._theme,
-            string.Empty,
-            14.5,
-            FontWeight.Bold);
-
-        TextBlock fbTimestampTb = SectionHeader.CreateLabel(
-            this._theme,
-            this._i18n["Publisher.PreviewJustNowPublic"],
-            12,
-            FontWeight.Normal,
-            isSecondary: true);
-
-        fbHeaderMeta.Children.Add(fbAuthorAndGroupTb);
-        fbHeaderMeta.Children.Add(fbTimestampTb);
-        Grid.SetColumn(fbPreviewAvatarHost, 0);
-        Grid.SetColumn(fbHeaderMeta, 1);
-        fbPostHeader.Children.Add(fbPreviewAvatarHost);
-        fbPostHeader.Children.Add(fbHeaderMeta);
-        fbPostCardStack.Children.Add(fbPostHeader);
-
-        TextBlock fbBodyContentTb = SectionHeader.CreateLabel(
-            this._theme,
-            string.Empty,
-            14.5,
-            FontWeight.Normal);
-        fbBodyContentTb.LineHeight = 22;
-        fbBodyContentTb.TextWrapping = TextWrapping.Wrap;
-        fbPostCardStack.Children.Add(fbBodyContentTb);
-
-        Image fbFullPreviewImage = new()
-        {
-            MaxHeight = 360,
-            Stretch = Stretch.UniformToFill,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
-        Border fbMediaFrame = new()
-        {
-            IsVisible = false,
-            CornerRadius = new CornerRadius(10),
-            ClipToBounds = true,
-            BorderThickness = new Thickness(1),
-            BorderBrush = this._theme.Palette.SubtleBorder,
-            Child = fbFullPreviewImage
-        };
-        fbPostCardStack.Children.Add(fbMediaFrame);
-
-        StackPanel fbExtraPhotosStrip = new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            IsVisible = false
-        };
-        fbPostCardStack.Children.Add(fbExtraPhotosStrip);
-
-        TextBlock fbReactionSummaryTb = SectionHeader.CreateLabel(
-            this._theme,
-            $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}",
-            12,
-            FontWeight.Medium,
-            isSecondary: true);
-        fbPostCardStack.Children.Add(fbReactionSummaryTb);
-
-        Border fbDivider = new()
-        {
-            Height = 1,
-            Background = this._theme.Palette.SubtleBorder
-        };
-        fbPostCardStack.Children.Add(fbDivider);
-
-        Grid fbActionRow = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            ColumnSpacing = 8
-        };
-
-        TextBlock fbLikeLbl = SectionHeader.CreateLabel(this._theme, $"👍  {this._i18n["Publisher.PreviewActionLike"]}", 13, FontWeight.SemiBold, isSecondary: true);
-        fbLikeLbl.HorizontalAlignment = HorizontalAlignment.Center;
-        TextBlock fbCommentLbl = SectionHeader.CreateLabel(this._theme, $"💬  {this._i18n["Publisher.PreviewActionComment"]}", 13, FontWeight.SemiBold, isSecondary: true);
-        fbCommentLbl.HorizontalAlignment = HorizontalAlignment.Center;
-        TextBlock fbShareLbl = SectionHeader.CreateLabel(this._theme, $"↗  {this._i18n["Publisher.PreviewActionShare"]}", 13, FontWeight.SemiBold, isSecondary: true);
-        fbShareLbl.HorizontalAlignment = HorizontalAlignment.Center;
-
-        Grid.SetColumn(fbLikeLbl, 0);
-        Grid.SetColumn(fbCommentLbl, 1);
-        Grid.SetColumn(fbShareLbl, 2);
-        fbActionRow.Children.Add(fbLikeLbl);
-        fbActionRow.Children.Add(fbCommentLbl);
-        fbActionRow.Children.Add(fbShareLbl);
-        fbPostCardStack.Children.Add(fbActionRow);
-
-        Border fbPostOuterCard = SurfaceCard.Create(this._theme, fbPostCardStack, new Thickness(22, 18));
-        fbPostOuterCard.MaxWidth = 680;
-        fbPostOuterCard.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-        ScrollViewer fbPreviewScroll = new()
-        {
-            Content = fbPostOuterCard
-        };
-        Grid.SetRow(fbPreviewScroll, 1);
-        previewPageGrid.Children.Add(fbPreviewScroll);
-
-        Border previewPageCard = SurfaceCard.Create(this._theme, previewPageGrid, new Thickness(18));
+        Action<FacebookPostPreviewData> populatePreviewCard = null!;
 
         void PopulateSimulatedPreview()
         {
@@ -789,8 +510,6 @@ public sealed partial class PublisherPage : UserControl
             }
 
             string accName = this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"];
-            fbPreviewAvatarHost.Content = AvatarBadge.Create(this._theme, accName, 44, this._vm.SelectedAccount?.AvatarUrl);
-
             string sampleGroupName = this._i18n["Publisher.DefaultSampleGroupName"];
             for (int i = 0; i < this._vm.TargetGroups.Count; i++)
             {
@@ -801,7 +520,7 @@ public sealed partial class PublisherPage : UserControl
                 }
             }
 
-            fbAuthorAndGroupTb.Text = this._vm.PublishTargetMode == 0
+            string headerDisplayLine = this._vm.PublishTargetMode == 0
                 ? accName
                 : $"{accName}  ▸  {sampleGroupName}";
 
@@ -819,102 +538,28 @@ public sealed partial class PublisherPage : UserControl
                 .Replace("{time}", now.ToString("HH:mm", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
                 .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
 
-            fbBodyContentTb.Text = resolvedBody;
-            fbReactionSummaryTb.IsVisible = this._vm.AutoReactPublishedPost;
-
-            if (fbFullPreviewImage.Source is IDisposable oldPreviewBmp)
-            {
-                fbFullPreviewImage.Source = null;
-                oldPreviewBmp.Dispose();
-            }
-
-            DisposeStripBitmaps(fbExtraPhotosStrip);
-
-            List<string> previewMediaFiles = ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text);
-            if (previewMediaFiles.Count > 0)
-            {
-                try
-                {
-                    fbFullPreviewImage.Source = new Bitmap(previewMediaFiles[0]);
-                    fbMediaFrame.IsVisible = true;
-                }
-                catch
-                {
-                    fbMediaFrame.IsVisible = false;
-                }
-
-                if (previewMediaFiles.Count > 1)
-                {
-                    int maxExtra = Math.Min(previewMediaFiles.Count, 6);
-                    for (int i = 0; i < maxExtra; i++)
-                    {
-                        try
-                        {
-                            string path = previewMediaFiles[i];
-                            Image extraImg = new()
-                            {
-                                Width = 88,
-                                Height = 66,
-                                Stretch = Stretch.UniformToFill,
-                                Source = new Bitmap(path)
-                            };
-                            Border extraBorder = new()
-                            {
-                                CornerRadius = new CornerRadius(8),
-                                ClipToBounds = true,
-                                BorderThickness = new Thickness(1),
-                                BorderBrush = this._theme.Palette.SubtleBorder,
-                                Cursor = new Cursor(StandardCursorType.Hand),
-                                Child = extraImg
-                            };
-                            extraBorder.PointerPressed += (_, _) =>
-                            {
-                                try
-                                {
-                                    if (fbFullPreviewImage.Source is IDisposable prevBmp)
-                                    {
-                                        fbFullPreviewImage.Source = null;
-                                        prevBmp.Dispose();
-                                    }
-
-                                    fbFullPreviewImage.Source = new Bitmap(path);
-                                }
-                                catch
-                                {
-                                    // Ignore unreadable bitmap
-                                }
-                            };
-                            fbExtraPhotosStrip.Children.Add(extraBorder);
-                        }
-                        catch
-                        {
-                            // Ignore unreadable bitmap
-                        }
-                    }
-
-                    fbExtraPhotosStrip.IsVisible = fbExtraPhotosStrip.Children.Count > 1;
-                }
-                else
-                {
-                    fbExtraPhotosStrip.IsVisible = false;
-                }
-            }
-            else
-            {
-                fbMediaFrame.IsVisible = false;
-                fbExtraPhotosStrip.IsVisible = false;
-            }
+            populatePreviewCard(new FacebookPostPreviewData(
+                AccountDisplayName: accName,
+                AccountAvatarUrl: this._vm.SelectedAccount?.AvatarUrl,
+                HeaderDisplayLine: headerDisplayLine,
+                ResolvedBodyText: resolvedBody,
+                ShowAutoReactionSummary: this._vm.AutoReactPublishedPost,
+                MediaFilePaths: ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text)));
         }
+
+        Border previewPageCard = FacebookPostPreviewCard.Create(
+            this._theme,
+            this._i18n,
+            onBackClicked: () => composeHost.Content = splitGrid,
+            onSpinAnotherClicked: PopulateSimulatedPreview,
+            out populatePreviewCard,
+            out Action refreshPreviewCardI18n);
 
         previewSpintaxBtn.Click += (_, _) =>
         {
             PopulateSimulatedPreview();
             composeHost.Content = previewPageCard;
         };
-
-        spinAnotherBtn.Click += (_, _) => PopulateSimulatedPreview();
-
-        backToComposerBtn.Click += (_, _) => composeHost.Content = splitGrid;
 
         this._vm.PropertyChanged += (_, e) =>
         {
@@ -960,15 +605,7 @@ public sealed partial class PublisherPage : UserControl
             AppButton.SetText(pickPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
             AppButton.SetText(saveTplBtn, this._i18n["Publisher.BtnSaveTemplate"]);
 
-            AppButton.SetText(backToComposerBtn, this._i18n["Publisher.BtnBackToComposer"]);
-            previewPageTitleTb.Text = this._i18n["Publisher.PreviewPageTitle"];
-            AppButton.SetText(spinAnotherBtn, this._i18n["Publisher.BtnSpinAnotherVariant"]);
-            fbTimestampTb.Text = this._i18n["Publisher.PreviewJustNowPublic"];
-            fbReactionSummaryTb.Text = $"❤️ 👍  {this._i18n["Publisher.PreviewAutoLikedHint"]}";
-            fbLikeLbl.Text = $"👍  {this._i18n["Publisher.PreviewActionLike"]}";
-            fbCommentLbl.Text = $"💬  {this._i18n["Publisher.PreviewActionComment"]}";
-            fbShareLbl.Text = $"↗  {this._i18n["Publisher.PreviewActionShare"]}";
-
+            refreshPreviewCardI18n();
             UpdatePublishButtonAndIdentity();
             RefreshPhotoPreview();
             refreshTargetCard();
@@ -1285,75 +922,6 @@ public sealed partial class PublisherPage : UserControl
         };
 
         return SurfaceCard.Create(this._theme, pickerGrid, new Thickness(14));
-    }
-
-    internal Button CreateVariableInsertFlyoutButton(TextBox targetBox, out Action rebuildFlyoutItems)
-    {
-        StackPanel variableMenuStack = new()
-        {
-            Spacing = 4,
-            MinWidth = 240
-        };
-
-        Flyout variableFlyout = new()
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = SurfaceCard.Create(this._theme, variableMenuStack, new Thickness(8))
-        };
-
-        Button insertVarBtn = AppButton.CreateSecondary(
-            this._theme,
-            this._i18n["Common.BtnInsertVariable"],
-            null,
-            VectorIcons.Plus);
-        insertVarBtn.Flyout = variableFlyout;
-
-        void RebuildItems()
-        {
-            AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
-            variableMenuStack.Children.Clear();
-            (string Label, string Token)[] items =
-            [
-                ($"{this._i18n["Common.VarGreetingLabel"]}  •  {{Xin chào|Hello}}", "{Xin chào|Chào cả nhà|Chào anh chị em}"),
-                ($"{this._i18n["Common.VarGroupNameLabel"]}  •  {{group_name}}", "{group_name}"),
-                ($"{this._i18n["Common.VarDateLabel"]}  •  {{date}}", "{date}"),
-                ($"{this._i18n["Common.VarTimeLabel"]}  •  {{time}}", "{time}"),
-                ($"{this._i18n["Common.VarRandomIdLabel"]}  •  #{{random_id}}", "#{random_id}")
-            ];
-
-            for (int i = 0; i < items.Length; i++)
-            {
-                (string itemLabel, string tokenToInsert) = items[i];
-                Button itemBtn = new()
-                {
-                    Content = SectionHeader.CreateLabel(this._theme, itemLabel, 12, FontWeight.SemiBold),
-                    Background = this._theme.Palette.SecondarySurface,
-                    BorderBrush = this._theme.Palette.SubtleBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(10, 6),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                itemBtn.Click += (_, _) =>
-                {
-                    variableFlyout.Hide();
-                    string current = targetBox.Text ?? string.Empty;
-                    targetBox.Text = string.IsNullOrEmpty(current)
-                        ? tokenToInsert
-                        : $"{current} {tokenToInsert}";
-                    targetBox.CaretIndex = targetBox.Text.Length;
-                    _ = targetBox.Focus();
-                };
-                variableMenuStack.Children.Add(itemBtn);
-            }
-        }
-
-        RebuildItems();
-        this._theme.ThemeChanged += (_, _) => RebuildItems();
-        rebuildFlyoutItems = RebuildItems;
-        return insertVarBtn;
     }
 
     private async Task<IReadOnlyList<string>> PickMultipleFilesAsync(string title)

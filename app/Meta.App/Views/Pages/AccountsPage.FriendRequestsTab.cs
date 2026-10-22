@@ -6,11 +6,9 @@ using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
-using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
 using Meta.UI.Components.Controls;
 using Meta.UI.Components.Icons;
-using Meta.UI.Core.Audit;
 using Meta.UI.Core.Collections;
 using Meta.UI.ViewModels.Shell;
 
@@ -124,8 +122,11 @@ public sealed partial class AccountsPage
         ListBox incomingList = FormField.CreateListBox<UserSummary>(
             this._theme,
             filteredIncoming,
-            user => this.CreateFriendRow(
+            user => FriendRequestRowCard.Create(
+                this._theme,
                 user,
+                openProfileLabel: this._i18n["Personal.BtnOpenProfile"],
+                onOpenProfile: () => this._vm.OpenFriendProfileInBrowser(user),
                 acceptCommand: () => { this._vm.SelectedIncomingRequest = user; _ = this._vm.ConfirmFriendRequestCommand.ExecuteAsync(null); },
                 rejectCommand: () => { this._vm.SelectedIncomingRequest = user; _ = this._vm.DeleteFriendRequestCommand.ExecuteAsync(null); },
                 acceptLabel: this._i18n["Personal.BtnAccept"],
@@ -219,8 +220,11 @@ public sealed partial class AccountsPage
         ListBox outgoingList = FormField.CreateListBox<UserSummary>(
             this._theme,
             filteredOutgoing,
-            user => this.CreateFriendRow(
+            user => FriendRequestRowCard.Create(
+                this._theme,
                 user,
+                openProfileLabel: this._i18n["Personal.BtnOpenProfile"],
+                onOpenProfile: () => this._vm.OpenFriendProfileInBrowser(user),
                 cancelCommand: () => { this._vm.SelectedOutgoingRequest = user; _ = this._vm.CancelFriendRequestCommand.ExecuteAsync(null); },
                 cancelLabel: this._i18n["Personal.BtnCancel"]),
             selectedItem: this._vm.SelectedOutgoingRequest,
@@ -332,84 +336,5 @@ public sealed partial class AccountsPage
         };
 
         return pane;
-    }
-
-    private Grid CreateFriendRow(
-        UserSummary user,
-        Action? acceptCommand = null,
-        Action? rejectCommand = null,
-        Action? cancelCommand = null,
-        string? acceptLabel = null,
-        string? rejectLabel = null,
-        string? cancelLabel = null)
-    {
-        Grid row = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"),
-            ColumnSpacing = 8,
-            Margin = new Thickness(4, 3),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        Border avatar = AvatarBadge.Create(this._theme, user.Name, 34, user.AvatarUri);
-        Grid.SetColumn(avatar, 0);
-
-        TextBlock nameTb = SectionHeader.CreateLabel(this._theme, user.Name, 13, FontWeight.SemiBold);
-        nameTb.TextWrapping = TextWrapping.NoWrap;
-        nameTb.TextTrimming = TextTrimming.CharacterEllipsis;
-        nameTb.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(nameTb, 1);
-
-        row.Children.Add(avatar);
-        row.Children.Add(nameTb);
-
-        int colIndex = 2;
-
-        Button openProfileBtn = AppButton.CreateRowIcon(
-            this._theme,
-            VectorIcons.Browser,
-            this._i18n["Personal.BtnOpenProfile"],
-            () => this._vm.OpenFriendProfileInBrowser(user),
-            AuditSeverity.Info);
-        Grid.SetColumn(openProfileBtn, colIndex++);
-        row.Children.Add(openProfileBtn);
-
-        if (acceptCommand is not null)
-        {
-            Button acceptBtn = AppButton.CreateRowIcon(
-                this._theme,
-                VectorIcons.CheckCircle,
-                acceptLabel ?? "Accept",
-                () => acceptCommand(),
-                AuditSeverity.Success);
-            Grid.SetColumn(acceptBtn, colIndex++);
-            row.Children.Add(acceptBtn);
-        }
-
-        if (rejectCommand is not null)
-        {
-            Button rejectBtn = AppButton.CreateRowIcon(
-                this._theme,
-                VectorIcons.Trash,
-                rejectLabel ?? "Decline",
-                () => rejectCommand(),
-                AuditSeverity.Error);
-            Grid.SetColumn(rejectBtn, colIndex++);
-            row.Children.Add(rejectBtn);
-        }
-
-        if (cancelCommand is not null)
-        {
-            Button cancelBtn = AppButton.CreateRowIcon(
-                this._theme,
-                VectorIcons.StopCircle,
-                cancelLabel ?? "Cancel",
-                () => cancelCommand(),
-                AuditSeverity.Warning);
-            Grid.SetColumn(cancelBtn, colIndex++);
-            row.Children.Add(cancelBtn);
-        }
-
-        return row;
     }
 }

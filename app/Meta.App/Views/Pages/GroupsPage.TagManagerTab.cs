@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -23,7 +22,6 @@ namespace Meta.App.Views.Pages;
 /// </summary>
 public sealed partial class GroupsPage
 {
-    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "UI checkmark symbol only.")]
     private Control BuildTagManagerTab(out Action refreshI18n)
     {
         Grid tabOverlayHost = new();
@@ -79,14 +77,6 @@ public sealed partial class GroupsPage
         rootGrid.Children.Add(leftCard);
 
         // ───────────────────────────── Modal Popup Overlay (Create / Edit Color Tag) ─────────────────────────────
-        Border modalBackdrop = new()
-        {
-            IsVisible = false,
-            Background = new SolidColorBrush(Color.FromArgb(148, 10, 14, 24)),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch
-        };
-
         StackPanel modalContentStack = new()
         {
             Spacing = 14
@@ -121,13 +111,6 @@ public sealed partial class GroupsPage
             this._i18n["Groups.TagNamePlaceholder"],
             this._vm.NewGroupTagName);
 
-        WrapPanel swatchesWrap = new()
-        {
-            Orientation = Orientation.Horizontal,
-            ItemSpacing = 10,
-            LineSpacing = 10
-        };
-
         void RefreshModalLivePreview()
         {
             string previewName = string.IsNullOrWhiteSpace(this._vm.NewGroupTagName)
@@ -137,46 +120,18 @@ public sealed partial class GroupsPage
             modalLivePreviewHost.Content = GroupRowCard.CreateTagPill(sampleTag, isActive: true);
         }
 
-        Action rebuildSwatches = null!;
-        rebuildSwatches = () =>
-        {
-            swatchesWrap.Children.Clear();
-            for (int i = 0; i < GroupRowCard.PresetTagColors.Length; i++)
+        WrapPanel swatchesWrap = ColorSwatchPicker.Create(
+            this._theme,
+            GroupRowCard.PresetTagColors,
+            () => this._vm.NewGroupTagColorHex,
+            hex =>
             {
-                string hex = GroupRowCard.PresetTagColors[i];
-                bool isChosen = string.Equals(this._vm.NewGroupTagColorHex, hex, StringComparison.OrdinalIgnoreCase);
-                Color c = Color.Parse(hex);
-
-                Border swatch = new()
-                {
-                    Width = 32,
-                    Height = 32,
-                    CornerRadius = new CornerRadius(999),
-                    Background = new SolidColorBrush(c),
-                    BorderBrush = isChosen ? this._theme.Palette.TextPrimary : Brushes.Transparent,
-                    BorderThickness = new Thickness(isChosen ? 2.5 : 0),
-                    Cursor = new Cursor(StandardCursorType.Hand),
-                    Child = isChosen
-                        ? new TextBlock
-                        {
-                            Text = "✓",
-                            FontSize = 13,
-                            FontWeight = FontWeight.Bold,
-                            Foreground = Brushes.White,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center
-                        }
-                        : null
-                };
-                swatch.PointerPressed += (_, _) =>
-                {
-                    this._vm.NewGroupTagColorHex = hex;
-                    rebuildSwatches();
-                    RefreshModalLivePreview();
-                };
-                swatchesWrap.Children.Add(swatch);
-            }
-        };
+                this._vm.NewGroupTagColorHex = hex;
+                RefreshModalLivePreview();
+            },
+            out Action rebuildSwatches,
+            size: 32,
+            showCheckmark: true);
 
         tagNameBox.TextChanged += (_, _) =>
         {
@@ -204,6 +159,8 @@ public sealed partial class GroupsPage
             this._i18n["Groups.BtnCreateTag"],
             null,
             VectorIcons.CheckCircle);
+
+        Border modalBackdrop = null!;
 
         void UpdateEditModeUi()
         {
@@ -275,15 +232,7 @@ public sealed partial class GroupsPage
         formButtonsRow.Children.Add(saveOrCreateTagBtn);
         modalContentStack.Children.Add(formButtonsRow);
 
-        Border modalDialogCard = SurfaceCard.Create(this._theme, modalContentStack, new Thickness(22, 18));
-        modalDialogCard.Width = 420;
-        modalDialogCard.CornerRadius = new CornerRadius(14);
-        modalDialogCard.HorizontalAlignment = HorizontalAlignment.Center;
-        modalDialogCard.VerticalAlignment = VerticalAlignment.Center;
-        modalDialogCard.PointerPressed += (_, e) => e.Handled = true;
-
-        modalBackdrop.PointerPressed += (_, _) => CloseTagModal();
-        modalBackdrop.Child = modalDialogCard;
+        modalBackdrop = ModalOverlayHost.Create(this._theme, modalContentStack, CloseTagModal);
         rebuildSwatches();
 
         // ───────────────────────────── Right Column: Batch Tag Assignment ─────────────────────────────

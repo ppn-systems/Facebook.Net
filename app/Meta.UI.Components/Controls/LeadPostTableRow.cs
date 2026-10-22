@@ -543,49 +543,16 @@ public static class LeadPostTableRow
                     i18n["Leads.QuickNewTagWatermark"]);
                 newTagNameBox.FontSize = 11.5;
 
-                StackPanel colorDotsRow = new()
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 6,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                List<Border> dotBorders = new(6);
                 int colorCount = Math.Min(6, GroupRowCard.PresetTagColors.Length);
-
-                void UpdateSelectedColorVisuals()
-                {
-                    for (int idx = 0; idx < dotBorders.Count; idx++)
-                    {
-                        string hex = GroupRowCard.PresetTagColors[idx];
-                        bool isSel = string.Equals(hex, selectedColorHex, StringComparison.OrdinalIgnoreCase);
-                        dotBorders[idx].BorderThickness = isSel ? new Thickness(2) : new Thickness(0);
-                        dotBorders[idx].BorderBrush = isSel ? theme.Palette.TextPrimary : Brushes.Transparent;
-                    }
-                }
-
-                for (int cIdx = 0; cIdx < colorCount; cIdx++)
-                {
-                    string colorHex = GroupRowCard.PresetTagColors[cIdx];
-                    Color dotColor = Color.TryParse(colorHex, out Color parsed) ? parsed : Color.FromRgb(59, 130, 246);
-                    Border colorDot = new()
-                    {
-                        Width = 18,
-                        Height = 18,
-                        CornerRadius = new CornerRadius(999),
-                        Background = ThemeLifecycle.GetCachedBrush(dotColor),
-                        Cursor = new Cursor(StandardCursorType.Hand)
-                    };
-                    colorDot.PointerPressed += (_, _) =>
-                    {
-                        selectedColorHex = colorHex;
-                        UpdateSelectedColorVisuals();
-                    };
-                    dotBorders.Add(colorDot);
-                    colorDotsRow.Children.Add(colorDot);
-                }
-
-                UpdateSelectedColorVisuals();
+                string[] quickPalette = GroupRowCard.PresetTagColors[..colorCount];
+                WrapPanel colorDotsRow = ColorSwatchPicker.Create(
+                    theme,
+                    quickPalette,
+                    () => selectedColorHex,
+                    hex => selectedColorHex = hex,
+                    out _,
+                    size: 18,
+                    showCheckmark: false);
 
                 Button createBtn = AppButton.CreatePrimary(
                     theme,

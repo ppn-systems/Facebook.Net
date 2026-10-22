@@ -3,10 +3,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -215,114 +213,39 @@ public sealed partial class PublisherPage
         ListBox postsList = FormField.CreateListBox<PublishedPostRecord>(
             this._theme,
             filteredPosts,
-            rec =>
-            {
-                Grid cardGrid = new()
+            rec => PublishedPostRowCard.Create(
+                this._theme,
+                this._i18n,
+                rec,
+                fallbackAuthorName: this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"],
+                fallbackAuthorAvatarUrl: this._vm.SelectedAccount?.AvatarUrl,
+                onOpenInBrowser: () =>
                 {
-                    RowDefinitions = new RowDefinitions("Auto,Auto"),
-                    RowSpacing = 6
-                };
-
-                Grid topMeta = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,114,28,28"),
-                    ColumnSpacing = 8,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                string authorName = !string.IsNullOrWhiteSpace(rec.AuthorName)
-                    ? rec.AuthorName
-                    : (this._vm.SelectedAccount?.DisplayName ?? this._i18n["TopBar.NoAccount"]);
-                string? authorAvatar = rec.AuthorAvatarUrl ?? this._vm.SelectedAccount?.AvatarUrl;
-                Border av = AvatarBadge.Create(this._theme, authorName, 32, authorAvatar);
-
-                StackPanel authorAndTarget = new() { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-                TextBlock authorTb = SectionHeader.CreateLabel(this._theme, authorName, 12.5, FontWeight.Bold);
-
-                bool isGroup = !rec.IsPersonalProfilePost;
-                string targetLabel = isGroup
-                    ? $"👥 {rec.TargetGroupName ?? this._i18n["Audit.Cat.Group"]}"
-                    : $"🏠 {this._i18n["Publisher.TargetModePersonal"]}";
-                TextBlock targetTb = SectionHeader.CreateLabel(
-                    this._theme,
-                    $"{targetLabel}  •  {rec.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)}",
-                    11,
-                    FontWeight.Medium,
-                    isSecondary: true);
-                targetTb.MaxLines = 1;
-                targetTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                authorAndTarget.Children.Add(authorTb);
-                authorAndTarget.Children.Add(targetTb);
-
-                Border kindPill = StatusPill.Create(
-                    this._theme,
-                    isGroup ? this._i18n["Publisher.BadgeGroupPost"] : this._i18n["Publisher.BadgePersonalPost"],
-                    isGroup ? AuditSeverity.Info : AuditSeverity.Success);
-                kindPill.HorizontalAlignment = HorizontalAlignment.Stretch;
-                kindPill.Height = 28;
-
-                Button rowOpenBtn = AppButton.CreateRowIcon(
-                    this._theme,
-                    VectorIcons.ExternalLink,
-                    this._i18n["Leads.BtnOpenPostInBrowser"],
-                    () =>
+                    this._vm.SelectedPublishedPost = rec;
+                    if (this._vm.OpenPublishedPostInBrowserCommand.CanExecute(null))
                     {
-                        this._vm.SelectedPublishedPost = rec;
-                        if (this._vm.OpenPublishedPostInBrowserCommand.CanExecute(null))
+                        this._vm.OpenPublishedPostInBrowserCommand.Execute(null);
+                    }
+                },
+                onDelete: () =>
+                {
+                    this._vm.SelectedPublishedPost = rec;
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeletePublishedPostTitle"],
+                        this._i18n["Confirm.DeletePublishedPostMessage"],
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        async () =>
                         {
-                            this._vm.OpenPublishedPostInBrowserCommand.Execute(null);
-                        }
-                    });
-
-                Button rowDeleteBtn = AppButton.CreateRowIcon(
-                    this._theme,
-                    VectorIcons.Trash,
-                    this._i18n["Publisher.BtnDeletePublishedPost"],
-                    () =>
-                    {
-                        this._vm.SelectedPublishedPost = rec;
-                        ConfirmDialogModal.ShowAsync(
-                            this,
-                            this._theme,
-                            this._i18n["Confirm.DeletePublishedPostTitle"],
-                            this._i18n["Confirm.DeletePublishedPostMessage"],
-                            this._i18n["Confirm.BtnConfirmDelete"],
-                            this._i18n["Groups.BtnCancelEditTag"],
-                            async () =>
+                            this._vm.SelectedPublishedPost = rec;
+                            if (this._vm.DeletePublishedPostCommand.CanExecute(null))
                             {
-                                this._vm.SelectedPublishedPost = rec;
-                                if (this._vm.DeletePublishedPostCommand.CanExecute(null))
-                                {
-                                    await this._vm.DeletePublishedPostCommand.ExecuteAsync(null).ConfigureAwait(true);
-                                }
-                            });
-                    },
-                    AuditSeverity.Error);
-
-                Grid.SetColumn(av, 0);
-                Grid.SetColumn(authorAndTarget, 1);
-                Grid.SetColumn(kindPill, 2);
-                Grid.SetColumn(rowOpenBtn, 3);
-                Grid.SetColumn(rowDeleteBtn, 4);
-                topMeta.Children.Add(av);
-                topMeta.Children.Add(authorAndTarget);
-                topMeta.Children.Add(kindPill);
-                topMeta.Children.Add(rowOpenBtn);
-                topMeta.Children.Add(rowDeleteBtn);
-
-                TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, rec.MessageText, 12.5, FontWeight.Normal);
-                bodyTb.MaxLines = 2;
-                bodyTb.TextWrapping = TextWrapping.Wrap;
-                bodyTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                Grid.SetRow(topMeta, 0);
-                Grid.SetRow(bodyTb, 1);
-                cardGrid.Children.Add(topMeta);
-                cardGrid.Children.Add(bodyTb);
-
-                return SurfaceCard.CreateInset(this._theme, cardGrid, new Thickness(10, 8));
-            },
+                                await this._vm.DeletePublishedPostCommand.ExecuteAsync(null).ConfigureAwait(true);
+                            }
+                        });
+                }),
             selectedItem: this._vm.SelectedPublishedPost,
             isVisible: filteredPosts.Count > 0);
 
@@ -380,7 +303,11 @@ public sealed partial class PublisherPage
         repostCaptionBox.TextChanged += (_, _) =>
             this._vm.RepostCustomSpintaxText = repostCaptionBox.Text ?? string.Empty;
 
-        Button insertRepostVarBtn = this.CreateVariableInsertFlyoutButton(repostCaptionBox, out Action rebuildRepostVars);
+        Button insertRepostVarBtn = SpintaxVariablePicker.CreateButton(
+            this._theme,
+            this._i18n,
+            repostCaptionBox,
+            out Action rebuildRepostVars);
         insertRepostVarBtn.Padding = new Thickness(8, 4);
 
         Grid repostHeaderRow = new()
@@ -650,58 +577,11 @@ public sealed partial class PublisherPage
         ListBox tplList = FormField.CreateListBox<CampaignTemplate>(
             this._theme,
             filteredTemplates,
-            tpl =>
-            {
-                Grid cardGrid = new()
-                {
-                    RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
-                    RowSpacing = 6
-                };
-
-                Grid topRow = new()
-                {
-                    ColumnDefinitions = new ColumnDefinitions("*,110,108,52,28"),
-                    ColumnSpacing = 8,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                TextBlock tplTitleTb = SectionHeader.CreateLabel(this._theme, tpl.Title, 13.5, FontWeight.SemiBold);
-                tplTitleTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                Border typePill = StatusPill.Create(
-                    this._theme,
-                    tpl.IsCommentTemplate ? this._i18n["Publisher.FilterTemplatesComment"] : this._i18n["Publisher.FilterTemplatesPost"],
-                    tpl.IsCommentTemplate ? AuditSeverity.Info : AuditSeverity.Success);
-                typePill.HorizontalAlignment = HorizontalAlignment.Stretch;
-                typePill.Height = 28;
-
-                Button useBtn = new()
-                {
-                    Content = new TextBlock
-                    {
-                        Text = !tpl.IsCommentTemplate
-                            ? this._i18n["Publisher.BtnUsePostTemplate"]
-                            : this._i18n["Publisher.BtnUseCommentTemplate"],
-                        FontSize = 11,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = this._theme.Palette.BrandPrimary,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    Background = this._theme.Palette.BrandSubtleFill,
-                    BorderBrush = this._theme.Palette.BrandPrimary,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Height = 28,
-                    Padding = new Thickness(8, 0),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Center,
-                    VerticalContentAlignment = VerticalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-
-                useBtn.Click += (_, _) =>
+            tpl => CampaignTemplateRowCard.Create(
+                this._theme,
+                this._i18n,
+                tpl,
+                onUseTemplate: () =>
                 {
                     this._vm.SelectedTemplate = tpl;
                     if (!tpl.IsCommentTemplate)
@@ -722,127 +602,27 @@ public sealed partial class PublisherPage
                         this._vm.SalesCommentSpintaxText = tpl.SpintaxContent;
                         _ = bumpBox.Focus();
                     }
-                };
-
-                StackPanel inlineEditPanel = new()
+                },
+                onSaveInlineEditAsync: (newTitle, newContent) =>
+                    this._vm.UpdateTemplateContentAsync(tpl, newTitle, newContent),
+                onDeleteTemplate: () =>
                 {
-                    Spacing = 6,
-                    IsVisible = false,
-                    Margin = new Thickness(0, 4, 0, 0)
-                };
-
-                TextBox editTitleBox = FormField.CreateTextBox(
-                    this._theme,
-                    this._i18n["Publisher.TemplatesTitle"],
-                    tpl.Title);
-                TextBox editContentBox = FormField.CreateTextBox(
-                    this._theme,
-                    this._i18n["Publisher.ContentPlaceholder"],
-                    tpl.SpintaxContent,
-                    multiline: true,
-                    height: 76);
-
-                StackPanel editActionsRow = new()
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    HorizontalAlignment = HorizontalAlignment.Right
-                };
-
-                Button saveEditBtn = AppButton.CreatePrimary(
-                    this._theme,
-                    this._i18n["Publisher.BtnSaveEditTemplate"],
-                    new CommunityToolkit.Mvvm.Input.AsyncRelayCommand(async () =>
-                    {
-                        inlineEditPanel.IsVisible = false;
-                        await this._vm.UpdateTemplateContentAsync(
-                            tpl,
-                            editTitleBox.Text ?? tpl.Title,
-                            editContentBox.Text ?? tpl.SpintaxContent).ConfigureAwait(true);
-                    }),
-                    VectorIcons.CheckCircle);
-
-                Button cancelEditBtn = AppButton.CreateSecondary(
-                    this._theme,
-                    this._i18n["Groups.BtnCancelEditTag"],
-                    new CommunityToolkit.Mvvm.Input.RelayCommand(() =>
-                    {
-                        editTitleBox.Text = tpl.Title;
-                        editContentBox.Text = tpl.SpintaxContent;
-                        inlineEditPanel.IsVisible = false;
-                    }));
-
-                editActionsRow.Children.Add(cancelEditBtn);
-                editActionsRow.Children.Add(saveEditBtn);
-                inlineEditPanel.Children.Add(editTitleBox);
-                inlineEditPanel.Children.Add(editContentBox);
-                inlineEditPanel.Children.Add(editActionsRow);
-
-                Button editRowBtn = new()
-                {
-                    Content = SectionHeader.CreateLabel(this._theme, this._i18n["Publisher.BtnEditTemplateShort"], 11, FontWeight.SemiBold),
-                    Background = this._theme.Palette.SecondarySurface,
-                    BorderBrush = this._theme.Palette.SubtleBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Height = 28,
-                    Padding = new Thickness(8, 0),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Center,
-                    VerticalContentAlignment = VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                editRowBtn.Click += (_, _) => inlineEditPanel.IsVisible = !inlineEditPanel.IsVisible;
-
-                Button deleteRowBtn = AppButton.CreateRowIcon(
-                    this._theme,
-                    VectorIcons.Trash,
-                    this._i18n["Groups.BtnDeleteTagShort"],
-                    () =>
-                    {
-                        ConfirmDialogModal.ShowAsync(
-                            this,
-                            this._theme,
-                            this._i18n["Confirm.DeleteTemplateTitle"],
-                            this._i18n.Format("Confirm.DeleteTemplateMessage", tpl.Title),
-                            this._i18n["Confirm.BtnConfirmDelete"],
-                            this._i18n["Groups.BtnCancelEditTag"],
-                            async () =>
+                    ConfirmDialogModal.ShowAsync(
+                        this,
+                        this._theme,
+                        this._i18n["Confirm.DeleteTemplateTitle"],
+                        this._i18n.Format("Confirm.DeleteTemplateMessage", tpl.Title),
+                        this._i18n["Confirm.BtnConfirmDelete"],
+                        this._i18n["Groups.BtnCancelEditTag"],
+                        async () =>
+                        {
+                            this._vm.SelectedTemplate = tpl;
+                            if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
                             {
-                                this._vm.SelectedTemplate = tpl;
-                                if (this._vm.DeleteSelectedTemplateCommand.CanExecute(null))
-                                {
-                                    await this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null).ConfigureAwait(true);
-                                }
-                            });
-                    },
-                    AuditSeverity.Error);
-
-                Grid.SetColumn(tplTitleTb, 0);
-                Grid.SetColumn(typePill, 1);
-                Grid.SetColumn(useBtn, 2);
-                Grid.SetColumn(editRowBtn, 3);
-                Grid.SetColumn(deleteRowBtn, 4);
-                topRow.Children.Add(tplTitleTb);
-                topRow.Children.Add(typePill);
-                topRow.Children.Add(useBtn);
-                topRow.Children.Add(editRowBtn);
-                topRow.Children.Add(deleteRowBtn);
-
-                TextBlock bodyTb = SectionHeader.CreateLabel(this._theme, tpl.SpintaxContent, 12, FontWeight.Normal, isSecondary: true);
-                bodyTb.MaxLines = 2;
-                bodyTb.TextWrapping = TextWrapping.Wrap;
-                bodyTb.TextTrimming = TextTrimming.CharacterEllipsis;
-
-                Grid.SetRow(topRow, 0);
-                Grid.SetRow(bodyTb, 1);
-                Grid.SetRow(inlineEditPanel, 2);
-                cardGrid.Children.Add(topRow);
-                cardGrid.Children.Add(bodyTb);
-                cardGrid.Children.Add(inlineEditPanel);
-
-                return SurfaceCard.Create(this._theme, cardGrid, new Thickness(12, 10));
-            },
+                                await this._vm.DeleteSelectedTemplateCommand.ExecuteAsync(null).ConfigureAwait(true);
+                            }
+                        });
+                }),
             selectedItem: this._vm.SelectedTemplate,
             isVisible: filteredTemplates.Count > 0);
 
@@ -931,7 +711,11 @@ public sealed partial class PublisherPage
             ColumnSpacing = 10
         };
 
-        Button insertBumpVarBtn = this.CreateVariableInsertFlyoutButton(localBumpBox, out Action rebuildBumpVars);
+        Button insertBumpVarBtn = SpintaxVariablePicker.CreateButton(
+            this._theme,
+            this._i18n,
+            localBumpBox,
+            out Action rebuildBumpVars);
 
         Button saveBumpTplBtn = AppButton.CreateSecondary(
             this._theme,

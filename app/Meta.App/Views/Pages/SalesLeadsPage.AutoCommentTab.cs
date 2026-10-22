@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Facebook.Net.Contracts.Models;
@@ -171,68 +170,12 @@ public sealed partial class SalesLeadsPage
         saveCommentTemplateBtn.Click += async (_, _) =>
             await this._vm.SaveSalesCommentAsTemplateAsync().ConfigureAwait(true);
 
-        StackPanel variableMenuStack = new()
-        {
-            Spacing = 4,
-            MinWidth = 245
-        };
-
-        Flyout variableFlyout = new()
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = SurfaceCard.Create(this._theme, variableMenuStack, new Thickness(8))
-        };
-
-        void RebuildVariableFlyoutItems()
-        {
-            variableMenuStack.Children.Clear();
-            (string Label, string Token)[] items =
-            [
-                ($"{this._i18n["Common.VarAuthorNameLabel"]}  •  {{author_name}}", "{author_name}"),
-                ($"{this._i18n["Common.VarGroupNameLabel"]}  •  {{group_name}}", "{group_name}"),
-                ($"{this._i18n["Common.VarGreetingLabel"]}  •  {{Xin chào|Chào bạn}}", "{Xin chào|Chào bạn|Chào anh/chị}"),
-                ($"{this._i18n["Common.VarDateLabel"]}  •  {{date}}", "{date}"),
-                ($"{this._i18n["Common.VarTimeLabel"]}  •  {{time}}", "{time}"),
-                ($"{this._i18n["Common.VarRandomIdLabel"]}  •  #{{random_id}}", "#{random_id}")
-            ];
-
-            for (int i = 0; i < items.Length; i++)
-            {
-                (string itemLabel, string tokenToInsert) = items[i];
-                Button itemBtn = new()
-                {
-                    Content = SectionHeader.CreateLabel(this._theme, itemLabel, 12, FontWeight.SemiBold),
-                    Background = this._theme.Palette.SecondarySurface,
-                    BorderBrush = this._theme.Palette.SubtleBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(10, 6),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                itemBtn.Click += (_, _) =>
-                {
-                    variableFlyout.Hide();
-                    string current = commentBox.Text ?? string.Empty;
-                    commentBox.Text = string.IsNullOrEmpty(current)
-                        ? tokenToInsert
-                        : $"{current} {tokenToInsert}";
-                    commentBox.CaretIndex = commentBox.Text.Length;
-                    _ = commentBox.Focus();
-                };
-                variableMenuStack.Children.Add(itemBtn);
-            }
-        }
-
-        RebuildVariableFlyoutItems();
-
-        Button insertVarBtn = AppButton.CreateSecondary(
+        Button insertVarBtn = SpintaxVariablePicker.CreateButton(
             this._theme,
-            this._i18n["Common.BtnInsertVariable"],
-            null,
-            VectorIcons.Plus);
-        insertVarBtn.Flyout = variableFlyout;
+            this._i18n,
+            commentBox,
+            out Action rebuildVarFlyout,
+            includeAuthorName: true);
 
         Button previewSpinBtn = AppButton.CreateSecondary(
             this._theme,
@@ -449,7 +392,7 @@ public sealed partial class SalesLeadsPage
         this._theme.ThemeChanged += (_, _) =>
         {
             UpdateSelectedPostBanner();
-            RebuildVariableFlyoutItems();
+            rebuildVarFlyout();
             previewPrefixTb.Foreground = this._theme.Palette.BrandPrimary;
         };
 
@@ -464,7 +407,7 @@ public sealed partial class SalesLeadsPage
             AppButton.SetText(saveCommentTemplateBtn, this._i18n["Leads.BtnSaveAsCommentTemplate"]);
             AppButton.SetText(insertVarBtn, this._i18n["Common.BtnInsertVariable"]);
             AppButton.SetText(previewSpinBtn, this._i18n["Leads.BtnPreviewComment"]);
-            RebuildVariableFlyoutItems();
+            rebuildVarFlyout();
             commentPhotoBox.PlaceholderText = this._i18n["Leads.CommentPhotoPlaceholder"];
             autoReactLbl.Text = this._i18n["Leads.AutoReactToggle"];
             AppButton.SetText(pickCommentPhotoBtn, this._i18n["Publisher.BtnPickPhoto"]);
