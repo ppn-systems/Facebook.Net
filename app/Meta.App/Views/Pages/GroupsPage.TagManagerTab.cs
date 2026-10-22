@@ -117,12 +117,12 @@ public sealed partial class GroupsPage
                 ? this._i18n["Groups.FilterCatColorTag"]
                 : this._vm.NewGroupTagName.Trim();
             GroupTag sampleTag = new("preview", previewName, this._vm.NewGroupTagColorHex);
-            modalLivePreviewHost.Content = GroupRowCard.CreateTagPill(sampleTag, isActive: true);
+            modalLivePreviewHost.Content = GroupCard.CreateTagPill(sampleTag, isActive: true);
         }
 
         WrapPanel swatchesWrap = ColorSwatchPicker.Create(
             this._theme,
-            GroupRowCard.PresetTagColors,
+            GroupCard.PresetTagColors,
             () => this._vm.NewGroupTagColorHex,
             hex =>
             {
@@ -232,7 +232,7 @@ public sealed partial class GroupsPage
         formButtonsRow.Children.Add(saveOrCreateTagBtn);
         modalContentStack.Children.Add(formButtonsRow);
 
-        modalBackdrop = ModalOverlayHost.Create(this._theme, modalContentStack, CloseTagModal);
+        modalBackdrop = ModalOverlay.Create(this._theme, modalContentStack, CloseTagModal);
         rebuildSwatches();
 
         // ───────────────────────────── Right Column: Batch Tag Assignment ─────────────────────────────
@@ -326,7 +326,7 @@ public sealed partial class GroupsPage
 
             GroupTag capturedTag = selectedAssignTag;
             List<SavedTargetGroup> snapshot = [.. filteredAssignGroups];
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Confirm.BatchUntagTitle"],
@@ -365,7 +365,7 @@ public sealed partial class GroupsPage
             }
 
             activeTagBadgeHost.Content = selectedAssignTag is not null
-                ? GroupRowCard.CreateTagPill(selectedAssignTag, isActive: true)
+                ? GroupCard.CreateTagPill(selectedAssignTag, isActive: true)
                 : null;
             toggleGroupsByTagBtn.IsEnabled = selectedAssignTag is not null;
             batchAssignBtn.IsEnabled = selectedAssignTag is not null;
@@ -459,7 +459,7 @@ public sealed partial class GroupsPage
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                Border pill = GroupRowCard.CreateTagPill(
+                Border pill = GroupCard.CreateTagPill(
                     tag,
                     isActive: isSelected,
                     onClick: () =>
@@ -498,7 +498,7 @@ public sealed partial class GroupsPage
                     this._i18n["Groups.BtnDeleteTagShort"],
                     () =>
                     {
-                        ConfirmDialogModal.ShowAsync(
+                        ConfirmDialog.ShowAsync(
                             this,
                             this._theme,
                             this._i18n["Confirm.DeleteTagTitle"],
@@ -608,7 +608,7 @@ public sealed partial class GroupsPage
                     for (int i = 0; i < assignedTags.Count; i++)
                     {
                         GroupTag t = assignedTags[i];
-                        tagWrap.Children.Add(GroupRowCard.CreateTagPill(
+                        tagWrap.Children.Add(GroupCard.CreateTagPill(
                             t,
                             onClick: () =>
                             {

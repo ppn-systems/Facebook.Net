@@ -19,7 +19,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone Audit Log table row component (<see cref="AuditLogRecord"/>) aligned with <see cref="DataTableView{T}"/>.
 /// </summary>
-public static class AuditLogTableRow
+public static class AuditLogRow
 {
     /// <summary>
     /// Column width specification shared between <see cref="DataTableView{T}"/> headers and <see cref="Create"/> rows.
@@ -60,7 +60,7 @@ public static class AuditLogTableRow
         Grid.SetColumn(accTb, 1);
         logRow.Children.Add(accTb);
 
-        Border catPill = StatusPill.Create(
+        Border catPill = StatusBadge.Create(
             theme,
             i18n.FormatAuditCategory(rec.Category),
             rec.Severity);
@@ -142,7 +142,7 @@ public static class AuditLogTableRow
 
         void OnLangChanged(object? sender, AppLanguage lang)
         {
-            StatusPill.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
+            StatusBadge.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
             ToolTip.SetTip(copyMsgBtn, i18n["Audit.BtnCopyMessage"]);
             if (openLinkBtn is not null)
             {
@@ -188,12 +188,12 @@ public static class AuditLogTableRow
         tsTb.FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace");
         logRow.Children.Add(tsTb);
 
-        Border catPill = StatusPill.Create(
+        Border catPill = StatusBadge.Create(
             theme,
             i18n.FormatAuditCategory(rec.Category),
             rec.Severity);
         void OnCompactLangChanged(object? sender, AppLanguage lang) =>
-            StatusPill.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
+            StatusBadge.SetText(catPill, i18n.FormatAuditCategory(rec.Category));
         logRow.AttachedToVisualTree += (_, _) =>
         {
             i18n.LanguageChanged -= OnCompactLangChanged;

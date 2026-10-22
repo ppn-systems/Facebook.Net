@@ -15,7 +15,7 @@ using Meta.UI.ViewModels.Shell;
 namespace Meta.App.Views.Pages;
 
 /// <summary>
-/// Tab 3 of <see cref="SettingsPage"/>: Application Disk &amp; Storage Usage Monitor with <see cref="SvgDonutChart"/> breakdowns.
+/// Tab 3 of <see cref="SettingsPage"/>: Application Disk &amp; Storage Usage Monitor with <see cref="DonutChart"/> breakdowns.
 /// </summary>
 public sealed partial class SettingsPage
 {
@@ -80,7 +80,7 @@ public sealed partial class SettingsPage
             ColumnSpacing = 10
         };
 
-        Border kpiTotal = KpiStatCard.Create(
+        Border kpiTotal = StatCard.Create(
             this._theme,
             this._i18n["Storage.KpiTotalAppTitle"],
             "0 KB",
@@ -88,7 +88,7 @@ public sealed partial class SettingsPage
             out TextBlock kpiTotalTitleTb,
             out TextBlock kpiTotalValTb);
 
-        Border kpiDb = KpiStatCard.Create(
+        Border kpiDb = StatCard.Create(
             this._theme,
             this._i18n["Storage.KpiDatabaseTitle"],
             "0 KB",
@@ -96,7 +96,7 @@ public sealed partial class SettingsPage
             out TextBlock kpiDbTitleTb,
             out TextBlock kpiDbValTb);
 
-        Border kpiProfiles = KpiStatCard.Create(
+        Border kpiProfiles = StatCard.Create(
             this._theme,
             this._i18n["Storage.KpiProfilesTitle"],
             "0 KB",
@@ -104,7 +104,7 @@ public sealed partial class SettingsPage
             out TextBlock kpiProfilesTitleTb,
             out TextBlock kpiProfilesValTb);
 
-        Border kpiMemory = KpiStatCard.Create(
+        Border kpiMemory = StatCard.Create(
             this._theme,
             this._i18n["Storage.KpiMemoryDiskTitle"],
             "0 MB",
@@ -130,7 +130,7 @@ public sealed partial class SettingsPage
             ColumnSpacing = 12
         };
 
-        SvgDonutChart componentsChart = new(
+        DonutChart componentsChart = new(
             this._theme,
             this._i18n["Storage.ChartComponentsTitle"],
             VectorIcons.Folder,
@@ -138,7 +138,7 @@ public sealed partial class SettingsPage
             size: 156,
             strokeThickness: 22);
 
-        SvgDonutChart profilesChart = new(
+        DonutChart profilesChart = new(
             this._theme,
             this._i18n["Storage.ChartProfilesTitle"],
             VectorIcons.Browser,
@@ -181,25 +181,25 @@ public sealed partial class SettingsPage
 
                     componentsChart.SetSlices(
                         [
-                            new SvgDonutSlice(this._i18n["Storage.SliceProfiles"], ToKilobytesSliceValue(snap.BrowserProfilesBytes), "#3B82F6"),
-                            new SvgDonutSlice(this._i18n["Storage.SliceMainDb"], ToKilobytesSliceValue(snap.MainDatabaseBytes), "#10B981"),
-                            new SvgDonutSlice(this._i18n["Storage.SliceAuditDb"], ToKilobytesSliceValue(snap.AuditDatabaseBytes), "#F6821F"),
-                            new SvgDonutSlice(this._i18n["Storage.SliceConfig"], ToKilobytesSliceValue(snap.ConfigAndOtherBytes), "#8B5CF6")
+                            new DonutChartSlice(this._i18n["Storage.SliceProfiles"], ToKilobytesSliceValue(snap.BrowserProfilesBytes), "#3B82F6"),
+                            new DonutChartSlice(this._i18n["Storage.SliceMainDb"], ToKilobytesSliceValue(snap.MainDatabaseBytes), "#10B981"),
+                            new DonutChartSlice(this._i18n["Storage.SliceAuditDb"], ToKilobytesSliceValue(snap.AuditDatabaseBytes), "#F6821F"),
+                            new DonutChartSlice(this._i18n["Storage.SliceConfig"], ToKilobytesSliceValue(snap.ConfigAndOtherBytes), "#8B5CF6")
                         ],
                         customTotalText: ShellViewModel.FormatByteSize(snap.TotalUsedBytes),
                         valueFormatter: FormatKbSlice);
 
-                    List<SvgDonutSlice> profileSlices = new();
+                    List<DonutChartSlice> profileSlices = new();
                     for (int i = 0; i < snap.ProfileBreakdown.Count; i++)
                     {
                         (string profileName, long sizeBytes) = snap.ProfileBreakdown[i];
                         string colorHex = s_profileSlicePalette[i % s_profileSlicePalette.Length];
-                        profileSlices.Add(new SvgDonutSlice(profileName, ToKilobytesSliceValue(sizeBytes), colorHex));
+                        profileSlices.Add(new DonutChartSlice(profileName, ToKilobytesSliceValue(sizeBytes), colorHex));
                     }
 
                     if (profileSlices.Count == 0)
                     {
-                        profileSlices.Add(new SvgDonutSlice(this._i18n["Storage.SliceNoProfiles"], 0, "#64748B"));
+                        profileSlices.Add(new DonutChartSlice(this._i18n["Storage.SliceNoProfiles"], 0, "#64748B"));
                     }
 
                     profilesChart.SetSlices(
@@ -217,7 +217,7 @@ public sealed partial class SettingsPage
         };
         cleanCacheBtn.Click += (_, _) =>
         {
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Confirm.CleanCacheTitle"],

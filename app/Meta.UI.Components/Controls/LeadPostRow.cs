@@ -24,7 +24,7 @@ namespace Meta.UI.Components.Controls;
 /// Spacious, structured table row component for <see cref="PostSummary"/> inside <see cref="DataTableView{T}"/>.
 /// Displays Author, Group Badge, Post Content Preview, Buyer-Intent Score, Timestamp, Comment Status Pill, and Customer Color Tags.
 /// </summary>
-public static class LeadPostTableRow
+public static class LeadPostRow
 {
     /// <summary>
     /// Creates a themed multi-column table row for a scraped <paramref name="post"/>.
@@ -230,11 +230,11 @@ public static class LeadPostTableRow
             ? i18n["Leads.StatusCommented"]
             : i18n["Leads.StatusPending"];
         AuditSeverity statusSeverity = isCommented ? AuditSeverity.Success : AuditSeverity.Info;
-        Border statusPill = StatusPill.Create(theme, statusLabel, statusSeverity);
+        Border statusPill = StatusBadge.Create(theme, statusLabel, statusSeverity);
         statusPill.HorizontalAlignment = HorizontalAlignment.Left;
 
         AuditSeverity intentSeverity = intentScore >= 75 ? AuditSeverity.Success : AuditSeverity.Warning;
-        Border intentPill = StatusPill.Create(theme, formatIntentBadge(), intentSeverity);
+        Border intentPill = StatusBadge.Create(theme, formatIntentBadge(), intentSeverity);
         intentPill.HorizontalAlignment = HorizontalAlignment.Left;
 
         StackPanel statusStack = new()
@@ -248,7 +248,7 @@ public static class LeadPostTableRow
         Border? phonePill = null;
         if (!string.IsNullOrWhiteSpace(resolvedPhone))
         {
-            phonePill = StatusPill.Create(theme, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}", AuditSeverity.Success);
+            phonePill = StatusBadge.Create(theme, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}", AuditSeverity.Success);
             phonePill.HorizontalAlignment = HorizontalAlignment.Left;
             statusStack.Children.Add(phonePill);
         }
@@ -325,11 +325,11 @@ public static class LeadPostTableRow
                 timeTb.Text = i18n["Leads.TimeRecent"];
             }
 
-            StatusPill.SetText(intentPill, formatIntentBadge());
-            StatusPill.SetText(statusPill, isCommented ? i18n["Leads.StatusCommented"] : i18n["Leads.StatusPending"]);
+            StatusBadge.SetText(intentPill, formatIntentBadge());
+            StatusBadge.SetText(statusPill, isCommented ? i18n["Leads.StatusCommented"] : i18n["Leads.StatusPending"]);
             if (phonePill is not null && !string.IsNullOrWhiteSpace(resolvedPhone))
             {
-                StatusPill.SetText(phonePill, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}");
+                StatusBadge.SetText(phonePill, $"{i18n["Leads.PhoneBadgePrefix"]} {resolvedPhone}");
             }
         });
 
@@ -366,7 +366,7 @@ public static class LeadPostTableRow
             for (int i = 0; i < assignedLeadTags.Count; i++)
             {
                 GroupTag assignedTag = assignedLeadTags[i];
-                Border pill = GroupRowCard.CreateTagPill(
+                Border pill = GroupCard.CreateTagPill(
                     assignedTag,
                     isActive: true,
                     onClick: onToggleLeadTag is not null ? () => _ = onToggleLeadTag(assignedTag.Id) : null);
@@ -412,7 +412,7 @@ public static class LeadPostTableRow
         };
 
         StackPanel? flyoutStack = null;
-        string selectedColorHex = GroupRowCard.PresetTagColors[0];
+        string selectedColorHex = GroupCard.PresetTagColors[0];
 
         void RebuildFlyoutContent()
         {
@@ -543,8 +543,8 @@ public static class LeadPostTableRow
                     i18n["Leads.QuickNewTagWatermark"]);
                 newTagNameBox.FontSize = 11.5;
 
-                int colorCount = Math.Min(6, GroupRowCard.PresetTagColors.Length);
-                string[] quickPalette = GroupRowCard.PresetTagColors[..colorCount];
+                int colorCount = Math.Min(6, GroupCard.PresetTagColors.Length);
+                string[] quickPalette = GroupCard.PresetTagColors[..colorCount];
                 WrapPanel colorDotsRow = ColorSwatchPicker.Create(
                     theme,
                     quickPalette,

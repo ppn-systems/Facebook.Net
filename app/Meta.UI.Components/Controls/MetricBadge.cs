@@ -15,7 +15,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone SVG icon + counter badge pill component.
 /// </summary>
-public static class IconMetricPill
+public static class MetricBadge
 {
     /// <summary>
     /// Creates a status/metric pill combining an SVG icon from <c>Assets/Icons/</c> and a text/number label.

@@ -191,7 +191,7 @@ public sealed partial class SalesLeadsPage
         ListBox targetGroupsList = FormField.CreateListBox<SavedTargetGroup>(
             this._theme,
             filteredTargetGroups,
-            tg => GroupRowCard.CreateTargetRow(
+            tg => GroupCard.CreateTargetRow(
                 this._theme,
                 tg,
                 nextState => _ = this._vm.ToggleTargetGroupEnabledAsync(tg, nextState),
@@ -267,7 +267,7 @@ public sealed partial class SalesLeadsPage
             out TextBlock configTitleTb);
         rightStack.Children.Add(configHeader);
 
-        Border chronoPill = IconMetricPill.Create(
+        Border chronoPill = MetricBadge.Create(
             this._theme,
             VectorIcons.CheckCircle,
             this._i18n["Leads.ConfigChronologicalBadge"],
@@ -433,7 +433,7 @@ public sealed partial class SalesLeadsPage
             VectorIcons.Trash);
         clearDbBtn.Click += (_, _) =>
         {
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Confirm.ClearScrapedDbTitle"],

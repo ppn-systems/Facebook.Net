@@ -214,7 +214,7 @@ public sealed partial class AccountsPage : UserControl
         ListBox accountList = FormField.CreateListBox<AccountProfile>(
             this._theme,
             this._vm.Accounts,
-            item => AccountRowCard.Create(
+            item => AccountCard.Create(
                 this._theme,
                 this._i18n,
                 item,
@@ -224,7 +224,7 @@ public sealed partial class AccountsPage : UserControl
                 checkHealthLabel: this._i18n["Accounts.BtnRowCheck"],
                 onDelete: () =>
                 {
-                    ConfirmDialogModal.ShowAsync(
+                    ConfirmDialog.ShowAsync(
                         this,
                         this._theme,
                         this._i18n["Confirm.DeleteAccountTitle"],

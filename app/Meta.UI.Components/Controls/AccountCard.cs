@@ -19,7 +19,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone Account list item card component (<see cref="AccountProfile"/>).
 /// </summary>
-public static class AccountRowCard
+public static class AccountCard
 {
     /// <summary>
     /// Creates a reusable list card for an <see cref="AccountProfile"/> item with optional contextual row actions.
@@ -81,7 +81,7 @@ public static class AccountRowCard
         AuditSeverity sev = item.Status == AccountStatus.Active
             ? AuditSeverity.Success
             : (item.Status == AccountStatus.Checkpoint ? AuditSeverity.Error : AuditSeverity.Warning);
-        Border statusPill = StatusPill.Create(theme, i18n.FormatAccountStatus(item.Status), sev);
+        Border statusPill = StatusBadge.Create(theme, i18n.FormatAccountStatus(item.Status), sev);
         statusPill.HorizontalAlignment = HorizontalAlignment.Stretch;
         statusPill.Height = 28;
         Grid.SetColumn(statusPill, 2);
@@ -148,7 +148,7 @@ public static class AccountRowCard
         void OnLangChanged(object? sender, AppLanguage lang)
         {
             subInfo.Text = FormatSubInfo();
-            StatusPill.SetText(statusPill, i18n.FormatAccountStatus(item.Status));
+            StatusBadge.SetText(statusPill, i18n.FormatAccountStatus(item.Status));
         }
 
         row.AttachedToVisualTree += (_, _) =>

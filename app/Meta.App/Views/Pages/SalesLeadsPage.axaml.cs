@@ -356,7 +356,7 @@ public sealed partial class SalesLeadsPage : UserControl
                 PostSummary enriched = string.IsNullOrWhiteSpace(post.GroupAvatarUrl)
                     ? post with { GroupAvatarUrl = this._vm.FindTargetGroupById(post.GroupId)?.AvatarUrl }
                     : post;
-                return LeadPostTableRow.Create(
+                return LeadPostRow.Create(
                     this._theme,
                     this._i18n,
                     enriched,
@@ -573,7 +573,7 @@ public sealed partial class SalesLeadsPage : UserControl
             AppButton.SetText(
                 markContactedBtn,
                 commented ? this._i18n["Leads.BtnMarkPending"] : this._i18n["Leads.BtnMarkContacted"]);
-            Border statusPill = StatusPill.Create(
+            Border statusPill = StatusBadge.Create(
                 this._theme,
                 commented ? this._i18n["Leads.StatusCommented"] : this._i18n["Leads.StatusPending"],
                 commented ? AuditSeverity.Success : AuditSeverity.Warning);
@@ -590,12 +590,12 @@ public sealed partial class SalesLeadsPage : UserControl
                 LineSpacing = 6
             };
             metaPillsWrap.Children.Add(statusPill);
-            metaPillsWrap.Children.Add(StatusPill.Create(this._theme, this._vm.FormatBuyerIntentBadge(post), intentSeverity));
+            metaPillsWrap.Children.Add(StatusBadge.Create(this._theme, this._vm.FormatBuyerIntentBadge(post), intentSeverity));
 
             IReadOnlyList<string> phones = this._vm.ExtractAllPostPhoneNumbers(post);
             if (phones.Count > 0)
             {
-                metaPillsWrap.Children.Add(StatusPill.Create(
+                metaPillsWrap.Children.Add(StatusBadge.Create(
                     this._theme,
                     $"{this._i18n["Leads.PhoneBadgePrefix"]} {string.Join(", ", phones)}",
                     AuditSeverity.Success));
@@ -607,13 +607,13 @@ public sealed partial class SalesLeadsPage : UserControl
                 copyPhoneBtn.IsVisible = false;
             }
 
-            metaPillsWrap.Children.Add(StatusPill.Create(
+            metaPillsWrap.Children.Add(StatusBadge.Create(
                 this._theme,
                 $"👍 {this._i18n["Leads.DetailReactionsPrefix"]} {post.ReactionCount}  •  💬 {this._i18n["Leads.DetailCommentsPrefix"]} {post.CommentCount}",
                 AuditSeverity.Info));
             if (post.CreatedAt is DateTimeOffset dto)
             {
-                metaPillsWrap.Children.Add(StatusPill.Create(
+                metaPillsWrap.Children.Add(StatusBadge.Create(
                     this._theme,
                     dto.ToLocalTime().ToString("dd/MM HH:mm", CultureInfo.InvariantCulture),
                     AuditSeverity.Info));
@@ -622,7 +622,7 @@ public sealed partial class SalesLeadsPage : UserControl
             contentStack.Children.Add(metaPillsWrap);
 
             // Customer Color Tags + (+ Gán nhãn) Flyout
-            WrapPanel leadTagsWrap = LeadPostTableRow.BuildLeadTagsWrapRow(
+            WrapPanel leadTagsWrap = LeadPostRow.BuildLeadTagsWrapRow(
                 this._theme,
                 this._i18n,
                 post,

@@ -92,7 +92,7 @@ public sealed partial class AccountsPage
                 return;
             }
 
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Personal.BtnAcceptAll"],
@@ -122,7 +122,7 @@ public sealed partial class AccountsPage
         ListBox incomingList = FormField.CreateListBox<UserSummary>(
             this._theme,
             filteredIncoming,
-            user => FriendRequestRowCard.Create(
+            user => FriendRequestCard.Create(
                 this._theme,
                 user,
                 openProfileLabel: this._i18n["Personal.BtnOpenProfile"],
@@ -190,7 +190,7 @@ public sealed partial class AccountsPage
                 return;
             }
 
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Personal.BtnCancelAllOutgoing"],
@@ -220,7 +220,7 @@ public sealed partial class AccountsPage
         ListBox outgoingList = FormField.CreateListBox<UserSummary>(
             this._theme,
             filteredOutgoing,
-            user => FriendRequestRowCard.Create(
+            user => FriendRequestCard.Create(
                 this._theme,
                 user,
                 openProfileLabel: this._i18n["Personal.BtnOpenProfile"],

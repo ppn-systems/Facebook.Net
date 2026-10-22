@@ -239,7 +239,7 @@ public sealed partial class OverviewPage : UserControl
             ColumnSpacing = 10
         };
 
-        Border cardAcc = KpiStatCard.Create(
+        Border cardAcc = StatCard.Create(
             this._theme,
             this._i18n["Nav.Accounts"],
             "0",
@@ -248,7 +248,7 @@ public sealed partial class OverviewPage : UserControl
             out TextBlock accValTb,
             this._vm.NavigateAccountsCommand);
 
-        Border cardGrp = KpiStatCard.Create(
+        Border cardGrp = StatCard.Create(
             this._theme,
             this._i18n["Nav.Groups"],
             "0",
@@ -257,7 +257,7 @@ public sealed partial class OverviewPage : UserControl
             out TextBlock grpValTb,
             this._vm.NavigateGroupsCommand);
 
-        Border cardLeads = KpiStatCard.Create(
+        Border cardLeads = StatCard.Create(
             this._theme,
             this._i18n["Nav.SalesLeads"],
             "0",
@@ -266,7 +266,7 @@ public sealed partial class OverviewPage : UserControl
             out TextBlock leadsValTb,
             this._vm.NavigateSalesLeadsCommand);
 
-        Border cardOk = KpiStatCard.Create(
+        Border cardOk = StatCard.Create(
             this._theme,
             this._i18n["Nav.AuditLogs"],
             "0",
@@ -330,7 +330,7 @@ public sealed partial class OverviewPage : UserControl
         statusTextStack.Children.Add(statusHeading);
         statusTextStack.Children.Add(statusSub);
 
-        Border liveStatusPill = StatusPill.Create(this._theme, this._i18n["Overview.StatusDisconnected"], AuditSeverity.Warning);
+        Border liveStatusPill = StatusBadge.Create(this._theme, this._i18n["Overview.StatusDisconnected"], AuditSeverity.Warning);
 
         Grid.SetColumn(heroCircle, 0);
         Grid.SetColumn(statusTextStack, 1);
@@ -344,7 +344,7 @@ public sealed partial class OverviewPage : UserControl
 
         // Campaign Readiness Checklist
         StackPanel checklistStack = new() { Spacing = 7 };
-        Border accReadyPill = IconMetricPill.Create(
+        Border accReadyPill = MetricBadge.Create(
             this._theme,
             VectorIcons.CheckCircle,
             this._i18n["Overview.CheckAccountMissing"],
@@ -353,7 +353,7 @@ public sealed partial class OverviewPage : UserControl
         accReadyPill.Cursor = new Cursor(StandardCursorType.Hand);
         accReadyPill.PointerPressed += (_, _) => this._vm.Navigation.NavigateTo(NavigationSection.Accounts);
 
-        Border grpReadyPill = IconMetricPill.Create(
+        Border grpReadyPill = MetricBadge.Create(
             this._theme,
             VectorIcons.Groups,
             this._i18n["Overview.CheckGroupsMissing"],
@@ -362,7 +362,7 @@ public sealed partial class OverviewPage : UserControl
         grpReadyPill.Cursor = new Cursor(StandardCursorType.Hand);
         grpReadyPill.PointerPressed += (_, _) => this._vm.Navigation.NavigateTo(NavigationSection.Groups);
 
-        Border delayReadyPill = IconMetricPill.Create(
+        Border delayReadyPill = MetricBadge.Create(
             this._theme,
             VectorIcons.Shield,
             $"{this._i18n["Overview.CheckDelayReady"]}: {this._vm.MinDelaySeconds}s – {this._vm.MaxDelaySeconds}s",
@@ -505,8 +505,8 @@ public sealed partial class OverviewPage : UserControl
                 heroCircle.BorderBrush = p.BrandPrimary;
                 VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._vm.AuditDrawer.LatestTickerText;
-                StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusRunning"]);
-                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Info);
+                StatusBadge.SetText(liveStatusPill, this._i18n["Overview.StatusRunning"]);
+                StatusBadge.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Info);
             }
             else if (isConnected && acc is not null)
             {
@@ -516,8 +516,8 @@ public sealed partial class OverviewPage : UserControl
                 heroCircle.BorderBrush = p.SuccessBorder;
                 VectorIcons.SetForeground(heroIcon, p.SuccessText);
                 statusSub.Text = this._i18n["Overview.SubtextConnected"];
-                StatusPill.SetText(liveStatusPill, this._i18n["Overview.StatusConnected"]);
-                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Success);
+                StatusBadge.SetText(liveStatusPill, this._i18n["Overview.StatusConnected"]);
+                StatusBadge.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Success);
             }
             else
             {
@@ -529,10 +529,10 @@ public sealed partial class OverviewPage : UserControl
                 heroCircle.BorderBrush = p.SubtleBorder;
                 VectorIcons.SetForeground(heroIcon, p.BrandPrimary);
                 statusSub.Text = this._i18n["Overview.SubtextDisconnected"];
-                StatusPill.SetText(
+                StatusBadge.SetText(
                     liveStatusPill,
                     acc is not null ? this._i18n.FormatAccountStatus(acc.Status) : this._i18n["Overview.StatusDisconnected"]);
-                StatusPill.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Warning);
+                StatusBadge.SetSeverity(liveStatusPill, this._theme, AuditSeverity.Warning);
             }
 
             int enabledTargets = 0;
@@ -547,15 +547,15 @@ public sealed partial class OverviewPage : UserControl
             accReadyTb.Text = acc is not null
                 ? $"{this._i18n["Overview.CheckAccountReady"]}: {acc.DisplayName}"
                 : this._i18n["Overview.CheckAccountMissing"];
-            IconMetricPill.SetSeverity(accReadyPill, isConnected ? AuditSeverity.Success : AuditSeverity.Warning);
+            MetricBadge.SetSeverity(accReadyPill, isConnected ? AuditSeverity.Success : AuditSeverity.Warning);
 
             grpReadyTb.Text = enabledTargets > 0
                 ? $"{this._i18n["Overview.CheckGroupsReady"]}: {enabledTargets}/{this._vm.TargetGroups.Count}"
                 : this._i18n["Overview.CheckGroupsMissing"];
-            IconMetricPill.SetSeverity(grpReadyPill, enabledTargets > 0 ? AuditSeverity.Success : AuditSeverity.Info);
+            MetricBadge.SetSeverity(grpReadyPill, enabledTargets > 0 ? AuditSeverity.Success : AuditSeverity.Info);
 
             delayReadyTb.Text = $"{this._i18n["Overview.CheckDelayReady"]}: {this._vm.MinDelaySeconds}s – {this._vm.MaxDelaySeconds}s";
-            IconMetricPill.SetSeverity(delayReadyPill, AuditSeverity.Success);
+            MetricBadge.SetSeverity(delayReadyPill, AuditSeverity.Success);
 
             accValTb.Text = this._vm.Accounts.Count.ToString(CultureInfo.InvariantCulture);
             grpValTb.Text = $"{enabledTargets}/{this._vm.TargetGroups.Count}";
@@ -621,7 +621,7 @@ public sealed partial class OverviewPage : UserControl
                 textCol.Children.Add(authorLine);
                 textCol.Children.Add(msgLine);
 
-                Border intentBadge = StatusPill.Create(
+                Border intentBadge = StatusBadge.Create(
                     this._theme,
                     this._vm.FormatBuyerIntentBadge(post),
                     score >= 70 ? AuditSeverity.Success : AuditSeverity.Info);

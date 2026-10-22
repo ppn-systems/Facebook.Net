@@ -74,7 +74,7 @@ public sealed partial class MainWindow : Window
 
         sidebarContainer.Child = new ShellSidebar(_vm);
         topBusyContainer.Child = this.BuildTopBusyStrip();
-        topContextContainer.Child = new TopAccountSwitcherBar(_vm);
+        topContextContainer.Child = new AccountSwitcherBar(_vm);
         footerContainer.Child = this.BuildFooterRow();
 
         aiAssistantContainer.Child = new AiAssistantPanel(_vm);

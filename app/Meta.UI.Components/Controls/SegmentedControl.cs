@@ -16,16 +16,16 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Segmented status pill selector (<c>[ Đang mở | Đã đóng | Tất cả ]</c>) placed in the top-right header of a Filter Card.
 /// </summary>
-public sealed class SegmentedFilterPill : Border
+public sealed class SegmentedControl : Border
 {
     private readonly ThemeService _theme;
     private readonly List<(Button Button, TextBlock Label)> _segments = new();
     private int _selectedIndex;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="SegmentedFilterPill"/> class.
+    /// Initializes a new instance of the <see cref="SegmentedControl"/> class.
     /// </summary>
-    public SegmentedFilterPill(
+    public SegmentedControl(
         ThemeService theme,
         IReadOnlyList<string> labels,
         int initialIndex = 0,

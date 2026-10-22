@@ -16,9 +16,9 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Data payload for populating a <see cref="FacebookPostPreviewCard"/>.
+/// Data payload for populating a <see cref="PostPreviewCard"/>.
 /// </summary>
-public sealed record FacebookPostPreviewData(
+public sealed record PostPreviewData(
     string AccountDisplayName,
     string? AccountAvatarUrl,
     string HeaderDisplayLine,
@@ -27,10 +27,10 @@ public sealed record FacebookPostPreviewData(
     IReadOnlyList<string> MediaFilePaths);
 
 /// <summary>
-/// Full-page simulated Facebook Feed Post Preview view component (<c>FacebookPostPreviewCard.cs</c>)
+/// Full-page simulated Facebook Feed Post Preview view component (<c>PostPreviewCard.cs</c>)
 /// with back navigation, spin-another-variant button, author/group header, media gallery, and action footer.
 /// </summary>
-public static class FacebookPostPreviewCard
+public static class PostPreviewCard
 {
     /// <summary>
     /// Creates the simulated Facebook post preview card view and returns delegates to populate data and refresh localization.
@@ -40,7 +40,7 @@ public static class FacebookPostPreviewCard
         LocalizationService i18n,
         Action onBackClicked,
         Action onSpinAnotherClicked,
-        out Action<FacebookPostPreviewData> populatePreview,
+        out Action<PostPreviewData> populatePreview,
         out Action refreshI18n)
     {
         ArgumentNullException.ThrowIfNull(theme);

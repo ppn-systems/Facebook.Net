@@ -151,7 +151,7 @@ public sealed partial class AccountsPage
             13.5,
             FontWeight.Bold);
 
-        Border proxyStatusBadge = StatusPill.Create(
+        Border proxyStatusBadge = StatusBadge.Create(
             this._theme,
             this._i18n["Accounts.NoProxyBadge"],
             AuditSeverity.Info);
@@ -197,17 +197,17 @@ public sealed partial class AccountsPage
                 accAvatarHost.Content = AvatarBadge.Create(this._theme, acc.DisplayName, 38, acc.AvatarUrl);
                 selectedAccNameTb.Text = acc.DisplayName;
                 bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
-                StatusPill.SetText(
+                StatusBadge.SetText(
                     proxyStatusBadge,
                     hasProxy ? $"{this._i18n["Accounts.ProxyBadgePrefix"]}: {acc.ProxyId}" : this._i18n["Accounts.NoProxyBadge"]);
-                StatusPill.SetSeverity(proxyStatusBadge, this._theme, hasProxy ? AuditSeverity.Success : AuditSeverity.Info);
+                StatusBadge.SetSeverity(proxyStatusBadge, this._theme, hasProxy ? AuditSeverity.Success : AuditSeverity.Info);
             }
             else
             {
                 accAvatarHost.Content = AvatarBadge.Create(this._theme, "FB", 38);
                 selectedAccNameTb.Text = this._i18n["Overview.StatusDisconnected"];
-                StatusPill.SetText(proxyStatusBadge, this._i18n["Accounts.NoProxyBadge"]);
-                StatusPill.SetSeverity(proxyStatusBadge, this._theme, AuditSeverity.Warning);
+                StatusBadge.SetText(proxyStatusBadge, this._i18n["Accounts.NoProxyBadge"]);
+                StatusBadge.SetSeverity(proxyStatusBadge, this._theme, AuditSeverity.Warning);
             }
         }
 

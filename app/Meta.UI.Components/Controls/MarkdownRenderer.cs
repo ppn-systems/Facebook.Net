@@ -15,7 +15,7 @@ namespace Meta.UI.Components.Controls;
 /// bullet lists (<c>- </c>, <c>* </c>), inline code (<c>`code`</c>), bold (<c>**bold**</c>),
 /// and italic (<c>*italic*</c>) spans without external layout passes.
 /// </summary>
-public static class MarkdownTextBlockRenderer
+public static class MarkdownRenderer
 {
     private static readonly FontFamily s_monospaceFont = new("Cascadia Code, Consolas, monospace");
 

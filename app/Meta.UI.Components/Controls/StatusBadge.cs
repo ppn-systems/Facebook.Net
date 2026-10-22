@@ -14,7 +14,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone semantic status pill badge (<c>Success</c>, <c>Warning</c>, <c>Error</c>, <c>Info</c>).
 /// </summary>
-public static class StatusPill
+public static class StatusBadge
 {
     /// <summary>
     /// Creates a status pill badge for account/group/log status without technical enum names.
@@ -103,7 +103,7 @@ public static class StatusPill
     }
 
     /// <summary>
-    /// Updates the text inside a pill created by <see cref="Create"/> or <see cref="IconMetricPill.Create"/>.
+    /// Updates the text inside a pill created by <see cref="Create"/> or <see cref="MetricBadge.Create"/>.
     /// </summary>
     public static void SetText(Border pill, string newText)
     {

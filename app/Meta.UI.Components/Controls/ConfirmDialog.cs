@@ -14,10 +14,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Standardized dimmed modal confirmation popup overlay (<c>ConfirmDialogModal.cs</c>)
+/// Standardized dimmed modal confirmation popup overlay (<c>ConfirmDialog.cs</c>)
 /// used across all destructive Delete, Remove, Clear, and Cache Cleanup actions.
 /// </summary>
-public static class ConfirmDialogModal
+public static class ConfirmDialog
 {
     /// <summary>
     /// Displays a modal confirmation dialog over the window or page containing <paramref name="anchorControl"/>

@@ -14,18 +14,18 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Represents a single colored slice in an <see cref="SvgDonutChart"/>.
+/// Represents a single colored slice in an <see cref="DonutChart"/>.
 /// </summary>
 /// <param name="Label">Human-friendly slice label.</param>
 /// <param name="Value">Numeric count for this slice.</param>
 /// <param name="ColorHex">Hex color string (e.g. <c>#F6821F</c>, <c>#10B981</c>, <c>#3B82F6</c>).</param>
-public sealed record SvgDonutSlice(string Label, int Value, string ColorHex);
+public sealed record DonutChartSlice(string Label, int Value, string ColorHex);
 
 /// <summary>
-/// Multi-colored vector SVG donut chart component (<c>SvgDonutChart.cs</c>) rendered using
+/// Multi-colored vector SVG donut chart component (<c>DonutChart.cs</c>) rendered using
 /// <see cref="StreamGeometry"/> arc paths, a center total counter + icon badge, and a colorful percentage legend.
 /// </summary>
-public sealed class SvgDonutChart : Border
+public sealed class DonutChart : Border
 {
     private readonly ThemeService _theme;
     private readonly TextBlock _titleTb;
@@ -37,9 +37,9 @@ public sealed class SvgDonutChart : Border
     private readonly double _strokeThickness;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="SvgDonutChart"/> class.
+    /// Initializes a new instance of the <see cref="DonutChart"/> class.
     /// </summary>
-    public SvgDonutChart(
+    public DonutChart(
         ThemeService theme,
         string title,
         string centerIconPath,
@@ -152,7 +152,7 @@ public sealed class SvgDonutChart : Border
     /// Renders the vector donut slices and colorful legend items.
     /// </summary>
     public void SetSlices(
-        IReadOnlyList<SvgDonutSlice> slices,
+        IReadOnlyList<DonutChartSlice> slices,
         string? customTotalText = null,
         Func<int, string>? valueFormatter = null)
     {
@@ -207,7 +207,7 @@ public sealed class SvgDonutChart : Border
             int nonZeroCount = activeIndices.Count;
             if (nonZeroCount == 1)
             {
-                SvgDonutSlice onlySlice = slices[activeIndices[0]];
+                DonutChartSlice onlySlice = slices[activeIndices[0]];
                 Ellipse fullRing = new()
                 {
                     Width = radius * 2.0,
@@ -232,7 +232,7 @@ public sealed class SvgDonutChart : Border
 
                 for (int k = 0; k < nonZeroCount; k++)
                 {
-                    SvgDonutSlice slice = slices[activeIndices[k]];
+                    DonutChartSlice slice = slices[activeIndices[k]];
                     double rawSweep = (double)slice.Value / total * availableDegrees;
                     if (rawSweep < minSliceDegrees)
                     {
@@ -261,7 +261,7 @@ public sealed class SvgDonutChart : Border
                 double startAngle = -90.0 + (gapDegrees / 2.0);
                 for (int k = 0; k < nonZeroCount; k++)
                 {
-                    SvgDonutSlice slice = slices[activeIndices[k]];
+                    DonutChartSlice slice = slices[activeIndices[k]];
                     double effectiveSweep = Math.Max(1.0, sweeps[k]);
                     IBrush brush = new SolidColorBrush(Color.Parse(slice.ColorHex));
 
@@ -282,7 +282,7 @@ public sealed class SvgDonutChart : Border
         // Build colorful full-width legend rows with proportional progress bars
         for (int i = 0; i < slices.Count; i++)
         {
-            SvgDonutSlice slice = slices[i];
+            DonutChartSlice slice = slices[i];
             Color parsedColor = Color.Parse(slice.ColorHex);
             IBrush sliceBrush = new SolidColorBrush(parsedColor);
             IBrush subtleTintBrush = new SolidColorBrush(Color.FromArgb(36, parsedColor.R, parsedColor.G, parsedColor.B));

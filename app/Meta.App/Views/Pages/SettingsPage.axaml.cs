@@ -26,7 +26,7 @@ namespace Meta.App.Views.Pages;
 /// 1) System, Installed Browser Scanner &amp; Anti-Checkpoint Delay Settings,
 /// 2) Dedicated Browser Profile Manager (<c>SettingsPage.ProfilesTab.cs</c>),
 /// 3) Real-Time Activity &amp; Audit Logs (<see cref="AuditLogsPage"/>),
-/// 4) Application Disk &amp; Storage Usage Monitor with multi-colored <see cref="SvgDonutChart"/> widgets.
+/// 4) Application Disk &amp; Storage Usage Monitor with multi-colored <see cref="DonutChart"/> widgets.
 /// </summary>
 public sealed partial class SettingsPage : UserControl
 {
@@ -465,7 +465,7 @@ public sealed partial class SettingsPage : UserControl
             13.5,
             FontWeight.Bold);
 
-        Border currentVersionPill = StatusPill.Create(
+        Border currentVersionPill = StatusBadge.Create(
             _theme,
             _i18n.Format("Settings.CurrentVersionLabel", _vm.CurrentAppVersion),
             AuditSeverity.Info);
@@ -526,7 +526,7 @@ public sealed partial class SettingsPage : UserControl
         void RefreshUpdateCheckerVisuals()
         {
             updateCardTitleTb.Text = _i18n["Settings.UpdateCardTitle"];
-            StatusPill.SetText(currentVersionPill, _i18n.Format("Settings.CurrentVersionLabel", _vm.CurrentAppVersion));
+            StatusBadge.SetText(currentVersionPill, _i18n.Format("Settings.CurrentVersionLabel", _vm.CurrentAppVersion));
             updateStatusTb.Text = _vm.UpdateStatusMessage;
             AppButton.SetText(checkUpdateBtn, _i18n["Settings.BtnCheckUpdate"]);
             checkUpdateBtn.IsEnabled = !_vm.IsCheckingForUpdate;

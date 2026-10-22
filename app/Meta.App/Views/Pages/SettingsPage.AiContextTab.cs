@@ -478,7 +478,7 @@ public sealed partial class SettingsPage
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Border categoryPill = StatusPill.Create(
+        Border categoryPill = StatusBadge.Create(
             _theme,
             this.FormatCategoryLabel(entry.Category),
             AuditSeverity.Info);

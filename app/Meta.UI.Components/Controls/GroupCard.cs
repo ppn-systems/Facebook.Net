@@ -20,7 +20,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone Group Catalog, Target Campaign Group, and Color-Coded Group Tag Pill component.
 /// </summary>
-public static class GroupRowCard
+public static class GroupCard
 {
     /// <summary>
     /// Preset vibrant color palette for user-defined <see cref="GroupTag"/> badges.
@@ -220,7 +220,7 @@ public static class GroupRowCard
             rightActionsStack.Children.Add(tagMenuBtn);
         }
 
-        Border statePill = StatusPill.Create(
+        Border statePill = StatusBadge.Create(
             theme,
             i18n.FormatGroupMembership(grp.MembershipState),
             grp.MembershipState == GroupMembershipState.Member ? AuditSeverity.Success : AuditSeverity.Info);
@@ -287,7 +287,7 @@ public static class GroupRowCard
         }
 
         void OnLangChanged(object? sender, AppLanguage lang) =>
-            StatusPill.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
+            StatusBadge.SetText(statePill, i18n.FormatGroupMembership(grp.MembershipState));
         row.AttachedToVisualTree += (_, _) =>
         {
             i18n.LanguageChanged -= OnLangChanged;

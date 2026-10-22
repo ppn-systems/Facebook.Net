@@ -17,10 +17,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Reusable row card component (<c>CampaignTemplateRowCard.cs</c>) for displaying and inline-editing
+/// Reusable row card component (<c>CampaignTemplateCard.cs</c>) for displaying and inline-editing
 /// a <see cref="CampaignTemplate"/> in the Saved Templates manager.
 /// </summary>
-public static class CampaignTemplateRowCard
+public static class CampaignTemplateCard
 {
     /// <summary>
     /// Creates a themed surface card for a saved post or comment template with 1-click use, inline edit, and delete actions.
@@ -56,7 +56,7 @@ public static class CampaignTemplateRowCard
         TextBlock tplTitleTb = SectionHeader.CreateLabel(theme, tpl.Title, 13.5, FontWeight.SemiBold);
         tplTitleTb.TextTrimming = TextTrimming.CharacterEllipsis;
 
-        Border typePill = StatusPill.Create(
+        Border typePill = StatusBadge.Create(
             theme,
             tpl.IsCommentTemplate ? i18n["Publisher.FilterTemplatesComment"] : i18n["Publisher.FilterTemplatesPost"],
             tpl.IsCommentTemplate ? AuditSeverity.Info : AuditSeverity.Success);

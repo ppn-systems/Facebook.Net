@@ -22,19 +22,19 @@ using Meta.UI.ViewModels.Shell;
 namespace Meta.App.Views.Components;
 
 /// <summary>
-/// Top-right shell context bar component (<c>TopAccountSwitcherBar.cs</c>) hosting the active task stop button,
+/// Top-right shell context bar component (<c>AccountSwitcherBar.cs</c>) hosting the active task stop button,
 /// active account badge / multi-account switcher ComboBox with pulsing status indicator, and AI Assistant toggle button.
 /// </summary>
-public sealed class TopAccountSwitcherBar : StackPanel
+public sealed class AccountSwitcherBar : StackPanel
 {
     private readonly ShellViewModel _vm;
     private readonly ThemeService _theme;
     private readonly LocalizationService _i18n;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TopAccountSwitcherBar"/> class.
+    /// Initializes a new instance of the <see cref="AccountSwitcherBar"/> class.
     /// </summary>
-    public TopAccountSwitcherBar(ShellViewModel viewModel)
+    public AccountSwitcherBar(ShellViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         _vm = viewModel;

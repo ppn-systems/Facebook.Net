@@ -94,7 +94,7 @@ public sealed partial class AuditLogsPage : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        Border okPill = IconMetricPill.Create(
+        Border okPill = MetricBadge.Create(
             this._theme,
             VectorIcons.CheckCircle,
             drawerVm.SuccessCount.ToString(CultureInfo.InvariantCulture),
@@ -102,7 +102,7 @@ public sealed partial class AuditLogsPage : UserControl
             out TextBlock okCountTb);
         okPill.Cursor = new Cursor(StandardCursorType.Hand);
 
-        Border warnPill = IconMetricPill.Create(
+        Border warnPill = MetricBadge.Create(
             this._theme,
             VectorIcons.Warning,
             drawerVm.WarningCount.ToString(CultureInfo.InvariantCulture),
@@ -110,7 +110,7 @@ public sealed partial class AuditLogsPage : UserControl
             out TextBlock warnCountTb);
         warnPill.Cursor = new Cursor(StandardCursorType.Hand);
 
-        Border errPill = IconMetricPill.Create(
+        Border errPill = MetricBadge.Create(
             this._theme,
             VectorIcons.ErrorCircle,
             drawerVm.ErrorCount.ToString(CultureInfo.InvariantCulture),
@@ -342,7 +342,7 @@ public sealed partial class AuditLogsPage : UserControl
             tone: AuditSeverity.Error);
         clearBtn.Click += (_, _) =>
         {
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Confirm.ClearAuditLogsTitle"],
@@ -387,7 +387,7 @@ public sealed partial class AuditLogsPage : UserControl
                 new DataTableColumn("*", this._i18n["Table.ColMessage"])
             ],
             drawerVm.FilteredLogs,
-            rec => AuditLogTableRow.Create(this._theme, this._i18n, rec),
+            rec => AuditLogRow.Create(this._theme, this._i18n, rec),
             this._i18n["Empty.AuditLogs"],
             VectorIcons.AuditLog);
 

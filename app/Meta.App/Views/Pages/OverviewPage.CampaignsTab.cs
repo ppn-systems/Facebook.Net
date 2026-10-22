@@ -40,7 +40,7 @@ public sealed partial class OverviewPage
             ColumnSpacing = 12
         };
 
-        SvgDonutChart accountsChart = new(
+        DonutChart accountsChart = new(
             this._theme,
             this._i18n["Analytics.ChartAccountsTitle"],
             VectorIcons.Accounts,
@@ -48,7 +48,7 @@ public sealed partial class OverviewPage
             size: 164,
             strokeThickness: 24);
 
-        SvgDonutChart leadsChart = new(
+        DonutChart leadsChart = new(
             this._theme,
             this._i18n["Analytics.ChartLeadsTitle"],
             VectorIcons.Search,
@@ -56,7 +56,7 @@ public sealed partial class OverviewPage
             size: 164,
             strokeThickness: 24);
 
-        SvgDonutChart activityChart = new(
+        DonutChart activityChart = new(
             this._theme,
             this._i18n["Analytics.ChartActivityTitle"],
             VectorIcons.BrandMark,
@@ -108,10 +108,10 @@ public sealed partial class OverviewPage
 
             accountsChart.SetSlices(
             [
-                new SvgDonutSlice(this._i18n["Analytics.LegendActive"], activeAcc, "#10B981"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendIdle"], idleAcc, "#3B82F6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendExpired"], expiredAcc, "#F59E0B"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendAttention"], attentionAcc, "#EF4444")
+                new DonutChartSlice(this._i18n["Analytics.LegendActive"], activeAcc, "#10B981"),
+                new DonutChartSlice(this._i18n["Analytics.LegendIdle"], idleAcc, "#3B82F6"),
+                new DonutChartSlice(this._i18n["Analytics.LegendExpired"], expiredAcc, "#F59E0B"),
+                new DonutChartSlice(this._i18n["Analytics.LegendAttention"], attentionAcc, "#EF4444")
             ]);
 
             int highIntentPending = 0;
@@ -141,9 +141,9 @@ public sealed partial class OverviewPage
 
             leadsChart.SetSlices(
             [
-                new SvgDonutSlice(this._i18n["Analytics.LegendHighIntentPending"], highIntentPending, "#F6821F"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendWarmPending"], warmPending, "#8B5CF6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendCommented"], commentedLeads, "#10B981")
+                new DonutChartSlice(this._i18n["Analytics.LegendHighIntentPending"], highIntentPending, "#F6821F"),
+                new DonutChartSlice(this._i18n["Analytics.LegendWarmPending"], warmPending, "#8B5CF6"),
+                new DonutChartSlice(this._i18n["Analytics.LegendCommented"], commentedLeads, "#10B981")
             ]);
 
             int publishOps = 0;
@@ -187,12 +187,12 @@ public sealed partial class OverviewPage
 
             activityChart.SetSlices(
             [
-                new SvgDonutSlice(this._i18n["Analytics.LegendPersonal"], personalOps, "#8B5CF6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendPublish"], publishOps, "#3B82F6"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendSalesComment"], commentOps, "#10B981"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendScrape"], scrapeOps, "#F6821F"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendSync"], syncOps, "#06B6D4"),
-                new SvgDonutSlice(this._i18n["Analytics.LegendAlerts"], alertOps, "#EF4444")
+                new DonutChartSlice(this._i18n["Analytics.LegendPersonal"], personalOps, "#8B5CF6"),
+                new DonutChartSlice(this._i18n["Analytics.LegendPublish"], publishOps, "#3B82F6"),
+                new DonutChartSlice(this._i18n["Analytics.LegendSalesComment"], commentOps, "#10B981"),
+                new DonutChartSlice(this._i18n["Analytics.LegendScrape"], scrapeOps, "#F6821F"),
+                new DonutChartSlice(this._i18n["Analytics.LegendSync"], syncOps, "#06B6D4"),
+                new DonutChartSlice(this._i18n["Analytics.LegendAlerts"], alertOps, "#EF4444")
             ]);
         };
 

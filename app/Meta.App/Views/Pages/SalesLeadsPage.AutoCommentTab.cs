@@ -255,7 +255,7 @@ public sealed partial class SalesLeadsPage
                 return;
             }
 
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Leads.BtnAutoCommentAllMatched"],
@@ -349,7 +349,7 @@ public sealed partial class SalesLeadsPage
             infoStack.Children.Add(bodyLine);
 
             bool commented = this._vm.IsPostCommented(post.PostId);
-            Border statusBadge = StatusPill.Create(
+            Border statusBadge = StatusBadge.Create(
                 this._theme,
                 commented ? this._i18n["Leads.StatusCommented"] : this._i18n["Leads.StatusPending"],
                 commented ? AuditSeverity.Success : AuditSeverity.Warning);

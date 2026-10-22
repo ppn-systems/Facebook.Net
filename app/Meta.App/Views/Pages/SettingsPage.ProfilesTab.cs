@@ -172,7 +172,7 @@ public sealed partial class SettingsPage
                 {
                     deleteAction = () =>
                     {
-                        ConfirmDialogModal.ShowAsync(
+                        ConfirmDialog.ShowAsync(
                             this,
                             this._theme,
                             this._i18n["Confirm.DeleteProfileTitle"],
@@ -188,7 +188,7 @@ public sealed partial class SettingsPage
                     };
                 }
 
-                return BrowserProfileRowCard.Create(
+                return BrowserProfileCard.Create(
                     this._theme,
                     this._i18n,
                     opt,
@@ -305,7 +305,7 @@ public sealed partial class SettingsPage
         modalStack.Children.Add(newProfileNameBox);
         modalStack.Children.Add(modalBtnRow);
 
-        createModalBackdrop = ModalOverlayHost.Create(this._theme, modalStack, CloseCreateModal);
+        createModalBackdrop = ModalOverlay.Create(this._theme, modalStack, CloseCreateModal);
 
         rescanProfilesBtn.Click += (_, _) =>
         {

@@ -19,10 +19,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Reusable row card component (<c>BrowserProfileRowCard.cs</c>) for displaying a <see cref="BrowserProfileOption"/>
+/// Reusable row card component (<c>BrowserProfileCard.cs</c>) for displaying a <see cref="BrowserProfileOption"/>
 /// in the Browser Profile Manager tab.
 /// </summary>
-public static class BrowserProfileRowCard
+public static class BrowserProfileCard
 {
     /// <summary>
     /// Creates a row for a managed or system browser profile with async disk size resolution, Use Profile button, Open Folder button, and Delete button.
@@ -116,7 +116,7 @@ public static class BrowserProfileRowCard
 
         if (opt.HasFacebookSession)
         {
-            Border fbSessionBadge = StatusPill.Create(
+            Border fbSessionBadge = StatusBadge.Create(
                 theme,
                 i18n["Settings.BadgeHasFbSession"],
                 AuditSeverity.Success);
@@ -130,7 +130,7 @@ public static class BrowserProfileRowCard
         infoStack.Children.Add(nameAndSizeRow);
         infoStack.Children.Add(pathTb);
 
-        Border sourceBadge = StatusPill.Create(
+        Border sourceBadge = StatusBadge.Create(
             theme,
             opt.IsManagedByApp ? i18n["Settings.BadgeManagedProfile"] : i18n["Settings.BadgeSystemProfile"],
             opt.IsManagedByApp ? AuditSeverity.Success : AuditSeverity.Info);
@@ -146,7 +146,7 @@ public static class BrowserProfileRowCard
 
         if (isCurrentlyAssigned)
         {
-            Border activePill = StatusPill.Create(
+            Border activePill = StatusBadge.Create(
                 theme,
                 i18n["Settings.BadgeActiveProfile"],
                 AuditSeverity.Success);

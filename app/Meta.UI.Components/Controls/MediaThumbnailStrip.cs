@@ -122,7 +122,7 @@ public static class MediaThumbnailStrip
 
                 if (files.Count > maxThumbs)
                 {
-                    Border overflowBadge = StatusPill.Create(
+                    Border overflowBadge = StatusBadge.Create(
                         theme,
                         i18n.Format("Publisher.PhotosOverflowBadge", files.Count - maxThumbs),
                         AuditSeverity.Info);

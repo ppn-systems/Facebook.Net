@@ -267,7 +267,7 @@ public sealed partial class AiAssistantPanel
                     Dispatcher.UIThread.Post(() =>
                     {
                         contentUpdatePending = false;
-                        MarkdownTextBlockRenderer.Render(contentTb, item.Content, _theme.Palette);
+                        MarkdownRenderer.Render(contentTb, item.Content, _theme.Palette);
                         chatScrollViewer.ScrollToEnd();
                     }, DispatcherPriority.Render);
                     return;
@@ -872,7 +872,7 @@ public sealed partial class AiAssistantPanel
         actionButtonsRow.Children.Add(confirmActionBtn);
         actionButtonsRow.Children.Add(editActionBtn);
 
-        Border executedBadge = StatusPill.Create(
+        Border executedBadge = StatusBadge.Create(
             _theme,
             _i18n["Ai.ActionExecutedBadge"],
             AuditSeverity.Success);
@@ -986,7 +986,7 @@ public sealed partial class AiAssistantPanel
 
             timeTb.Foreground = p.TextMuted;
             innerContentTb.Foreground = p.TextPrimary;
-            MarkdownTextBlockRenderer.Render(innerContentTb, item.Content, p);
+            MarkdownRenderer.Render(innerContentTb, item.Content, p);
             timeTb.Text = item.TimestampText;
 
             bool hasAction = item.HasProposedAction && item.ProposedAction is not null;
@@ -1013,7 +1013,7 @@ public sealed partial class AiAssistantPanel
 
                 AppButton.SetText(confirmActionBtn, confirmLabel);
                 AppButton.SetText(editActionBtn, _i18n["Ai.BtnEditAction"]);
-                StatusPill.SetText(executedBadge, _i18n["Ai.ActionExecutedBadge"]);
+                StatusBadge.SetText(executedBadge, _i18n["Ai.ActionExecutedBadge"]);
             }
 
             actionButtonsRow.IsVisible = hasAction && !item.IsActionExecuted;

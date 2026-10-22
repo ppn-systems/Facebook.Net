@@ -154,7 +154,7 @@ public sealed partial class PublisherPage : UserControl
             14.5,
             FontWeight.Bold);
 
-        Border profileActivePill = StatusPill.Create(
+        Border profileActivePill = StatusBadge.Create(
             this._theme,
             this._i18n["Publisher.PersonalProfileBadge"],
             AuditSeverity.Success);
@@ -171,7 +171,7 @@ public sealed partial class PublisherPage : UserControl
             this._i18n["Publisher.ModeFeedAndGroups"]
         ];
 
-        SegmentedFilterPill modeSelectorBar = new(
+        SegmentedControl modeSelectorBar = new(
             this._theme,
             GetModeLabels(),
             initialIndex: Math.Clamp(this._vm.PublishTargetMode, 0, 2),
@@ -439,7 +439,7 @@ public sealed partial class PublisherPage : UserControl
             Content = splitGrid
         };
 
-        Action<FacebookPostPreviewData> populatePreviewCard = null!;
+        Action<PostPreviewData> populatePreviewCard = null!;
 
         void PopulateSimulatedPreview()
         {
@@ -477,7 +477,7 @@ public sealed partial class PublisherPage : UserControl
                 .Replace("{time}", now.ToString("HH:mm", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
                 .Replace("{random_id}", Random.Shared.Next(1000, 9999).ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
 
-            populatePreviewCard(new FacebookPostPreviewData(
+            populatePreviewCard(new PostPreviewData(
                 AccountDisplayName: accName,
                 AccountAvatarUrl: this._vm.SelectedAccount?.AvatarUrl,
                 HeaderDisplayLine: headerDisplayLine,
@@ -486,7 +486,7 @@ public sealed partial class PublisherPage : UserControl
                 MediaFilePaths: ShellViewModel.ParseExistingMediaFilePaths(localPhotoBox.Text)));
         }
 
-        Border previewPageCard = FacebookPostPreviewCard.Create(
+        Border previewPageCard = PostPreviewCard.Create(
             this._theme,
             this._i18n,
             onBackClicked: () => composeHost.Content = splitGrid,
@@ -523,7 +523,7 @@ public sealed partial class PublisherPage : UserControl
 
         refreshI18n = () =>
         {
-            StatusPill.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
+            StatusBadge.SetText(profileActivePill, this._i18n["Publisher.PersonalProfileBadge"]);
             modeSelectorBar.UpdateLabels(GetModeLabels());
 
             autoReactOwnPostLbl.Text = this._i18n["Publisher.AutoReactOwnPost"];
@@ -672,7 +672,7 @@ public sealed partial class PublisherPage : UserControl
 
                 bool allSelected = totalWithTag > 0 && enabledWithTag == totalWithTag;
                 string suffix = $"{enabledWithTag}/{totalWithTag}";
-                Border chip = GroupRowCard.CreateTagPill(
+                Border chip = GroupCard.CreateTagPill(
                     tag,
                     suffixText: suffix,
                     isActive: allSelected || enabledWithTag > 0,
@@ -784,7 +784,7 @@ public sealed partial class PublisherPage : UserControl
         ListBox pickerList = FormField.CreateListBox<SavedTargetGroup>(
             this._theme,
             filteredPickerGroups,
-            tg => GroupRowCard.CreateTargetRow(
+            tg => GroupCard.CreateTargetRow(
                 this._theme,
                 tg,
                 async nextState =>

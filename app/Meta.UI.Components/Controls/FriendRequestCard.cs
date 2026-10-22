@@ -14,10 +14,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Reusable row component (<c>FriendRequestRowCard.cs</c>) for displaying a <see cref="UserSummary"/>
+/// Reusable row component (<c>FriendRequestCard.cs</c>) for displaying a <see cref="UserSummary"/>
 /// in the Incoming and Outgoing Friend Requests lists.
 /// </summary>
-public static class FriendRequestRowCard
+public static class FriendRequestCard
 {
     /// <summary>
     /// Creates a row for an incoming or outgoing friend request with Open Profile, Accept, Decline, or Cancel actions.

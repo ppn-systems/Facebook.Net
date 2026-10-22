@@ -316,7 +316,7 @@ public sealed partial class GroupsPage : UserControl
         ListBox targetList = FormField.CreateListBox<SavedTargetGroup>(
             this._theme,
             filteredTargets,
-            tg => GroupRowCard.CreateTargetRow(
+            tg => GroupCard.CreateTargetRow(
                 this._theme,
                 tg,
                 nextState =>
@@ -337,7 +337,7 @@ public sealed partial class GroupsPage : UserControl
                 addTagLabel: this._i18n["Groups.BtnAddTagOnRow"],
                 onRemove: () =>
                 {
-                    ConfirmDialogModal.ShowAsync(
+                    ConfirmDialog.ShowAsync(
                         this,
                         this._theme,
                         this._i18n["Confirm.RemoveTargetGroupTitle"],
@@ -636,7 +636,7 @@ public sealed partial class GroupsPage : UserControl
         ListBox groupsList = FormField.CreateListBox<GroupSummary>(
             this._theme,
             filteredCatalog,
-            grp => GroupRowCard.CreateCatalogRow(
+            grp => GroupCard.CreateCatalogRow(
                 this._theme,
                 this._i18n,
                 grp,

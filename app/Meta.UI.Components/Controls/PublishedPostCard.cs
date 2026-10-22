@@ -16,10 +16,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Reusable row card component (<c>PublishedPostRowCard.cs</c>) for displaying a <see cref="PublishedPostRecord"/>
+/// Reusable row card component (<c>PublishedPostCard.cs</c>) for displaying a <see cref="PublishedPostRecord"/>
 /// in the Published Posts &amp; Timeline Sync list.
 /// </summary>
-public static class PublishedPostRowCard
+public static class PublishedPostCard
 {
     /// <summary>
     /// Creates an inset surface card for a published or synced timeline post record.
@@ -77,7 +77,7 @@ public static class PublishedPostRowCard
         authorAndTarget.Children.Add(authorTb);
         authorAndTarget.Children.Add(targetTb);
 
-        Border kindPill = StatusPill.Create(
+        Border kindPill = StatusBadge.Create(
             theme,
             isGroup ? i18n["Publisher.BadgeGroupPost"] : i18n["Publisher.BadgePersonalPost"],
             isGroup ? AuditSeverity.Info : AuditSeverity.Success);

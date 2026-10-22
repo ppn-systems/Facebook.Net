@@ -75,7 +75,7 @@ public sealed partial class PublisherPage
                 return;
             }
 
-            ConfirmDialogModal.ShowAsync(
+            ConfirmDialog.ShowAsync(
                 this,
                 this._theme,
                 this._i18n["Confirm.DeletePublishedPostTitle"],
@@ -213,7 +213,7 @@ public sealed partial class PublisherPage
         ListBox postsList = FormField.CreateListBox<PublishedPostRecord>(
             this._theme,
             filteredPosts,
-            rec => PublishedPostRowCard.Create(
+            rec => PublishedPostCard.Create(
                 this._theme,
                 this._i18n,
                 rec,
@@ -230,7 +230,7 @@ public sealed partial class PublisherPage
                 onDelete: () =>
                 {
                     this._vm.SelectedPublishedPost = rec;
-                    ConfirmDialogModal.ShowAsync(
+                    ConfirmDialog.ShowAsync(
                         this,
                         this._theme,
                         this._i18n["Confirm.DeletePublishedPostTitle"],
@@ -577,7 +577,7 @@ public sealed partial class PublisherPage
         ListBox tplList = FormField.CreateListBox<CampaignTemplate>(
             this._theme,
             filteredTemplates,
-            tpl => CampaignTemplateRowCard.Create(
+            tpl => CampaignTemplateCard.Create(
                 this._theme,
                 this._i18n,
                 tpl,
@@ -607,7 +607,7 @@ public sealed partial class PublisherPage
                     this._vm.UpdateTemplateContentAsync(tpl, newTitle, newContent),
                 onDeleteTemplate: () =>
                 {
-                    ConfirmDialogModal.ShowAsync(
+                    ConfirmDialog.ShowAsync(
                         this,
                         this._theme,
                         this._i18n["Confirm.DeleteTemplateTitle"],

@@ -16,7 +16,7 @@ namespace Meta.UI.Components.Controls;
 /// <summary>
 /// Standalone KPI metric stat card component with SVG icon badge, metric value, and optional click navigation.
 /// </summary>
-public static class KpiStatCard
+public static class StatCard
 {
     /// <summary>
     /// Creates a KPI metric card with an SVG icon badge, uppercase label, large numeric metric value,

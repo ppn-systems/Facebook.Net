@@ -11,10 +11,10 @@ using Meta.UI.Core.Theming;
 namespace Meta.UI.Components.Controls;
 
 /// <summary>
-/// Reusable dimmed modal overlay container (<c>ModalOverlayHost.cs</c>) that wraps a custom form or dialog card,
+/// Reusable dimmed modal overlay container (<c>ModalOverlay.cs</c>) that wraps a custom form or dialog card,
 /// blocks click-through inside the card, and invokes a close callback when clicking the backdrop.
 /// </summary>
-public static class ModalOverlayHost
+public static class ModalOverlay
 {
     /// <summary>
     /// Creates a hidden-by-default dimmed modal backdrop containing a centered <see cref="SurfaceCard"/>.
