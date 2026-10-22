@@ -21,7 +21,7 @@ namespace Facebook.Net.Tests;
 public sealed class CometClientTests
 {
     [Fact]
-    public void SpinText_ResolvesNestedAndFlatSpintaxOptions()
+    public void SpinText_ResolvesNestedBlocks_StrayBraces_And_DynamicMacros()
     {
         string input = "{Xin chào|Chào bạn|Hello} {inbox|nhắn tin} báo giá {nhé|nha}!";
         string spun = PayloadBuilder.SpinText(input);
@@ -30,6 +30,23 @@ public sealed class CometClientTests
         Assert.DoesNotContain("}", spun, StringComparison.Ordinal);
         Assert.DoesNotContain("|", spun, StringComparison.Ordinal);
         Assert.EndsWith("!", spun, StringComparison.Ordinal);
+
+        string nested = PayloadBuilder.SpinText("{A|{B|B}}");
+        Assert.True(nested is "A" or "B");
+
+        string strayClosingBeforeBlock = PayloadBuilder.SpinText("Price: } 100k {deal|sale}");
+        Assert.True(strayClosingBeforeBlock is "Price: } 100k deal" or "Price: } 100k sale");
+
+        string emptyBraces = PayloadBuilder.SpinText("Hello {}world");
+        Assert.Equal("Hello world", emptyBraces);
+
+        string macroInput = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";
+        string macroSpun = PayloadBuilder.SpinText(macroInput);
+        Assert.DoesNotContain("{date}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{time}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{day}", macroSpun, StringComparison.Ordinal);
+        Assert.DoesNotContain("{random_id}", macroSpun, StringComparison.Ordinal);
+        Assert.Contains("#", macroSpun, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -163,19 +180,6 @@ public sealed class CometClientTests
     }
 
     [Fact]
-    public void SpinText_ExpandsDynamicMacros_Date_Time_Day_And_RandomId()
-    {
-        string input = "Ưu đãi ngày {date} lúc {time} ({day}) mã #{random_id}!";
-        string spun = PayloadBuilder.SpinText(input);
-
-        Assert.DoesNotContain("{date}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{time}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{day}", spun, StringComparison.Ordinal);
-        Assert.DoesNotContain("{random_id}", spun, StringComparison.Ordinal);
-        Assert.Contains("#", spun, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void ProtocolErrorClassifier_ClassifiesActionBlocked368_Checkpoint190_And_TransientRateLimit()
     {
         Assert.Equal(AutomationErrorCategory.ActionBlocked368, ProtocolErrorClassifier.Classify(368, "You're Temporarily Blocked"));
@@ -284,59 +288,5 @@ public sealed class CometClientTests
         public void Dispose()
         {
         }
-    }
-
-    [Fact]
-    public void LocalSessionFile_WhenPresentLocally_BuildsCompleteGraphQlRequestPayload()
-    {
-        string? localPath = TryFindLocalSessionFile();
-        if (localPath is null)
-        {
-            // CI/CD environment without .local/test-session.json -> skip gracefully
-            return;
-        }
-
-        string json = System.IO.File.ReadAllText(localPath);
-        using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json);
-        System.Text.Json.JsonElement root = doc.RootElement;
-
-        SessionMaterial material = new(
-            Uid: root.GetProperty("uid").GetString()!,
-            CookieHeader: root.GetProperty("cookieHeader").GetString()!,
-            FbDtsg: root.GetProperty("fbDtsg").GetString()!,
-            Jazoest: root.GetProperty("jazoest").GetString()!,
-            Lsd: root.GetProperty("lsd").GetString()!,
-            ClientRevision: root.GetProperty("clientRevision").GetString()!,
-            HasteSession: root.GetProperty("hasteSession").GetString()!,
-            WebSessionId: "abc123:def456:ghi789",
-            UserAgent: root.GetProperty("userAgent").GetString()!,
-            ExtractedAt: DateTimeOffset.UtcNow);
-
-        GraphQlRequest req = new(
-            FriendlyName: ProtocolConstants.Queries.JoinedGroupsName,
-            DocId: ProtocolConstants.Queries.JoinedGroupsDocId,
-            VariablesJson: "{\"count\":20,\"scale\":2}");
-
-        string formBody = PayloadBuilder.BuildGraphQlFormBody(material, req, 1);
-        Assert.Contains($"av={material.Uid}", formBody, StringComparison.Ordinal);
-        Assert.Contains($"jazoest={material.Jazoest}", formBody, StringComparison.Ordinal);
-        Assert.Contains($"doc_id={ProtocolConstants.Queries.JoinedGroupsDocId}", formBody, StringComparison.Ordinal);
-    }
-
-    private static string? TryFindLocalSessionFile()
-    {
-        System.IO.DirectoryInfo? dir = new(System.AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            string candidate = System.IO.Path.Combine(dir.FullName, ".local", "test-session.json");
-            if (System.IO.File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
     }
 }

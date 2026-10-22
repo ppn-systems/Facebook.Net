@@ -3,9 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Net.Http;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Models;
@@ -392,25 +390,8 @@ public sealed partial class ShellViewModel
     /// <summary>
     /// Opens the specified browser profile directory in the OS file manager (Windows Explorer / macOS Finder).
     /// </summary>
-    public static void OpenProfileFolderInExplorer(string? directoryPath)
-    {
-        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
-        {
-            return;
-        }
-
-        try
-        {
-            _ = Process.Start(new ProcessStartInfo(directoryPath)
-            {
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            // Ignore shell launch error
-        }
-    }
+    public static void OpenProfileFolderInExplorer(string? directoryPath) =>
+        _ = SystemLauncherService.Instance.OpenDirectory(directoryPath);
 
     private void PruneOrphanPlaceholderProfiles()
     {
@@ -650,111 +631,24 @@ public sealed partial class ShellViewModel
             ? this.LatestReleaseDownloadUrl.Trim()
             : "https://github.com/ppn-systems/Facebook.Net/releases";
 
-        bool isMsi = OperatingSystem.IsWindows() && url.EndsWith(".msi", StringComparison.OrdinalIgnoreCase);
-        bool isDmg = OperatingSystem.IsMacOS() && url.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase);
-
-        if (!isMsi && !isDmg)
-        {
-            this.OpenUpdateDownloadPage();
-            return;
-        }
-
         this.IsCheckingForUpdate = true;
         string tag = !string.IsNullOrWhiteSpace(this.LatestReleaseTag) ? this.LatestReleaseTag : "latest";
 
         try
         {
-            string ext = isMsi ? ".msi" : ".dmg";
-            string safeTag = tag.Replace('/', '_').Replace('\\', '_');
-            string tempInstallerPath = Path.Combine(Path.GetTempPath(), $"FacebookOneClient-Update-{safeTag}{ext}");
-
-            using HttpClient http = new()
-            {
-                Timeout = TimeSpan.FromMinutes(10)
-            };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("FacebookOneClient-UpdateChecker/1.0");
-
-            using HttpResponseMessage response = await http
-                .GetAsync(new Uri(url), HttpCompletionOption.ResponseHeadersRead)
-                .ConfigureAwait(true);
-            _ = response.EnsureSuccessStatusCode();
-
-            long? totalBytes = response.Content.Headers.ContentLength;
-            await using (Stream contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(true))
-            await using (FileStream fileStream = new(tempInstallerPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-            {
-                byte[] buffer = new byte[81920];
-                long totalRead = 0;
-                int lastReportedPct = -1;
-                int read;
-                while ((read = await contentStream.ReadAsync(buffer).ConfigureAwait(true)) > 0)
+            bool launched = await _context.AppRelease.DownloadAndLaunchInstallerAsync(
+                url,
+                tag,
+                onProgressPercent: pct => this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusDownloading", tag, pct),
+                onBeforeLaunch: () =>
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(true);
-                    totalRead += read;
-                    if (totalBytes is > 0)
-                    {
-                        int pct = (int)Math.Clamp(totalRead * 100L / totalBytes.Value, 0, 100);
-                        if (pct != lastReportedPct)
-                        {
-                            lastReportedPct = pct;
-                            this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusDownloading", tag, pct);
-                        }
-                    }
-                }
-            }
+                    this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusInstalling", tag);
+                    this.FlushSettingsToDisk();
+                }).ConfigureAwait(true);
 
-            this.UpdateStatusMessage = _context.Localization.Format("Settings.UpdateStatusInstalling", tag);
-            this.FlushSettingsToDisk();
-
-            if (isMsi)
+            if (!launched)
             {
-                string currentExe = Environment.ProcessPath
-                    ?? Path.Combine(AppContext.BaseDirectory, "FacebookOneClient.exe");
-                const string InstalledProgramFilesExe = @"C:\Program Files\Facebook One Client\FacebookOneClient.exe";
-                string batchPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.cmd");
-                string batchScript =
-                    "@echo off\r\n" +
-                    "timeout /t 2 /nobreak >nul\r\n" +
-                    $"msiexec.exe /i \"{tempInstallerPath}\" /passive /norestart\r\n" +
-                    $"if exist \"{InstalledProgramFilesExe}\" (\r\n" +
-                    $"    start \"\" \"{InstalledProgramFilesExe}\"\r\n" +
-                    ") else (\r\n" +
-                    $"    start \"\" \"{currentExe}\"\r\n" +
-                    ")\r\n" +
-                    "del \"%~f0\"\r\n";
-
-                await File.WriteAllTextAsync(batchPath, batchScript).ConfigureAwait(true);
-                _ = Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                });
-                Environment.Exit(0);
-            }
-            else if (isDmg)
-            {
-                string shPath = Path.Combine(Path.GetTempPath(), $"fb_one_update_{Guid.NewGuid():N}.sh");
-                string mountPoint = $"/Volumes/FBOneUpdate_{Guid.NewGuid():N}"[..28];
-                string shScript =
-                    "#!/bin/bash\n" +
-                    "sleep 2\n" +
-                    $"hdiutil attach -nobrowse -mountpoint \"{mountPoint}\" \"{tempInstallerPath}\" >/dev/null 2>&1\n" +
-                    $"if [ -d \"{mountPoint}/Facebook One Client.app\" ]; then\n" +
-                    "  rm -rf \"/Applications/Facebook One Client.app\"\n" +
-                    $"  cp -R \"{mountPoint}/Facebook One Client.app\" \"/Applications/\"\n" +
-                    "fi\n" +
-                    $"hdiutil detach \"{mountPoint}\" -force >/dev/null 2>&1 || true\n" +
-                    "open -a \"/Applications/Facebook One Client.app\"\n" +
-                    "rm -f \"$0\"\n";
-
-                await File.WriteAllTextAsync(shPath, shScript).ConfigureAwait(true);
-                _ = Process.Start(new ProcessStartInfo("/bin/bash", $"\"{shPath}\"")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                });
-                Environment.Exit(0);
+                this.OpenUpdateDownloadPage();
             }
         }
         catch
@@ -776,16 +670,6 @@ public sealed partial class ShellViewModel
             ? this.LatestReleaseDownloadUrl
             : "https://github.com/ppn-systems/Facebook.Net/releases";
 
-        try
-        {
-            _ = Process.Start(new ProcessStartInfo(url)
-            {
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            // Ignore shell launch failures in headless environments
-        }
+        _ = _context.SystemLauncher.OpenUrl(url);
     }
 }

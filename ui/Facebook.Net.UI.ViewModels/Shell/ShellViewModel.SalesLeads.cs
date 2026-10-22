@@ -10,9 +10,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.Protocol;
 using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Collections;
+using Facebook.Net.UI.Core.Exports;
 using Facebook.Net.UI.Core.Leads;
 using Facebook.Net.UI.Core.Publisher;
 
@@ -583,7 +583,7 @@ public sealed partial class ShellViewModel
             await _context.AccountStore.RecordActionAsync(
                 new ActionHistoryEntry(
                     accountUid,
-                    "COMMENT",
+                    DomainActionKinds.Comment,
                     post.PostId,
                     "manual_contacted",
                     DateTimeOffset.UtcNow),
@@ -603,28 +603,12 @@ public sealed partial class ShellViewModel
             return;
         }
 
-        static string EscapeCsv(string? val)
-        {
-            if (string.IsNullOrEmpty(val))
-            {
-                return "\"\"";
-            }
-
-            string cleaned = val.Replace("\"", "\"\"", StringComparison.Ordinal)
-                                .Replace('\r', ' ')
-                                .Replace('\n', ' ');
-            return $"\"{cleaned}\"";
-        }
-
-        System.Text.StringBuilder sb = new((this.ScrapedPosts.Count * 160) + 128);
-        _ = sb.AppendLine("CreatedAt,AuthorName,PhoneNumbers,GroupName,IntentScore,Status,Tags,Notes,MessageText,PermalinkUrl");
-
+        List<LeadCsvExportRow> rows = new(this.ScrapedPosts.Count);
         for (int i = 0; i < this.ScrapedPosts.Count; i++)
         {
             PostSummary p = this.ScrapedPosts[i];
-            string createdStr = p.CreatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-            string phonesStr = string.Join(" | ", this.ExtractAllPostPhoneNumbers(p));
-            int score = CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
+            IReadOnlyList<string> phones = this.ExtractAllPostPhoneNumbers(p);
+            int score = _context.LeadScoring.CalculateBuyerIntentScore(p.MessageText, this.BuyerIntentKeywords);
             string statusStr = this.IsPostCommented(p.PostId)
                 ? _context.Localization["Leads.StatusCommented"]
                 : _context.Localization["Leads.StatusPending"];
@@ -636,21 +620,10 @@ public sealed partial class ShellViewModel
                 tagNames.Add(tags[t].Name);
             }
 
-            string tagsStr = string.Join(" | ", tagNames);
-
-            _ = sb.Append(EscapeCsv(createdStr)).Append(',')
-                  .Append(EscapeCsv(p.AuthorName)).Append(',')
-                  .Append(EscapeCsv(phonesStr)).Append(',')
-                  .Append(EscapeCsv(p.GroupName)).Append(',')
-                  .Append(score.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',')
-                  .Append(EscapeCsv(statusStr)).Append(',')
-                  .Append(EscapeCsv(tagsStr)).Append(',')
-                  .Append(EscapeCsv(p.Notes)).Append(',')
-                  .Append(EscapeCsv(p.MessageText)).Append(',')
-                  .AppendLine(EscapeCsv(p.PermalinkUrl));
+            rows.Add(new LeadCsvExportRow(p, phones, score, statusStr, tagNames));
         }
 
-        await File.WriteAllTextAsync(filePath, sb.ToString(), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true), ct).ConfigureAwait(true);
+        _ = await _context.CsvExport.ExportLeadsToCsvAsync(filePath, rows, ct).ConfigureAwait(true);
 
         _ = await this.LogAuditAsync(
             AuditCategory.Scrape,
@@ -672,8 +645,8 @@ public sealed partial class ShellViewModel
             ? post.GroupName
             : _context.Localization["Audit.Cat.Group"];
 
-        string resolvedVars = ResolveDynamicCommentVariables(this.SalesCommentSpintaxText, sampleAuthor, sampleGroup);
-        string spun = PayloadBuilder.SpinText(resolvedVars);
+        string resolvedVars = _context.CampaignPublisher.ResolveDynamicVariables(this.SalesCommentSpintaxText, sampleAuthor, sampleGroup);
+        string spun = _context.CampaignPublisher.SpinText(resolvedVars);
         return $"{_context.Localization["Leads.CommentPreviewPrefix"]} {spun}";
     }
 
@@ -1454,7 +1427,7 @@ public sealed partial class ShellViewModel
         Exception ex,
         CancellationToken ct)
     {
-        AutomationErrorCategory errorCategory = ProtocolErrorClassifier.ClassifyException(ex);
+        AutomationErrorCategory errorCategory = _context.CampaignPublisher.ClassifyAutomationException(ex);
         if (errorCategory == AutomationErrorCategory.CheckpointOrAuthFailure && this.SelectedAccount is not null)
         {
             AccountProfile updated = this.SelectedAccount with { Status = AccountStatus.Checkpoint };
@@ -1587,7 +1560,7 @@ public sealed partial class ShellViewModel
 
     private async Task WaitAntiCheckpointDelayAsync(string nextTargetName, CancellationToken ct)
     {
-        TimeSpan delay = HumanJitter.NextGaussianDelay(this.MinDelaySeconds, this.MaxDelaySeconds);
+        TimeSpan delay = _context.CampaignPublisher.NextGaussianDelay(this.MinDelaySeconds, this.MaxDelaySeconds);
         if (delay <= TimeSpan.Zero)
         {
             return;
@@ -1607,7 +1580,7 @@ public sealed partial class ShellViewModel
     {
         double minSec = Math.Clamp(this.ScrapeDelayMinSeconds, 0.0, 600.0);
         double maxSec = Math.Clamp(this.ScrapeDelayMaxSeconds, minSec, 600.0);
-        TimeSpan delay = HumanJitter.NextGaussianDelay(minSec, maxSec);
+        TimeSpan delay = _context.CampaignPublisher.NextGaussianDelay(minSec, maxSec);
         if (delay <= TimeSpan.Zero)
         {
             return;
@@ -1668,7 +1641,7 @@ public sealed partial class ShellViewModel
                 .ConfigureAwait(true);
         }
 
-        string resolvedCommentSpintax = ResolveDynamicCommentVariables(this.SalesCommentSpintaxText, post.AuthorName, post.GroupName);
+        string resolvedCommentSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.SalesCommentSpintaxText, post.AuthorName, post.GroupName);
         string? commentId = await _context.CometClient
             .CreateCommentAsync(session, post.PostId, resolvedCommentSpintax, attachmentFbid, ct: ct)
             .ConfigureAwait(true);
@@ -1679,7 +1652,7 @@ public sealed partial class ShellViewModel
             await _context.AccountStore.RecordActionAsync(
                 new ActionHistoryEntry(
                     session.AccountUid,
-                    "COMMENT",
+                    DomainActionKinds.Comment,
                     post.PostId,
                     commentId,
                     DateTimeOffset.UtcNow),

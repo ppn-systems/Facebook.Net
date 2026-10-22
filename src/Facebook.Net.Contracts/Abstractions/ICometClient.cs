@@ -10,16 +10,10 @@ using Facebook.Net.Contracts.Primitives;
 namespace Facebook.Net.Contracts.Abstractions;
 
 /// <summary>
-/// High-level client for executing Comet GraphQL operations, group/feed scraping,
-/// post publishing, sales commenting, contextual navigation, and media uploads.
+/// Segregated client contract for publishing posts, sharing, commenting, and reacting on Facebook.
 /// </summary>
-public interface ICometClient
+public interface IFacebookPublishClient
 {
-    /// <summary>
-    /// Executes a raw or custom <see cref="GraphQlRequest"/> with contextual pre/post navigation and response sanitization.
-    /// </summary>
-    Task<GraphQlResult> ExecuteGraphQlAsync(IBrowserSession session, GraphQlRequest request, CancellationToken ct = default);
-
     /// <summary>
     /// Publishes a new post to the user's personal timeline (<see cref="ComposerTarget.Feed"/>)
     /// or into a target group (<see cref="ComposerTarget.Group"/>), supporting Spintax text and multiple photo/video attachments.
@@ -57,7 +51,13 @@ public interface ICometClient
     /// Reacts to a feed or group post using the specified <see cref="ReactionKind"/>.
     /// </summary>
     Task<bool> ReactToPostAsync(IBrowserSession session, string postId, ReactionKind reaction, CancellationToken ct = default);
+}
 
+/// <summary>
+/// Segregated client contract for scraping newsfeed, timeline, post details, and engagement actors.
+/// </summary>
+public interface IFacebookFeedClient
+{
     /// <summary>
     /// Scrapes posts from the user's home Newsfeed (<c>CometNewsFeedPaginationQuery</c>).
     /// </summary>
@@ -82,7 +82,13 @@ public interface ICometClient
     /// Scrapes users who commented on a specific post (<c>CommentsListComponentsPaginationQuery</c>).
     /// </summary>
     Task<PagedResult<UserSummary>> GetPostCommentersAsync(IBrowserSession session, string postId, string? cursor = null, CancellationToken ct = default);
+}
 
+/// <summary>
+/// Segregated client contract for community group discovery, feed scraping, and membership workflows.
+/// </summary>
+public interface IFacebookGroupClient
+{
     /// <summary>
     /// Searches community groups by keyword (<c>SearchCometResultsPaginatedResultsQuery</c>).
     /// </summary>
@@ -127,7 +133,13 @@ public interface ICometClient
     /// Invites friends to a community group (<c>useGroupAddMembersMutation</c>).
     /// </summary>
     Task<bool> InviteFriendsToGroupAsync(IBrowserSession session, string groupId, IReadOnlyList<string> friendUids, CancellationToken ct = default);
+}
 
+/// <summary>
+/// Segregated client contract for friend requests, suggestions, followers, and social graph actions.
+/// </summary>
+public interface IFacebookFriendshipClient
+{
     /// <summary>
     /// Fetches "People You May Know" (PYMK) friend suggestions.
     /// </summary>
@@ -177,6 +189,45 @@ public interface ICometClient
     /// Pokes a target friend (<c>PokesMutatorPokeMutation</c>).
     /// </summary>
     Task<bool> PokeUserAsync(IBrowserSession session, string targetUid, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Segregated client contract for uploading photos and videos via Facebook's UFI and RUpload endpoints.
+/// </summary>
+public interface IFacebookMediaClient
+{
+    /// <summary>
+    /// Uploads a photo for use in feed/group posts or sales comments and returns its <c>fbid</c>.
+    /// </summary>
+    Task<string> UploadUfiPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Uploads a photo for use in Stories and returns its <c>photoID</c>.
+    /// </summary>
+    Task<string> UploadStoryPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Uploads a video (<c>.mp4</c>) using the 4-step RUpload protocol and returns its <c>video_id</c>.
+    /// </summary>
+    Task<string> UploadVideoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Composite high-level client for executing Comet GraphQL operations, inheriting segregated role contracts
+/// (<see cref="IFacebookPublishClient"/>, <see cref="IFacebookFeedClient"/>, <see cref="IFacebookGroupClient"/>,
+/// <see cref="IFacebookFriendshipClient"/>, and <see cref="IFacebookMediaClient"/>).
+/// </summary>
+public interface ICometClient :
+    IFacebookPublishClient,
+    IFacebookFeedClient,
+    IFacebookGroupClient,
+    IFacebookFriendshipClient,
+    IFacebookMediaClient
+{
+    /// <summary>
+    /// Executes a raw or custom <see cref="GraphQlRequest"/> with contextual pre/post navigation and response sanitization.
+    /// </summary>
+    Task<GraphQlResult> ExecuteGraphQlAsync(IBrowserSession session, GraphQlRequest request, CancellationToken ct = default);
 
     /// <summary>
     /// Fetches the active stories tray items (<c>StoriesTrayRectangularQuery</c>).
@@ -212,19 +263,4 @@ public interface ICometClient
     /// Retrieves all managed fanpages / additional profiles associated with the account.
     /// </summary>
     Task<IReadOnlyList<ManagedPageSummary>> GetManagedPagesAsync(IBrowserSession session, CancellationToken ct = default);
-
-    /// <summary>
-    /// Uploads a photo for use in feed/group posts or sales comments and returns its <c>fbid</c>.
-    /// </summary>
-    Task<string> UploadUfiPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
-
-    /// <summary>
-    /// Uploads a photo for use in Stories and returns its <c>photoID</c>.
-    /// </summary>
-    Task<string> UploadStoryPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
-
-    /// <summary>
-    /// Uploads a video (<c>.mp4</c>) using the 4-step RUpload protocol and returns its <c>video_id</c>.
-    /// </summary>
-    Task<string> UploadVideoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default);
 }

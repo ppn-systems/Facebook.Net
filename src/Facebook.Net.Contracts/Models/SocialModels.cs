@@ -137,28 +137,16 @@ public sealed record SavedTargetGroup(
     string? AvatarUrl = null,
     string? TagsCsv = null)
 {
-    private (string? RawCsv, string[]? ParsedIds) _cachedTags;
-
     /// <summary>
     /// Returns the list of assigned <see cref="GroupTag.Id"/> identifiers on this group.
     /// </summary>
-    public System.Collections.Generic.IReadOnlyList<string> GetTagIds()
-    {
-        if (this._cachedTags.ParsedIds is not null &&
-            string.Equals(this._cachedTags.RawCsv, this.TagsCsv, StringComparison.Ordinal))
-        {
-            return this._cachedTags.ParsedIds;
-        }
-
-        string[] parsed = string.IsNullOrWhiteSpace(this.TagsCsv)
+    public System.Collections.Generic.IReadOnlyList<string> GetTagIds() =>
+        string.IsNullOrWhiteSpace(this.TagsCsv)
             ? Array.Empty<string>()
             : this.TagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        this._cachedTags = (this.TagsCsv, parsed);
-        return parsed;
-    }
 
     /// <summary>
-    /// Checks whether this target group is assigned the specified <paramref name="tagId"/>.
+    /// Checks whether this target group is assigned the specified <paramref name="tagId"/> using zero-allocation span scanning.
     /// </summary>
     public bool HasTag(string? tagId)
     {
@@ -167,13 +155,28 @@ public sealed record SavedTargetGroup(
             return false;
         }
 
-        System.Collections.Generic.IReadOnlyList<string> parts = this.GetTagIds();
-        for (int i = 0; i < parts.Count; i++)
+        ReadOnlySpan<char> target = tagId.AsSpan().Trim();
+        if (target.IsEmpty)
         {
-            if (string.Equals(parts[i], tagId, StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+
+        ReadOnlySpan<char> remaining = this.TagsCsv.AsSpan();
+        while (!remaining.IsEmpty)
+        {
+            int commaIdx = remaining.IndexOf(',');
+            ReadOnlySpan<char> segment = commaIdx >= 0 ? remaining[..commaIdx] : remaining;
+            if (segment.Trim().Equals(target, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
+
+            if (commaIdx < 0)
+            {
+                break;
+            }
+
+            remaining = remaining[(commaIdx + 1)..];
         }
 
         return false;
@@ -210,6 +213,24 @@ public sealed record CampaignTemplate(
     string SpintaxContent,
     string? MediaFilePath = null,
     bool IsCommentTemplate = false);
+
+/// <summary>
+/// Canonical domain action kind identifiers recorded in <see cref="ActionHistoryEntry"/>.
+/// </summary>
+public static class DomainActionKinds
+{
+    /// <summary>Feed or group post publishing action.</summary>
+    public const string Post = "POST";
+
+    /// <summary>Sales or bump comment creation action.</summary>
+    public const string Comment = "COMMENT";
+
+    /// <summary>Community group join request action.</summary>
+    public const string JoinGroup = "JOIN_GROUP";
+
+    /// <summary>Post reaction action.</summary>
+    public const string React = "REACT";
+}
 
 /// <summary>
 /// Represents an immutable audit record of an executed post or sales comment to prevent duplicate actions.

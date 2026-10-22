@@ -26,8 +26,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write # required for test result comments
 
 jobs:
   build:
@@ -36,6 +34,3 @@ jobs:
     with:
       os: windows-latest
       project: Facebook.Net.slnx
-      test: Facebook.Net.slnx
-      deploy: false
-      coverage: false

@@ -27,7 +27,7 @@
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-        <NoWarn>$(NoWarn);IL2026;IL3050;IL2075;IDE0005;CA1307</NoWarn>
+        <NoWarn>$(NoWarn);IL2026;IL3050;IL2075;IDE0005;CA1307;CA1822;CA1707</NoWarn>
     </PropertyGroup>
 
     <!-- Debug: Ép FULL thông tin và Source Code vào DLL để dễ fix lỗi lúc dev -->

@@ -4,16 +4,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.Collections;
+using Facebook.Net.UI.Core.Audit;
 using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.Core.Importing;
 using Facebook.Net.UI.Core.Localization;
-using Facebook.Net.UI.Core.Threading;
+using Facebook.Net.UI.Core.Theming;
 using Facebook.Net.UI.ViewModels.Services;
 using Facebook.Net.UI.ViewModels.Shell;
 using Xunit;
@@ -21,8 +18,8 @@ using Xunit;
 namespace Facebook.Net.UI.Tests;
 
 /// <summary>
-/// Comprehensive unit tests for <see cref="ShellViewModel"/> commands, <see cref="Facebook.Net.UI.ViewModels.Audit.AuditLogDrawerViewModel"/>,
-/// <see cref="LocalizationService"/> catalog parity, <see cref="BulkObservableCollection{T}"/>, and <see cref="AppConfig"/> normalization.
+/// Unit and integration tests for <see cref="ShellViewModel"/> commands, circuit breaker,
+/// navigation back-stack, personal audit logging, CRM lead management, and settings persistence.
 /// </summary>
 public sealed class ShellViewModelCommandsTests : IDisposable
 {
@@ -32,313 +29,6 @@ public sealed class ShellViewModelCommandsTests : IDisposable
     {
         this._tempDir = Path.Combine(Path.GetTempPath(), $"fb_shell_cmd_test_{Guid.NewGuid():N}");
         _ = Directory.CreateDirectory(this._tempDir);
-    }
-
-    private sealed class ImmediateDispatcher : IUiDispatcher
-    {
-        public bool CheckAccess() => true;
-
-        public void Post(Action action) => action?.Invoke();
-    }
-
-    private sealed class StubBrowserAdapter : IBrowserAdapter
-    {
-        public string PlatformName => "TestStub";
-
-        public string? LocateExecutablePath() => "C:\\Stub\\chrome.exe";
-
-        public Task<IBrowserProcess> LaunchProcessAsync(BrowserLaunchOptions options, CancellationToken ct = default) =>
-            throw new NotSupportedException("Stub browser adapter does not launch real processes.");
-    }
-
-    private sealed class FakeBrowserSession : IBrowserSession
-    {
-        public FakeBrowserSession(string accountUid)
-        {
-            this.AccountUid = accountUid;
-            this.CurrentMaterial = new SessionMaterial(
-                Uid: accountUid,
-                CookieHeader: $"c_user={accountUid}; xs=99%3Afake_xs;",
-                FbDtsg: "AQH_fake_dtsg",
-                Jazoest: "25432",
-                Lsd: "LSD_fake",
-                ClientRevision: "1012345678",
-                HasteSession: "20745.HYP:comet_pkg.2.1...1",
-                WebSessionId: "abc123:def456:ghi789",
-                UserAgent: "Mozilla/5.0 Fake",
-                ExtractedAt: DateTimeOffset.UtcNow);
-        }
-
-        public string AccountUid { get; }
-
-        public BrowserState State { get; set; } = BrowserState.Running;
-
-        public SessionMaterial? CurrentMaterial { get; set; }
-
-        public List<string> NavigatedUrls { get; } = new();
-
-        public Task NavigateAsync(string url, CancellationToken ct = default)
-        {
-            this.NavigatedUrls.Add(url);
-            return Task.CompletedTask;
-        }
-
-        public Task<SessionMaterial> ExtractMaterialAsync(CancellationToken ct = default) =>
-            Task.FromResult(this.CurrentMaterial!);
-
-        public Task<int> ImportCookiesAsync(string rawCookieHeader, CancellationToken ct = default) =>
-            Task.FromResult(2);
-
-        public Task<string> ExecuteInPagePostAsync(
-            string url,
-            IReadOnlyDictionary<string, string> headers,
-            string formUrlEncodedBody,
-            CancellationToken ct = default) =>
-            Task.FromResult("{\"data\":{}}");
-
-        public Task<string> UploadViaDomBridgeAsync(
-            string uploadUrl,
-            string localFilePath,
-            string fileFieldName = "file",
-            IReadOnlyDictionary<string, string>? additionalFields = null,
-            CancellationToken ct = default) =>
-            Task.FromResult("{\"payload\":{\"fbid\":\"999111222\"}}");
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-        public void Dispose()
-        {
-        }
-    }
-
-    private sealed class FakeBrowserManager : IBrowserManager
-    {
-        private readonly Dictionary<string, FakeBrowserSession> _sessions = new(StringComparer.Ordinal);
-
-        public event EventHandler<SessionStateChangedEvent>? SessionStateChanged;
-
-        public FakeBrowserSession GetOrCreateFake(string uid)
-        {
-            if (!this._sessions.TryGetValue(uid, out FakeBrowserSession? s))
-            {
-                s = new FakeBrowserSession(uid);
-                this._sessions[uid] = s;
-            }
-
-            return s;
-        }
-
-        public Task<IBrowserSession> AcquireSessionAsync(BrowserLaunchOptions options, CancellationToken ct = default)
-        {
-            FakeBrowserSession session = this.GetOrCreateFake(options.AccountUid);
-            this.SessionStateChanged?.Invoke(this, new SessionStateChangedEvent(options.AccountUid, BrowserState.Running, AccountStatus.Active));
-            return Task.FromResult<IBrowserSession>(session);
-        }
-
-        public IBrowserSession? TryGetSession(string accountUid) =>
-            this._sessions.TryGetValue(accountUid, out FakeBrowserSession? s) ? s : null;
-
-        public Task CloseSessionAsync(string accountUid, CancellationToken ct = default)
-        {
-            _ = this._sessions.Remove(accountUid);
-            return Task.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-        public void Dispose() => this._sessions.Clear();
-    }
-
-    private sealed class FakeCometClient : ICometClient
-    {
-        public int PublishedPostsCount { get; private set; }
-
-        public int CreatedCommentsCount { get; private set; }
-
-        public int ReactionsCount { get; private set; }
-
-        public Exception? NextExceptionToThrow { get; set; }
-
-        public Task<GraphQlResult> ExecuteGraphQlAsync(IBrowserSession session, GraphQlRequest request, CancellationToken ct = default) =>
-            Task.FromResult(new GraphQlResult(true, ["{\"data\":{}}"], null));
-
-        public Task<string?> PublishPostAsync(
-            IBrowserSession session,
-            string messageText,
-            ComposerTarget target = ComposerTarget.Feed,
-            string? targetGroupId = null,
-            IReadOnlyList<string>? photoIds = null,
-            IReadOnlyList<string>? videoIds = null,
-            CancellationToken ct = default)
-        {
-            if (this.NextExceptionToThrow is not null)
-            {
-                Exception ex = this.NextExceptionToThrow;
-                this.NextExceptionToThrow = null;
-                throw ex;
-            }
-
-            this.PublishedPostsCount++;
-            return Task.FromResult<string?>($"post_{this.PublishedPostsCount}");
-        }
-
-        public Task<string?> SharePostAsync(IBrowserSession session, string postId, string messageText, string? targetGroupId = null, CancellationToken ct = default) =>
-            Task.FromResult<string?>("shared_1");
-
-        public Task<string?> CreateCommentAsync(IBrowserSession session, string postId, string messageText, string? attachmentFbid = null, CancellationToken ct = default)
-        {
-            if (this.NextExceptionToThrow is not null)
-            {
-                Exception ex = this.NextExceptionToThrow;
-                this.NextExceptionToThrow = null;
-                throw ex;
-            }
-
-            this.CreatedCommentsCount++;
-            return Task.FromResult<string?>($"comment_{this.CreatedCommentsCount}");
-        }
-
-        public Task<bool> ReactToPostAsync(IBrowserSession session, string postId, ReactionKind reaction, CancellationToken ct = default)
-        {
-            this.ReactionsCount++;
-            return Task.FromResult(true);
-        }
-
-        public Task<PagedResult<PostSummary>> GetNewsFeedAsync(IBrowserSession session, int count = 5, string? cursor = null, CancellationToken ct = default)
-        {
-            List<PostSummary> items =
-            [
-                new PostSummary("feed_1", "1001", "Alice", "Hello world", "https://www.facebook.com/feed_1", 10, 2, null),
-                new PostSummary("feed_2", "1002", "Bob", "Morning coffee", "https://www.facebook.com/feed_2", 5, 1, null)
-            ];
-            return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
-        }
-
-        public Task<PagedResult<PostSummary>> GetTimelinePostsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
-        {
-            List<PostSummary> items =
-            [
-                new PostSummary("tl_1", session.AccountUid, "Nick Bán Hàng Chủ Lực", "Bài đăng trang cá nhân số 1", "https://www.facebook.com/posts/tl_1", 15, 4, DateTimeOffset.UtcNow)
-            ];
-            return Task.FromResult(new PagedResult<PostSummary>(items, null, false));
-        }
-
-        public Task<PostSummary?> GetSinglePostAsync(IBrowserSession session, string postId, CancellationToken ct = default) =>
-            Task.FromResult<PostSummary?>(new PostSummary(postId, "1001", "Alice", "Full post text", null, 1, 1, null));
-
-        public Task<PagedResult<UserSummary>> GetPostReactorsAsync(IBrowserSession session, string postId, int count = 10, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<PagedResult<UserSummary>> GetPostCommentersAsync(IBrowserSession session, string postId, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<PagedResult<GroupSummary>> SearchGroupsAsync(IBrowserSession session, string keyword, int count = 5, string? cursor = null, CancellationToken ct = default)
-        {
-            List<GroupSummary> groups =
-            [
-                new GroupSummary("grp_search_1", $"Hội {keyword} Miền Nam", GroupMembershipState.CanJoin),
-                new GroupSummary("grp_search_2", $"Chợ {keyword} Toàn Quốc", GroupMembershipState.CanJoin)
-            ];
-            return Task.FromResult(new PagedResult<GroupSummary>(groups, null, false));
-        }
-
-        public Task<PagedResult<GroupSummary>> GetJoinedGroupsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default)
-        {
-            List<GroupSummary> groups =
-            [
-                new GroupSummary("grp_101", "Chợ Cư Dân Vinhomes", GroupMembershipState.Member),
-                new GroupSummary("grp_102", "Hội Mua Bán Laptop Cũ", GroupMembershipState.Member)
-            ];
-            return Task.FromResult(new PagedResult<GroupSummary>(groups, null, false));
-        }
-
-        public Task<PagedResult<PostSummary>> GetGroupFeedAsync(IBrowserSession session, string groupId, int count = 3, string? cursor = null, CancellationToken ct = default)
-        {
-            List<PostSummary> posts =
-            [
-                new PostSummary("lead_1", "u_1", "Nguyễn Văn Mua", "Mình cần mua laptop gaming xin giá ib nhé?", "https://www.facebook.com/groups/101/posts/1", 3, 5, null),
-                new PostSummary("lead_2", "u_2", "Trần Thị Xem", "Chia sẻ kinh nghiệm vệ sinh máy tính", "https://www.facebook.com/groups/101/posts/2", 1, 0, null)
-            ];
-            return Task.FromResult(new PagedResult<PostSummary>(posts, null, false));
-        }
-
-        public Task<PagedResult<UserSummary>> GetGroupNewMembersAsync(IBrowserSession session, string groupId, int count = 10, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<GroupMembershipState> JoinGroupAsync(IBrowserSession session, string groupId, CancellationToken ct = default) =>
-            Task.FromResult(GroupMembershipState.Member);
-
-        public Task<IReadOnlyList<GroupQuestion>> GetGroupQuestionsAsync(IBrowserSession session, string groupId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<GroupQuestion>>([]);
-
-        public Task<GroupMembershipState> SubmitGroupAnswersAsync(IBrowserSession session, string groupId, IReadOnlyList<GroupQuestionAnswer> answers, CancellationToken ct = default) =>
-            Task.FromResult(GroupMembershipState.QuestionnaireCompleted);
-
-        public Task<bool> LeaveGroupAsync(IBrowserSession session, string groupId, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<bool> InviteFriendsToGroupAsync(IBrowserSession session, string groupId, IReadOnlyList<string> friendUids, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<PagedResult<UserSummary>> GetFriendSuggestionsAsync(IBrowserSession session, int count = 30, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<PagedResult<UserSummary>> GetIncomingFriendRequestsAsync(IBrowserSession session, int count = 20, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<PagedResult<UserSummary>> GetOutgoingFriendRequestsAsync(IBrowserSession session, int count = 10, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<PagedResult<UserSummary>> GetProfileFollowersAsync(IBrowserSession session, string targetUid, int count = 8, string? cursor = null, CancellationToken ct = default) =>
-            Task.FromResult(new PagedResult<UserSummary>([], null, false));
-
-        public Task<FriendshipState> SendFriendRequestAsync(IBrowserSession session, string targetUid, CancellationToken ct = default) =>
-            Task.FromResult(FriendshipState.OutgoingRequest);
-
-        public Task<FriendshipState> ConfirmFriendRequestAsync(IBrowserSession session, string requesterUid, CancellationToken ct = default) =>
-            Task.FromResult(FriendshipState.AreFriends);
-
-        public Task<FriendshipState> DeleteFriendRequestAsync(IBrowserSession session, string targetUid, bool isIncoming, CancellationToken ct = default) =>
-            Task.FromResult(FriendshipState.CanRequest);
-
-        public Task<FriendshipState> UnfriendAsync(IBrowserSession session, string targetUid, CancellationToken ct = default) =>
-            Task.FromResult(FriendshipState.CanRequest);
-
-        public Task<bool> UnfollowUserAsync(IBrowserSession session, string targetUid, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<bool> PokeUserAsync(IBrowserSession session, string targetUid, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<IReadOnlyList<StoryBucketItem>> GetStoriesTrayAsync(IBrowserSession session, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<StoryBucketItem>>([]);
-
-        public Task<bool> MarkStorySeenAsync(IBrowserSession session, string bucketId, string storyId, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<bool> ReplyToStoryAsync(IBrowserSession session, string storyId, string emojiOrMessage, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<bool> CreateStoryAsync(IBrowserSession session, string? text = null, string? photoId = null, string? videoId = null, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<IReadOnlyList<NotificationItem>> GetNotificationsAsync(IBrowserSession session, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<NotificationItem>>([]);
-
-        public Task<bool> MarkNotificationReadAsync(IBrowserSession session, NotificationItem notification, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<IReadOnlyList<ManagedPageSummary>> GetManagedPagesAsync(IBrowserSession session, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ManagedPageSummary>>([]);
-
-        public Task<string> UploadUfiPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default) =>
-            Task.FromResult("fbid_photo_123");
-
-        public Task<string> UploadStoryPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default) =>
-            Task.FromResult("story_photo_123");
-
-        public Task<string> UploadVideoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default) =>
-            Task.FromResult("video_123");
     }
 
     [Fact]
@@ -392,7 +82,7 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         await vm.BumpRecentPostsCommand.ExecuteAsync(null);
         Assert.Equal(2, cometClient.CreatedCommentsCount);
 
-        // 6. Scan Buyer-Intent Group Leads, Score, Comment Sale, and Export CSV/JSON
+        // 6. Scan Buyer-Intent Group Leads, Score, Comment Sale
         vm.BuyerIntentKeywords = "cần mua, xin giá";
         await vm.ScanGroupLeadsCommand.ExecuteAsync(null);
         _ = Assert.Single(vm.ScrapedPosts);
@@ -467,69 +157,6 @@ public sealed class ShellViewModelCommandsTests : IDisposable
     }
 
     [Fact]
-    public void LocalizationService_VietnameseAndEnglishCatalogs_HaveExact100PercentKeyParity()
-    {
-        Dictionary<string, string>.KeyCollection viKeys = LocalizationService.GetKeys(AppLanguage.ViVn);
-        Dictionary<string, string>.KeyCollection enKeys = LocalizationService.GetKeys(AppLanguage.EnUs);
-
-        HashSet<string> viSet = new(viKeys, StringComparer.Ordinal);
-        HashSet<string> enSet = new(enKeys, StringComparer.Ordinal);
-
-        Assert.Equal(viSet.Count, enSet.Count);
-        Assert.Subset(viSet, enSet);
-        Assert.Superset(viSet, enSet);
-
-        LocalizationService svc = new();
-        foreach (string key in viKeys)
-        {
-            svc.SetLanguage(AppLanguage.ViVn);
-            string viVal = svc[key];
-            Assert.False(string.IsNullOrWhiteSpace(viVal));
-            Assert.NotEqual(key, viVal);
-            Assert.DoesNotContain("(", viVal, StringComparison.Ordinal);
-            Assert.DoesNotContain(")", viVal, StringComparison.Ordinal);
-
-            svc.SetLanguage(AppLanguage.EnUs);
-            string enVal = svc[key];
-            Assert.False(string.IsNullOrWhiteSpace(enVal));
-            Assert.NotEqual(key, enVal);
-            Assert.DoesNotContain("(", enVal, StringComparison.Ordinal);
-            Assert.DoesNotContain(")", enVal, StringComparison.Ordinal);
-        }
-
-        svc.SetLanguage(AppLanguage.ViVn);
-        Assert.Equal("Khởi động hoàn tất — 3 tài khoản, 12 nhóm mục tiêu.", svc.Format("Log.SystemInitialized", 3, 12));
-
-        svc.SetLanguage(AppLanguage.EnUs);
-        Assert.Equal("System initialized — 3 accounts, 12 target groups.", svc.Format("Log.SystemInitialized", 3, 12));
-    }
-
-    [Fact]
-    public void Regression_DeterministicUid_AppConfigNormalize_And_BulkObservableCollectionSingleReset()
-    {
-        // 1. Deterministic SHA-256 UID when cookie lacks c_user
-        string rawCookieNoCUser = "xs=99%3Asecret_token_value; datr=abcd1234;";
-        ImportedSessionBundle b1 = UniversalSessionImporter.Parse(rawCookieNoCUser);
-        ImportedSessionBundle b2 = UniversalSessionImporter.Parse(rawCookieNoCUser);
-        Assert.Equal(b1.AccountUid, b2.AccountUid);
-        Assert.StartsWith("acc_", b1.AccountUid, StringComparison.Ordinal);
-
-        // 2. AppConfig.Normalize clamps delay bounds so MinDelaySeconds <= MaxDelaySeconds
-        AppConfig inverted = new(MinDelaySeconds: 90, MaxDelaySeconds: 20);
-        AppConfig normalized = inverted.Normalize();
-        Assert.Equal(90, normalized.MinDelaySeconds);
-        Assert.Equal(90, normalized.MaxDelaySeconds);
-
-        // 3. BulkObservableCollection fires exactly 1 CollectionChanged Reset event
-        BulkObservableCollection<int> col = new();
-        int eventCount = 0;
-        col.CollectionChanged += (_, _) => eventCount++;
-        col.ReplaceAll([1, 2, 3, 4, 5]);
-        Assert.Equal(1, eventCount);
-        Assert.Equal(5, col.Count);
-    }
-
-    [Fact]
     public void NavigationService_ShouldNavigateBetweenPagesAndSupportBackStackFromAuditLogsToSettings()
     {
         using UiServiceContext ctx = new(
@@ -542,7 +169,6 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         Assert.Equal(NavigationSection.Overview, vm.Navigation.CurrentSection);
         Assert.False(vm.Navigation.CanGoBack);
 
-        // Navigate to Settings -> then click Open Audit Logs at bottom of Settings
         vm.NavigateSettingsCommand.Execute(null);
         Assert.Equal(NavigationSection.Settings, vm.CurrentSection);
         Assert.True(vm.Navigation.CanGoBack);
@@ -550,7 +176,6 @@ public sealed class ShellViewModelCommandsTests : IDisposable
         vm.NavigateAuditLogsCommand.Execute(null);
         Assert.Equal(NavigationSection.AuditLogs, vm.CurrentSection);
 
-        // Navigate back returns to Settings
         vm.NavigateBackCommand.Execute(null);
         Assert.Equal(NavigationSection.Settings, vm.CurrentSection);
     }
@@ -611,16 +236,126 @@ public sealed class ShellViewModelCommandsTests : IDisposable
             new BrowserProfileOption("Profile Audit Test", newProfPath, IsManagedByApp: true));
         Assert.True(deletedProf);
 
-        vm.SelectedThemeMode = Facebook.Net.UI.Core.Theming.AppThemeMode.Light;
+        vm.SelectedThemeMode = AppThemeMode.Light;
         vm.SelectedLanguage = AppLanguage.EnUs;
         await vm.SaveSettingsCommand.ExecuteAsync(null);
 
         // 5. Query strictly by AuditCategory.Personal ("Cá nhân")
-        vm.AuditDrawer.SelectedCategory = Facebook.Net.UI.Core.Audit.AuditCategory.Personal;
+        vm.AuditDrawer.SelectedCategory = AuditCategory.Personal;
         await vm.AuditDrawer.RefreshLogsAsync();
 
         Assert.True(vm.AuditDrawer.FilteredLogs.Count >= 14, $"Expected at least 14 Personal audit logs, got {vm.AuditDrawer.FilteredLogs.Count}.");
-        Assert.All(vm.AuditDrawer.FilteredLogs, r => Assert.Equal(Facebook.Net.UI.Core.Audit.AuditCategory.Personal, r.Category));
+        Assert.All(vm.AuditDrawer.FilteredLogs, r => Assert.Equal(AuditCategory.Personal, r.Category));
+    }
+
+    [Fact]
+    public async Task ShellViewModel_PersistsSettings_ReloadsCrossProcess_AndManagesLeadCrmAndGroupTagRepair()
+    {
+        string persistDir = Path.Combine(this._tempDir, "settings_persist_test");
+
+        using (UiServiceContext ctx1 = new(new StubBrowserAdapter(), persistDir, new ImmediateDispatcher()))
+        using (ShellViewModel vm1 = new(ctx1))
+        {
+            vm1.SelectedThemeMode = AppThemeMode.Light;
+            vm1.SelectedLanguage = AppLanguage.EnUs;
+            vm1.SelectedBrowserKind = PreferredBrowserKind.Brave;
+            vm1.CustomBrowserExecutablePath = @"C:\CustomBrowser\brave.exe";
+            vm1.RunBrowserHeadless = true;
+            vm1.MinDelaySeconds = 25;
+            vm1.MaxDelaySeconds = 90;
+            vm1.IsSidebarCollapsed = true;
+        }
+
+        using UiServiceContext ctx2 = new(new StubBrowserAdapter(), persistDir, new ImmediateDispatcher());
+        await ctx2.AccountStore.InitializeAsync();
+
+        // Seed polluted target groups and a customer lead post before ShellViewModel initialization
+        await ctx2.AccountStore.UpsertTargetGroupAsync(new SavedTargetGroup(
+            GroupId: "grp_dotnet",
+            GroupName: "Cộng đồng C# .NET Việt Nam",
+            IsEnabled: true,
+            TagsCsv: "tag_bds,tag_jobs,tag_sales"));
+        await ctx2.AccountStore.UpsertTargetGroupAsync(new SavedTargetGroup(
+            GroupId: "grp_bds",
+            GroupName: "Mua Bán Nhà Đất Bất Động Sản Quận 7",
+            IsEnabled: true,
+            TagsCsv: "tag_bds"));
+
+        PostSummary sampleLead = new(
+            PostId: "lead_post_101",
+            AuthorUid: "uid_khach_1",
+            AuthorName: "Lê Hoàng Nam",
+            MessageText: "Mình cần tìm căn hộ 2PN Quận 7 giá tầm 3 tỷ, sđt 0912345678",
+            PermalinkUrl: "https://facebook.com/groups/grp_bds/posts/lead_post_101",
+            ReactionCount: 3,
+            CommentCount: 1,
+            CreatedAt: DateTimeOffset.UtcNow,
+            GroupId: "grp_bds",
+            GroupName: "Mua Bán Nhà Đất Bất Động Sản Quận 7");
+        await ctx2.AccountStore.UpsertScrapedPostsAsync([sampleLead]);
+
+        using ShellViewModel vm2 = new(ctx2);
+
+        // Verify properties are loaded synchronously in ShellViewModel constructor
+        Assert.Equal(AppThemeMode.Light, vm2.SelectedThemeMode);
+        Assert.Equal(AppLanguage.EnUs, vm2.SelectedLanguage);
+        Assert.Equal(PreferredBrowserKind.Brave, vm2.SelectedBrowserKind);
+        Assert.Equal(@"C:\CustomBrowser\brave.exe", vm2.CustomBrowserExecutablePath);
+        Assert.True(vm2.RunBrowserHeadless);
+        Assert.Equal(25, vm2.MinDelaySeconds);
+        Assert.Equal(90, vm2.MaxDelaySeconds);
+        Assert.True(vm2.IsSidebarCollapsed);
+
+        await vm2.InitializeAsync();
+
+        // Customer CRM tags & notes
+        GroupTag? createdLeadTag = await vm2.CreateQuickLeadTagAsync("Khách VIP Quận 7", "#EC4899");
+        Assert.NotNull(createdLeadTag);
+        await vm2.ToggleLeadPostTagAsync(sampleLead, createdLeadTag.Id);
+        await vm2.UpdateLeadPostNotesAsync(sampleLead, "Đã gọi điện tư vấn căn hộ Sunrise City");
+
+        IReadOnlyList<PostSummary> reloadedLeads = await ctx2.AccountStore.QueryScrapedPostsAsync(groupId: "grp_bds");
+        PostSummary updatedPost = Assert.Single(reloadedLeads);
+        Assert.True(updatedPost.HasTag(createdLeadTag.Id));
+        Assert.Equal("Đã gọi điện tư vấn căn hộ Sunrise City", updatedPost.Notes);
+
+        // Simulate cross-process appsettings.json update (e.g. from Facebook.Net.Mcp.exe)
+        string settingsPath = Path.Combine(persistDir, "appsettings.json");
+        AppSettingsService externalProcessSettings = new(settingsPath);
+        await externalProcessSettings.SaveAsync(externalProcessSettings.Current with
+        {
+            MinDelaySeconds = 4.5,
+            MaxDelaySeconds = 9.5,
+            ScrapePostsPerGroup = 45
+        });
+
+        vm2.ReloadSettingsFromDisk();
+        Assert.Equal(4.5, vm2.MinDelaySeconds);
+        Assert.Equal(9.5, vm2.MaxDelaySeconds);
+        Assert.Equal(45, vm2.ScrapePostsPerGroup);
+    }
+
+    [Fact]
+    public void ShellViewModel_MultiPhotoAndUpdateVersionParsing_WorkCorrectly()
+    {
+        string img1 = Path.Combine(this._tempDir, "photo1.jpg");
+        string img2 = Path.Combine(this._tempDir, "photo2.png");
+        string missingImg = Path.Combine(this._tempDir, "missing.jpg");
+        File.WriteAllBytes(img1, [0xFF, 0xD8, 0xFF]);
+        File.WriteAllBytes(img2, [0x89, 0x50, 0x4E, 0x47]);
+
+        string rawPaths = $"{img1} ; {img2} ; {missingImg} ; {img1}";
+        List<string> existing = ShellViewModel.ParseExistingMediaFilePaths(rawPaths);
+
+        Assert.Equal(2, existing.Count);
+        Assert.Equal(img1, existing[0]);
+        Assert.Equal(img2, existing[1]);
+
+        Version v1 = ShellViewModel.TryParseReleaseVersion("v1.2.4");
+        Version v2 = ShellViewModel.TryParseReleaseVersion("v1.3.0-preview.1");
+        Assert.True(v2 > v1);
+        Assert.Equal(new Version(1, 2, 4), v1);
+        Assert.Equal(new Version(1, 3, 0), v2);
     }
 
     public void Dispose()

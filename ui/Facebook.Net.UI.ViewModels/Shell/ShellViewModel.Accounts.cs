@@ -243,7 +243,7 @@ public sealed partial class ShellViewModel
         {
             if (string.Equals(proxies[i].Id, proxyId, StringComparison.Ordinal))
             {
-                this.AccountProxyInput = UniversalSessionImporter.FormatProxySpec(proxies[i]);
+                this.AccountProxyInput = _context.SessionImporter.FormatProxySpec(proxies[i]);
                 return;
             }
         }
@@ -375,7 +375,7 @@ public sealed partial class ShellViewModel
     /// </summary>
     public async Task QuickImportSessionAsync()
     {
-        ImportedSessionBundle bundle = UniversalSessionImporter.Parse(
+        ImportedSessionBundle bundle = _context.SessionImporter.Parse(
             this.SessionImportRawInput,
             this.AccountFriendlyNameInput,
             _context.Localization["Accounts.DefaultBrowserLoginName"],
@@ -394,7 +394,7 @@ public sealed partial class ShellViewModel
         if (!string.IsNullOrWhiteSpace(this.AccountProxyInput))
         {
             string candidateId = $"proxy_{bundle.AccountUid}";
-            if (UniversalSessionImporter.TryParseProxySpec(this.AccountProxyInput, candidateId, out ProxyConfig? parsedProxy) &&
+            if (_context.SessionImporter.TryParseProxySpec(this.AccountProxyInput, candidateId, out ProxyConfig? parsedProxy) &&
                 parsedProxy is not null)
             {
                 await _context.AccountStore.UpsertProxyAsync(parsedProxy).ConfigureAwait(true);
@@ -465,7 +465,7 @@ public sealed partial class ShellViewModel
         }
 
         string proxyId = $"proxy_{current.Uid}";
-        if (!UniversalSessionImporter.TryParseProxySpec(rawProxy, proxyId, out ProxyConfig? parsed) || parsed is null)
+        if (!_context.SessionImporter.TryParseProxySpec(rawProxy, proxyId, out ProxyConfig? parsed) || parsed is null)
         {
             _ = await this.LogAuditAsync(
                 AuditCategory.Account,

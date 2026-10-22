@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Facebook.Net.Contracts/Facebook.Net.Contracts.csproj" />
+    <Project Path="src/Facebook.Net.Application/Facebook.Net.Application.csproj" />
     <Project Path="src/Facebook.Net.Storage/Facebook.Net.Storage.csproj" />
     <Project Path="src/Facebook.Net/Facebook.Net.csproj" />
   </Folder>

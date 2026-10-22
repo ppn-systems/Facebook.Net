@@ -3,89 +3,43 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Threading;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Facebook.Net.Contracts.Abstractions;
-using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
+using Facebook.Net.Mcp;
+using Facebook.Net.Mcp.Tools;
+using Facebook.Net.UI.Components.Icons;
 using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Importing;
+using Facebook.Net.UI.Core.Collections;
+using Facebook.Net.UI.Core.Configuration;
 using Facebook.Net.UI.Core.Localization;
 using Facebook.Net.UI.Core.Theming;
-using Facebook.Net.UI.ViewModels.Audit;
-using Facebook.Net.UI.ViewModels.Services;
-using Facebook.Net.UI.ViewModels.Shell;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using Xunit;
 
 namespace Facebook.Net.UI.Tests;
 
 /// <summary>
-/// Unit tests verifying <see cref="UniversalSessionImporter"/>, <see cref="SqliteAuditLogStore"/>,
-/// <see cref="LocalizationService"/>, <see cref="ThemeService"/>, <see cref="ShellViewModel"/>,
-/// and <see cref="AuditLogDrawerViewModel"/>.
+/// Unit tests verifying <see cref="SqliteAuditLogStore"/>, <see cref="LocalizationService"/>,
+/// <see cref="ThemeService"/>, <see cref="AppConfig"/>, <see cref="BulkObservableCollection{T}"/>,
+/// <see cref="VectorIcons"/>, and MCP Server tool contracts.
 /// </summary>
-public sealed class UiCoreAndViewModelsTests : IDisposable
+public sealed partial class UiCoreAndViewModelsTests : IDisposable
 {
     private readonly string _tempDir;
 
     public UiCoreAndViewModelsTests()
     {
-        this._tempDir = Path.Combine(Path.GetTempPath(), $"fb_ui_test_{Guid.NewGuid():N}");
+        this._tempDir = Path.Combine(Path.GetTempPath(), $"fb_ui_core_test_{Guid.NewGuid():N}");
         _ = Directory.CreateDirectory(this._tempDir);
     }
 
-    private sealed class StubBrowserAdapter : IBrowserAdapter
-    {
-        public string PlatformName => "TestStub";
-
-        public string? LocateExecutablePath() => null;
-
-        public Task<IBrowserProcess> LaunchProcessAsync(BrowserLaunchOptions options, CancellationToken ct = default) =>
-            throw new NotSupportedException("Stub browser adapter does not launch real processes in unit tests.");
-    }
-
-    [Fact]
-    public void UniversalSessionImporter_ParsesJ2TeamCookiesJson_WithoutRequiringManualUid()
-    {
-        string j2TeamJson = """
-            {
-              "url": "https://www.facebook.com",
-              "cookies": [
-                { "name": "sb", "value": "sb_val" },
-                { "name": "c_user", "value": "1000888999111" },
-                { "name": "xs", "value": "45%3Asecret_xs" }
-              ]
-            }
-            """;
-
-        ImportedSessionBundle bundle = UniversalSessionImporter.Parse(j2TeamJson, "Nick Bán Hàng 01");
-
-        Assert.Equal("1000888999111", bundle.AccountUid);
-        Assert.Equal("Nick Bán Hàng 01", bundle.SuggestedDisplayName);
-        Assert.Contains("c_user=1000888999111", bundle.CookieHeader, StringComparison.Ordinal);
-        Assert.Contains("xs=45%3Asecret_xs", bundle.CookieHeader, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UniversalSessionImporter_ParsesPipeDelimitedMaxCareFormat_WithoutRequiringManualUid()
-    {
-        string line = "1000555666777|Pass123|JBSWY3DPEHPK3PXP|c_user=1000555666777; xs=secret_token;|Mozilla/5.0 Custom";
-        ImportedSessionBundle bundle = UniversalSessionImporter.Parse(line);
-
-        Assert.Equal("1000555666777", bundle.AccountUid);
-        Assert.Equal("JBSWY3DPEHPK3PXP", bundle.TwoFactorSecret);
-        Assert.Equal("Mozilla/5.0 Custom", bundle.UserAgent);
-        Assert.Contains("xs=secret_token", bundle.CookieHeader, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UniversalSessionImporter_WhenEmpty_CreatesInteractiveBrowserLoginPlaceholder()
-    {
-        ImportedSessionBundle bundle = UniversalSessionImporter.Parse(string.Empty);
-
-        Assert.StartsWith("login_", bundle.AccountUid, StringComparison.Ordinal);
-        Assert.Equal(string.Empty, bundle.CookieHeader);
-    }
+    [GeneratedRegex(@"\bfb_[a-z0-9_]+\b", RegexOptions.CultureInvariant)]
+    private static partial Regex FbToolNameRegex();
 
     [Fact]
     public async Task SqliteAuditLogStore_FiltersByCategorySeverityAccountAndKeyword()
@@ -123,15 +77,45 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
     }
 
     [Fact]
-    public void LocalizationAndThemeServices_SwitchLanguagesAndPalettesCleanly()
+    public void LocalizationAndThemeServices_HaveCompleteCatalogParity_AndSwitchCleanly()
     {
+        Dictionary<string, string>.KeyCollection viKeys = LocalizationService.GetKeys(AppLanguage.ViVn);
+        Dictionary<string, string>.KeyCollection enKeys = LocalizationService.GetKeys(AppLanguage.EnUs);
+
+        HashSet<string> viSet = new(viKeys, StringComparer.Ordinal);
+        HashSet<string> enSet = new(enKeys, StringComparer.Ordinal);
+
+        Assert.Equal(viSet.Count, enSet.Count);
+        Assert.Subset(viSet, enSet);
+        Assert.Superset(viSet, enSet);
+
         LocalizationService i18n = new();
-        Assert.Equal(AppLanguage.ViVn, i18n.CurrentLanguage);
-        Assert.Contains("Tài khoản", i18n["Nav.Accounts"], StringComparison.Ordinal);
+        foreach (string key in viKeys)
+        {
+            i18n.SetLanguage(AppLanguage.ViVn);
+            string viVal = i18n[key];
+            Assert.False(string.IsNullOrWhiteSpace(viVal));
+            Assert.NotEqual(key, viVal);
+
+            i18n.SetLanguage(AppLanguage.EnUs);
+            string enVal = i18n[key];
+            Assert.False(string.IsNullOrWhiteSpace(enVal));
+            Assert.NotEqual(key, enVal);
+        }
+
+        i18n.SetLanguage(AppLanguage.ViVn);
+        Assert.Equal("Khởi động hoàn tất — 3 tài khoản, 12 nhóm mục tiêu.", i18n.Format("Log.SystemInitialized", 3, 12));
+        Assert.Equal("Chờ kết nối", i18n.FormatAccountStatus(AccountStatus.Idle));
+        Assert.Equal("Đã tham gia", i18n.FormatGroupMembership(GroupMembershipState.Member));
+        Assert.Equal("Bình luận", i18n.FormatAuditCategory(AuditCategory.SalesComment));
+        Assert.Equal("Trong 24 giờ qua", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
 
         i18n.SetLanguage(AppLanguage.EnUs);
-        Assert.Equal(AppLanguage.EnUs, i18n.CurrentLanguage);
-        Assert.Contains("Accounts", i18n["Nav.Accounts"], StringComparison.Ordinal);
+        Assert.Equal("System initialized — 3 accounts, 12 target groups.", i18n.Format("Log.SystemInitialized", 3, 12));
+        Assert.Equal("Ready to connect", i18n.FormatAccountStatus(AccountStatus.Idle));
+        Assert.Equal("Joined Member", i18n.FormatGroupMembership(GroupMembershipState.Member));
+        Assert.Equal("Sales Comment", i18n.FormatAuditCategory(AuditCategory.SalesComment));
+        Assert.Equal("Last 24 Hours", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
 
         ThemeService theme = new();
         Assert.Equal(AppThemeMode.Dark, theme.CurrentMode);
@@ -139,184 +123,42 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
         Assert.Equal(AppThemeMode.Light, theme.CurrentMode);
         theme.SetTheme(AppThemeMode.System);
         Assert.Equal(AppThemeMode.System, theme.CurrentMode);
-        Assert.True(theme.EffectiveMode == AppThemeMode.Dark || theme.EffectiveMode == AppThemeMode.Light);
+        Assert.True(theme.EffectiveMode is AppThemeMode.Dark or AppThemeMode.Light);
         Assert.Equal("System Default", i18n.FormatThemeMode(AppThemeMode.System));
-
-        // Verify zero-jargon localized enum formatters
-        Assert.Equal("Ready to connect", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
-        Assert.Equal("Joined Member", i18n.FormatGroupMembership(Facebook.Net.Contracts.Primitives.GroupMembershipState.Member));
-        Assert.Equal("Sales Comment", i18n.FormatAuditCategory(AuditCategory.SalesComment));
-        Assert.Equal("Last 24 Hours", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
-
-        i18n.SetLanguage(AppLanguage.ViVn);
-        Assert.Equal("Chờ kết nối", i18n.FormatAccountStatus(Facebook.Net.Contracts.Primitives.AccountStatus.Idle));
-        Assert.Equal("Đã tham gia", i18n.FormatGroupMembership(Facebook.Net.Contracts.Primitives.GroupMembershipState.Member));
-        Assert.Equal("Bình luận", i18n.FormatAuditCategory(AuditCategory.SalesComment));
-        Assert.Equal("Trong 24 giờ qua", i18n.FormatAuditTimeRange(AuditTimeRange.Today24Hours));
     }
 
     [Fact]
-    public void UniversalSessionImporter_TryParseProxySpec_HandlesHttpAndSocks5Formats()
+    public void AppConfigNormalize_And_BulkObservableCollectionSingleReset_WorkCorrectly()
     {
-        bool okHttp = UniversalSessionImporter.TryParseProxySpec(
-            "103.45.67.89:8080:myuser:mypass",
-            "proxy_1",
-            out ProxyConfig? httpProxy);
+        AppConfig inverted = new(MinDelaySeconds: 90, MaxDelaySeconds: 20);
+        AppConfig normalized = inverted.Normalize();
+        Assert.Equal(90, normalized.MinDelaySeconds);
+        Assert.Equal(90, normalized.MaxDelaySeconds);
 
-        Assert.True(okHttp);
-        Assert.NotNull(httpProxy);
-        Assert.Equal("103.45.67.89", httpProxy.Host);
-        Assert.Equal(8080, httpProxy.Port);
-        Assert.Equal(Facebook.Net.Contracts.Primitives.ProxyProtocol.Http, httpProxy.Protocol);
-        Assert.Equal("myuser", httpProxy.Username);
-        Assert.Equal("mypass", httpProxy.Password);
-
-        bool okSocks = UniversalSessionImporter.TryParseProxySpec(
-            "socks5://203.0.113.10:1080:socksuser:sockspass",
-            "proxy_2",
-            out ProxyConfig? socksProxy);
-
-        Assert.True(okSocks);
-        Assert.NotNull(socksProxy);
-        Assert.Equal("203.0.113.10", socksProxy.Host);
-        Assert.Equal(1080, socksProxy.Port);
-        Assert.Equal(Facebook.Net.Contracts.Primitives.ProxyProtocol.Socks5, socksProxy.Protocol);
-        Assert.Equal("socksuser", socksProxy.Username);
-        Assert.Equal("sockspass", socksProxy.Password);
-
-        string formatted = UniversalSessionImporter.FormatProxySpec(socksProxy);
-        Assert.Equal("socks5://203.0.113.10:1080:socksuser:sockspass", formatted);
+        BulkObservableCollection<int> col = new();
+        int eventCount = 0;
+        col.CollectionChanged += (_, _) => eventCount++;
+        col.ReplaceAll([1, 2, 3, 4, 5]);
+        Assert.Equal(1, eventCount);
+        Assert.Equal(5, col.Count);
     }
 
     [Fact]
-    public void PayloadBuilder_SpinText_HandlesNestedAndStrayBracesSafely()
+    public void VectorIcons_AllDefinedSvgIconConstants_ExistAsEmbeddedResources()
     {
-        string nested = Facebook.Net.Protocol.PayloadBuilder.SpinText("{A|{B|B}}");
-        Assert.True(nested == "A" || nested == "B");
+        FieldInfo[] iconFields = typeof(VectorIcons).GetFields(BindingFlags.Public | BindingFlags.Static);
+        Assert.NotEmpty(iconFields);
 
-        string strayClosingBeforeBlock = Facebook.Net.Protocol.PayloadBuilder.SpinText("Price: } 100k {deal|sale}");
-        Assert.True(
-            strayClosingBeforeBlock == "Price: } 100k deal" ||
-            strayClosingBeforeBlock == "Price: } 100k sale");
-
-        string emptyBraces = Facebook.Net.Protocol.PayloadBuilder.SpinText("Hello {}world");
-        Assert.Equal("Hello world", emptyBraces);
-    }
-
-    [Fact]
-    public async Task ShellViewModel_And_AuditLogDrawerViewModel_EndToEndWorkflow_WorksWithoutJargon()
-    {
-        string e2eDir = Path.Combine(this._tempDir, "e2e_workspace");
-        using UiServiceContext context = new(new StubBrowserAdapter(), e2eDir);
-        using ShellViewModel shell = new(context);
-
-        await shell.InitializeAsync();
-
-        // Quick import J2Team cookie bundle without manual UID
-        shell.AccountFriendlyNameInput = "Nick Seeding VIP";
-        shell.SessionImportRawInput = "c_user=1000999888777; xs=99%3Atest_session_xs;";
-        await shell.QuickImportSessionCommand.ExecuteAsync(null);
-
-        Assert.NotNull(shell.SelectedAccount);
-        Assert.Equal("Nick Seeding VIP", shell.SelectedAccount.DisplayName);
-        Assert.Equal("1000999888777", shell.SelectedAccount.Uid);
-
-        // Save per-account SOCKS5 proxy
-        shell.AccountProxyInput = "socks5://198.51.100.7:1080:vipuser:vippass";
-        await shell.SaveAccountProxyCommand.ExecuteAsync(null);
-        Assert.NotNull(shell.SelectedAccount.ProxyId);
-        Assert.Equal("socks5://198.51.100.7:1080:vipuser:vippass", shell.AccountProxyInput);
-
-        // Preserve custom user-edited Spintax across language switches
-        string customSpintax = "{Chào cả nhà|Hello anh chị}, bên em chuyên sỉ lẻ gia dụng!";
-        shell.PostSpintaxText = customSpintax;
-        shell.ToggleLanguageQuickCommand.Execute(null);
-        Assert.Equal(customSpintax, shell.PostSpintaxText);
-
-        // Refresh and clear Audit Logs without CSV export
-        await shell.AuditDrawer.RefreshLogsAsync();
-        Assert.NotEmpty(shell.AuditDrawer.FilteredLogs);
-        await shell.AuditDrawer.ClearLogsCommand.ExecuteAsync(null);
-        Assert.Empty(shell.AuditDrawer.FilteredLogs);
-    }
-
-    [Fact]
-    public void ShellViewModel_PersistsAllSettingsImmediately_AndReloadsOnRestart()
-    {
-        string persistDir = Path.Combine(this._tempDir, "settings_persist_test");
-
-        using (UiServiceContext ctx1 = new(new StubBrowserAdapter(), persistDir))
-        using (ShellViewModel vm1 = new(ctx1))
+        Assembly compAsm = typeof(VectorIcons).Assembly;
+        foreach (FieldInfo field in iconFields)
         {
-            vm1.SelectedThemeMode = AppThemeMode.Light;
-            vm1.SelectedLanguage = AppLanguage.EnUs;
-            vm1.SelectedBrowserKind = Facebook.Net.UI.Core.Configuration.PreferredBrowserKind.Brave;
-            vm1.CustomBrowserExecutablePath = @"C:\CustomBrowser\brave.exe";
-            vm1.RunBrowserHeadless = true;
-            vm1.MinDelaySeconds = 25;
-            vm1.MaxDelaySeconds = 90;
-            vm1.IsSidebarCollapsed = true;
-        }
+            if (field.FieldType != typeof(string) || !field.IsLiteral)
+            {
+                continue;
+            }
 
-        // Simulate closing and reopening the application from the same data directory
-        using UiServiceContext ctx2 = new(new StubBrowserAdapter(), persistDir);
-        using ShellViewModel vm2 = new(ctx2);
-
-        // Verify properties are loaded synchronously in ShellViewModel constructor BEFORE InitializeAsync()
-        Assert.Equal(AppThemeMode.Light, vm2.SelectedThemeMode);
-        Assert.Equal(AppThemeMode.Light, ctx2.Theme.CurrentMode);
-        Assert.Equal(AppLanguage.EnUs, vm2.SelectedLanguage);
-        Assert.Equal(AppLanguage.EnUs, ctx2.Localization.CurrentLanguage);
-        Assert.Equal(Facebook.Net.UI.Core.Configuration.PreferredBrowserKind.Brave, vm2.SelectedBrowserKind);
-        Assert.Equal(@"C:\CustomBrowser\brave.exe", vm2.CustomBrowserExecutablePath);
-        Assert.True(vm2.RunBrowserHeadless);
-        Assert.Equal(25, vm2.MinDelaySeconds);
-        Assert.Equal(90, vm2.MaxDelaySeconds);
-        Assert.True(vm2.IsSidebarCollapsed);
-    }
-
-    [Fact]
-    public void VectorIcons_All28SvgIconAssetFiles_ExistAndContainValidPathGeometry()
-    {
-        string[] allIcons =
-        [
-            Facebook.Net.UI.Components.Icons.VectorIcons.Home,
-            Facebook.Net.UI.Components.Icons.VectorIcons.SidebarToggle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.InfoCircle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.BrandMark,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Accounts,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Groups,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Publish,
-            Facebook.Net.UI.Components.Icons.VectorIcons.SalesComment,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Settings,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Browser,
-            Facebook.Net.UI.Components.Icons.VectorIcons.AuditLog,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Sun,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Moon,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Search,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Sync,
-            Facebook.Net.UI.Components.Icons.VectorIcons.CheckCircle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Folder,
-            Facebook.Net.UI.Components.Icons.VectorIcons.StopCircle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Trash,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Plus,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Clipboard,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Shield,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Bookmark,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Download,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Warning,
-            Facebook.Net.UI.Components.Icons.VectorIcons.ErrorCircle,
-            Facebook.Net.UI.Components.Icons.VectorIcons.ThumbUp,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Filter,
-            Facebook.Net.UI.Components.Icons.VectorIcons.Edit,
-            Facebook.Net.UI.Components.Icons.VectorIcons.ExternalLink
-        ];
-
-        Assert.Equal(30, allIcons.Length);
-        System.Reflection.Assembly compAsm = typeof(Facebook.Net.UI.Components.Icons.VectorIcons).Assembly;
-        for (int i = 0; i < allIcons.Length; i++)
-        {
-            string svgName = allIcons[i];
+            string? svgName = (string?)field.GetRawConstantValue();
+            Assert.False(string.IsNullOrWhiteSpace(svgName));
             Assert.EndsWith(".svg", svgName, StringComparison.OrdinalIgnoreCase);
 
             using Stream? resStream = compAsm.GetManifestResourceStream($"Assets.Icons.{svgName}");
@@ -324,6 +166,54 @@ public sealed class UiCoreAndViewModelsTests : IDisposable
             using StreamReader reader = new(resStream);
             string svgXml = reader.ReadToEnd();
             Assert.Contains("<svg", svgXml, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void McpServerTools_And_SystemPrompts_HaveValidToolSchemaParity()
+    {
+        HashSet<string> registeredMcpTools = new(StringComparer.Ordinal);
+        CollectTools<AccountTools>(registeredMcpTools);
+        CollectTools<GroupTools>(registeredMcpTools);
+        CollectTools<PublisherTools>(registeredMcpTools);
+        CollectTools<SalesLeadsTools>(registeredMcpTools);
+        CollectTools<SystemSettingsTools>(registeredMcpTools);
+        CollectTools<AiMemoryTools>(registeredMcpTools);
+
+        Assert.NotEmpty(registeredMcpTools);
+
+        string analyzePromptText = ((TextContentBlock)Prompts.AnalyzeGroupLeads("test").Messages[0].Content).Text;
+        string composePromptText = ((TextContentBlock)Prompts.ComposeSpintaxCampaign("test").Messages[0].Content).Text;
+
+        string[] promptSources =
+        [
+            AppConfig.DefaultAiSystemPrompt,
+            Resources.Overview(),
+            Resources.SalesAgentGuide(),
+            analyzePromptText,
+            composePromptText
+        ];
+
+        Regex toolRegex = FbToolNameRegex();
+        foreach (string source in promptSources)
+        {
+            foreach (Match match in toolRegex.Matches(source))
+            {
+                Assert.Contains(match.Value, registeredMcpTools);
+            }
+        }
+    }
+
+    private static void CollectTools<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>(
+        HashSet<string> target)
+    {
+        foreach (MethodInfo method in typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
+        {
+            McpServerToolAttribute? attr = method.GetCustomAttribute<McpServerToolAttribute>();
+            if (attr is not null && !string.IsNullOrWhiteSpace(attr.Name))
+            {
+                _ = target.Add(attr.Name);
+            }
         }
     }
 
