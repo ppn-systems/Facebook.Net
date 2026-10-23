@@ -5,7 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-namespace Facebook.Net.UI.Core.Configuration;
+namespace Meta.UI.Core.Configuration;
 
 /// <summary>
 /// Application service contract for safely opening external URLs in the system default browser

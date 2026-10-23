@@ -52,8 +52,8 @@ Thư viện C# SDK và ứng dụng Desktop **Facebook One Client** hỗ trợ q
 | **`Facebook.Net.Browser`** | Quản lý phiên trình duyệt độc lập (`BrowserSessionManager`) và điều khiển trình duyệt đa nền tảng (Windows / macOS). |
 | **`Facebook.Net.Storage`** | Lưu trữ dữ liệu cục bộ bằng SQLite (`SqliteAccountStore`, `SqliteAuditLogStore`) cho tài khoản, hội nhóm, bài viết và nhật ký. |
 | **`Facebook.Net.Mcp`** | Máy chủ **Model Context Protocol (MCP)** cung cấp 27 công cụ tự động hóa và bộ nhớ ngữ cảnh tích hợp trực tiếp với Antigravity (`agy`), Claude Desktop, ChatGPT và Cursor. |
-| **`Facebook.Net.UI.*`** | Hệ thống giao diện người dùng (`Core`, `Components`, `ViewModels`) phục vụ ứng dụng Desktop, bao gồm `AgyCliService` và `SqliteAiMemoryStore`. |
-| **`Facebook.Net.App`** | Ứng dụng Desktop **Facebook One Client** (`FacebookOneClient.exe`). |
+| **`Meta.UI.*`** | Hệ thống giao diện người dùng (`Meta.UI.Core`, `Meta.UI.Components`, `Meta.UI.ViewModels`) trong `app/` phục vụ ứng dụng Desktop, bao gồm `AgyCliService` và `SqliteAiMemoryStore`. |
+| **`Meta.App`** | Ứng dụng Desktop **Facebook One Client** (`FacebookOneClient.exe`) tích hợp Unified MCP Host. |
 | **`Facebook.Net.Installer`** | Dự án đóng gói bộ cài đặt Windows `.msi` (WiX Toolset v6 với giao diện Setup Wizard). |
 
 ---

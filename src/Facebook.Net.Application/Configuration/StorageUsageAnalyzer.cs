@@ -8,7 +8,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 
-namespace Facebook.Net.UI.Core.Configuration;
+namespace Meta.UI.Core.Configuration;
 
 /// <summary>
 /// Immutable domain value object representing a snapshot of disk storage and memory usage

@@ -286,6 +286,40 @@ public sealed partial class SqliteAccountStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlySet<string>> GetExecutedTargetIdsByKindAsync(
+        string actionKind,
+        int limit = 2000,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionKind);
+
+        const string sql = """
+            SELECT DISTINCT target_id
+            FROM action_history
+            WHERE action_kind = $action_kind COLLATE NOCASE
+              AND target_id <> ''
+            ORDER BY executed_at DESC
+            LIMIT $limit;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$action_kind", actionKind.Trim());
+        _ = cmd.Parameters.AddWithValue("$limit", limit <= 0 ? 2000 : limit);
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            _ = ids.Add(reader.GetString(0));
+        }
+
+        return ids;
+    }
+
+    /// <inheritdoc />
     public async Task UpsertScrapedPostsAsync(IReadOnlyList<PostSummary> posts, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(posts);
@@ -613,6 +647,91 @@ public sealed partial class SqliteAccountStore
         _ = cmd.Parameters.AddWithValue("$notes", (object?)notes ?? DBNull.Value);
 
         _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<PostSummary?> GetScrapedPostByIdAsync(string postId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(postId);
+
+        const string sql = """
+            SELECT sp.post_id,
+                   sp.group_id,
+                   COALESCE(NULLIF(sp.group_name, ''), tg.group_name, '') AS resolved_group_name,
+                   sp.author_uid,
+                   sp.author_name,
+                   sp.message_text,
+                   sp.permalink_url,
+                   sp.reaction_count,
+                   sp.comment_count,
+                   sp.created_at,
+                   sp.media_preview_url,
+                   sp.is_video,
+                   sp.author_avatar_url,
+                   COALESCE(NULLIF(sp.group_avatar_url, ''), tg.avatar_url) AS resolved_group_avatar_url,
+                   sp.tags_csv,
+                   sp.notes
+            FROM scraped_posts sp
+            LEFT JOIN target_groups tg ON tg.group_id = sp.group_id
+            WHERE sp.post_id = $post_id
+            LIMIT 1;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("$post_id", postId.Trim());
+
+        using SqliteDataReader reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        return await reader.ReadAsync(ct).ConfigureAwait(false) ? MapScrapedPost(reader) : null;
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateScrapedPostsTagsAndNotesBatchAsync(
+        IReadOnlyList<(string PostId, string? TagsCsv, string? Notes)> updates,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(updates);
+        if (updates.Count == 0)
+        {
+            return;
+        }
+
+        const string sql = """
+            UPDATE scraped_posts
+            SET tags_csv = $tags_csv,
+                notes = COALESCE($notes, notes)
+            WHERE post_id = $post_id;
+            """;
+
+        using SqliteConnection conn = new(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        using System.Data.Common.DbTransaction tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.CommandText = sql;
+
+        SqliteParameter pPostId = cmd.Parameters.Add("$post_id", SqliteType.Text);
+        SqliteParameter pTagsCsv = cmd.Parameters.Add("$tags_csv", SqliteType.Text);
+        SqliteParameter pNotes = cmd.Parameters.Add("$notes", SqliteType.Text);
+
+        for (int i = 0; i < updates.Count; i++)
+        {
+            (string postId, string? tagsCsv, string? notes) = updates[i];
+            if (string.IsNullOrWhiteSpace(postId))
+            {
+                continue;
+            }
+
+            pPostId.Value = postId.Trim();
+            pTagsCsv.Value = string.IsNullOrWhiteSpace(tagsCsv) ? DBNull.Value : tagsCsv.Trim();
+            pNotes.Value = (object?)notes ?? DBNull.Value;
+
+            _ = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

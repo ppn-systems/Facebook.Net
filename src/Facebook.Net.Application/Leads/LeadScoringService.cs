@@ -8,7 +8,7 @@ using System.Globalization;
 using System.Text;
 using Facebook.Net.Contracts.Models;
 
-namespace Facebook.Net.UI.Core.Leads;
+namespace Meta.UI.Core.Leads;
 
 /// <summary>
 /// ROI and buyer-intent performance metrics for a single scraped Facebook group.
@@ -671,68 +671,68 @@ public sealed class LeadScoringService : ILeadScoringService
         ArgumentNullException.ThrowIfNull(report);
 
         StringBuilder sb = new(1024);
-        _ = sb.AppendLine("=== BÁO CÁO PHÂN TÍCH DỮ LIỆU KHÁCH HÀNG & HIỆU SUẤT HỘI NHÓM (ROI) ===");
+        _ = sb.AppendLine("=== WORKSPACE LEAD & GROUP ROI ANALYTICS ===");
         _ = sb.AppendLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"- Tổng bài đã quét: {report.TotalScrapedPosts} | Có SĐT: {report.TotalPostsWithPhone} | Nhu cầu cao (>=75đ): {report.TotalHighIntentPosts}"));
+            $"- Total scraped posts: {report.TotalScrapedPosts} | With phone: {report.TotalPostsWithPhone} | High-intent (>=75): {report.TotalHighIntentPosts}"));
         _ = sb.AppendLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"- Cơ hội vàng (0 bình luận): {report.TotalZeroCommentOpportunities} | Đã bình luận: {report.TotalCommentedPosts} | Chờ tiếp cận: {report.TotalPendingPosts}"));
+            $"- Zero-comment first-mover opportunities: {report.TotalZeroCommentOpportunities} | Commented: {report.TotalCommentedPosts} | Pending outreach: {report.TotalPendingPosts}"));
 
         if (report.TopPerformingGroups.Count > 0)
         {
-            _ = sb.AppendLine("\n[TOP NHÓM HIỆU QUẢ NHẤT (ROI CAO)]");
+            _ = sb.AppendLine("\n[TOP PERFORMING GROUPS (HIGH ROI)]");
             for (int i = 0; i < report.TopPerformingGroups.Count; i++)
             {
                 GroupRoiStat g = report.TopPerformingGroups[i];
                 _ = sb.AppendLine(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"  {i + 1}. {g.GroupName} (ID: {g.GroupId}): {g.TotalPosts} bài | {g.PostsWithPhone} bài có SĐT | {g.HighIntentPosts} bài nóng | Điểm TB: {g.AverageIntentScore:F1}"));
+                    $"  {i + 1}. {g.GroupName} (ID: {g.GroupId}): {g.TotalPosts} posts | {g.PostsWithPhone} with phone | {g.HighIntentPosts} high-intent | Avg Score: {g.AverageIntentScore:F1}"));
             }
         }
 
         if (report.LowPerformingGroups.Count > 0)
         {
-            _ = sb.AppendLine("\n[NHÓM TƯƠNG TÁC THẤP / NHIỀU RÁC]");
+            _ = sb.AppendLine("\n[LOW-PERFORMING / LOW-INTENT GROUPS]");
             for (int i = 0; i < report.LowPerformingGroups.Count; i++)
             {
                 GroupRoiStat g = report.LowPerformingGroups[i];
                 _ = sb.AppendLine(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"  - {g.GroupName} (ID: {g.GroupId}): {g.TotalPosts} bài nhưng 0 SĐT, 0 bài nóng (Điểm TB: {g.AverageIntentScore:F1})"));
+                    $"  - {g.GroupName} (ID: {g.GroupId}): {g.TotalPosts} posts, 0 phones, 0 high-intent (Avg Score: {g.AverageIntentScore:F1})"));
             }
         }
 
         if (report.RepeatAuthors.Count > 0)
         {
-            _ = sb.AppendLine("\n[TÁC GIẢ ĐĂNG LẶP LẠI / NGHI VẤN SEEDING & ĐỐI THỦ]");
+            _ = sb.AppendLine("\n[REPEAT AUTHORS / LIKELY SEEDERS & COMPETITORS]");
             for (int i = 0; i < report.RepeatAuthors.Count; i++)
             {
                 RepeatAuthorStat a = report.RepeatAuthors[i];
-                string badge = a.IsLikelySeederOrCompetitor ? "Nghi vấn Seeding/Môi giới" : "Đăng nhiều lần";
+                string badge = a.IsLikelySeederOrCompetitor ? "Likely Seeder/Competitor" : "Repeat Poster";
                 _ = sb.AppendLine(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"  - {a.AuthorName} (UID: {a.AuthorUid}): {a.PostCount} bài trên {a.DistinctGroupCount} nhóm [{badge}]"));
+                    $"  - {a.AuthorName} (UID: {a.AuthorUid}): {a.PostCount} posts across {a.DistinctGroupCount} groups [{badge}]"));
             }
         }
 
         if (report.TopInquiryTerms.Count > 0)
         {
-            _ = sb.AppendLine("\n[TỪ KHÓA NHU CẦU XUẤT HIỆN NHIỀU NHẤT]");
+            _ = sb.AppendLine("\n[TOP BUYER INQUIRY KEYWORDS]");
             for (int i = 0; i < report.TopInquiryTerms.Count; i++)
             {
                 (string term, int count) = report.TopInquiryTerms[i];
-                _ = sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"  - \"{term}\": {count} bài"));
+                _ = sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"  - \"{term}\": {count} posts"));
             }
         }
 
         if (report.PeakPostingHours.Count > 0)
         {
-            _ = sb.AppendLine("\n[KHUNG GIỜ VÀNG KHÁCH ĐĂNG BÀI]");
+            _ = sb.AppendLine("\n[PEAK BUYER POSTING HOURS]");
             for (int i = 0; i < report.PeakPostingHours.Count; i++)
             {
                 (int hourOfDay, int postCount) = report.PeakPostingHours[i];
-                _ = sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"  - {hourOfDay:D2}:00 - {hourOfDay:D2}:59: {postCount} bài"));
+                _ = sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"  - {hourOfDay:D2}:00 - {hourOfDay:D2}:59: {postCount} posts"));
             }
         }
 

@@ -11,7 +11,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Facebook.Net.UI.Core.Configuration;
+namespace Meta.UI.Core.Configuration;
 
 /// <summary>
 /// Immutable result of an application release update check against GitHub Releases.

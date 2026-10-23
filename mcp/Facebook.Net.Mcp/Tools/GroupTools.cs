@@ -6,7 +6,7 @@ using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.Audit;
+using Meta.UI.Core.Audit;
 using ModelContextProtocol.Server;
 
 namespace Facebook.Net.Mcp.Tools;
@@ -57,7 +57,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             })
             .ToList();
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_count = filtered.Count,
             available_tags = allTags.Select(t => new { id = t.Id, name = t.Name, color_hex = t.ColorHex }),
@@ -108,7 +108,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP synced {result.Items.Count} joined groups.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             account_uid = account.Uid,
             fetched_count = result.Items.Count,
@@ -140,7 +140,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             .SearchGroupsAsync(session, keyword.Trim(), count: Math.Clamp(count, 1, 100), ct: ct)
             .ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             account_uid = account.Uid,
             keyword = keyword.Trim(),
@@ -156,10 +156,11 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
     }
 
     [McpServerTool(Name = "fb_join_group")]
-    [Description("Request to join a Facebook community group by Group ID.")]
+    [Description("Request to join a Facebook community group by Group ID, automatically fetching pending membership approval questions if the group requires admin approval.")]
     public async Task<string> JoinGroupAsync(
         [Description("Facebook Group ID to join")] string groupId,
         [Description("Optional group name for saving into Target Groups if joined")] string? groupName = null,
+        [Description("If true and the join state is 'Requested', automatically fetches the group's membership approval questions so you can answer them via fb_submit_group_answers (default true)")] bool fetchQuestionsIfRequested = true,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -168,33 +169,53 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
             .ConfigureAwait(false);
 
+        string cleanGroupId = groupId.Trim();
         GroupMembershipState state = await _manager.CometClient
-            .JoinGroupAsync(session, groupId.Trim(), ct)
+            .JoinGroupAsync(session, cleanGroupId, ct)
             .ConfigureAwait(false);
+
+        await _manager.AccountStore.RecordActionAsync(
+            new ActionHistoryEntry(session.AccountUid, DomainActionKinds.JoinGroup, cleanGroupId, state.ToString(), DateTimeOffset.UtcNow),
+            ct).ConfigureAwait(false);
 
         if (state == GroupMembershipState.Member)
         {
             SavedTargetGroup target = new(
-                groupId.Trim(),
-                !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : $"Group {groupId.Trim()}",
+                cleanGroupId,
+                !string.IsNullOrWhiteSpace(groupName) ? groupName.Trim() : $"Group {cleanGroupId}",
                 IsEnabled: true,
                 Notes: null);
             await _manager.AccountStore.UpsertTargetGroupAsync(target, ct).ConfigureAwait(false);
+        }
+
+        IReadOnlyList<GroupQuestion>? pendingQuestions = null;
+        if (fetchQuestionsIfRequested && state == GroupMembershipState.Requested)
+        {
+            pendingQuestions = await _manager.CometClient
+                .GetGroupQuestionsAsync(session, cleanGroupId, ct)
+                .ConfigureAwait(false);
         }
 
         _ = await _manager.LogAuditAsync(
             AuditCategory.Group,
             AuditSeverity.Success,
             account,
-            groupName ?? groupId,
-            $"MCP requested to join group '{groupName ?? groupId}' -> {state}.",
+            groupName ?? cleanGroupId,
+            $"MCP requested to join group '{groupName ?? cleanGroupId}' -> {state}.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
-            group_id = groupId.Trim(),
-            membership_state = state.ToString()
+            group_id = cleanGroupId,
+            membership_state = state.ToString(),
+            pending_questions_count = pendingQuestions?.Count ?? 0,
+            pending_questions = pendingQuestions?.Select(q => new
+            {
+                question_id = q.QuestionId,
+                question_text = q.QuestionText,
+                question_type = q.QuestionType
+            })
         });
     }
 
@@ -290,7 +311,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP batch-joined {candidates.Count} groups ({joinedMemberCount} joined, {requestedApprovalCount} pending approval).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = account.Uid,
@@ -332,7 +353,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP saved target group '{group.GroupName}' ({group.GroupId}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             group_id = group.GroupId,
@@ -370,7 +391,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP removed {removedCount} target groups from local list.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             removed_count = removedCount,
@@ -419,7 +440,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP configured target groups selection (mode='{mode}', enabled={enabledCount}, disabled={disabledCount}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             mode = mode.Trim().ToLowerInvariant(),
@@ -466,7 +487,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             };
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             total_tags = allTags.Count,
             total_target_groups = groups.Count,
@@ -495,7 +516,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP created group tag '{tag.Name}' ({tag.ColorHex}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             id = tag.Id,
@@ -550,7 +571,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP {(assign ? "assigned" : "removed")} group tag '{tagId.Trim()}' across {updatedBatch.Count} target groups.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag_id = tagId.Trim(),
@@ -638,7 +659,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP created/updated {createdTags.Count} group tags in batch.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             created_count = createdTags.Count,
@@ -761,7 +782,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP auto-tagged {matchedGroupsSummary.Count} groups (removed from {removedFromNonMatchingCount}) for tag '{targetTag.Name}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag = new
@@ -829,7 +850,7 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP deleted/cleared group tag '{targetTag?.Name ?? cleanTarget}' (cleared {updatedGroups.Count} groups, deletedDefinition={deletedDef}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             tag_id = effectiveTagId,
@@ -872,12 +893,232 @@ public sealed class GroupTools(FacebookMcpSessionManager manager)
             $"MCP cleaned and classified {groups.Count} groups ({modifiedGroups.Count} updated).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             total_groups = groups.Count,
             updated_groups_count = modifiedGroups.Count,
             category_counts = categoryCounts
+        });
+    }
+
+    [McpServerTool(Name = "fb_get_group_questions")]
+    [Description("Retrieve pending membership approval questions ('GroupsCometMembershipQuestionsDialogQuery') for a private Facebook group so the AI can craft context-aware answers.")]
+    public async Task<string> GetGroupQuestionsAsync(
+        [Description("Target Facebook Group ID")] string groupId,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanGroupId = groupId.Trim();
+        IReadOnlyList<GroupQuestion> questions = await _manager.CometClient
+            .GetGroupQuestionsAsync(session, cleanGroupId, ct)
+            .ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            group_id = cleanGroupId,
+            questions_count = questions.Count,
+            questions = questions.Select(q => new
+            {
+                question_id = q.QuestionId,
+                question_text = q.QuestionText,
+                question_type = q.QuestionType
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_submit_group_answers")]
+    [Description("Submit answers to a Facebook group's membership approval questionnaire ('useGroupMembershipAnswersSaveMutation'). Accepts either a JSON array '[{\"question_id\":\"123\",\"answer_text\":\"...\"}]', semicolon-separated 'questionId:answerText;questionId2:answerText2' pairs, OR a single default answer string applied to all pending questions of the group.")]
+    public async Task<string> SubmitGroupAnswersAsync(
+        [Description("Target Facebook Group ID")] string groupId,
+        [Description("Answers specification: JSON array '[{\"question_id\":\"...\",\"answer_text\":\"...\"}]', semicolon-separated 'questionId:answerText' pairs, or a single polite answer text to apply to all pending questions")] string answersSpec,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(answersSpec);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanGroupId = groupId.Trim();
+        string trimmedSpec = answersSpec.Trim();
+        List<GroupQuestionAnswer> answers = [];
+
+        if (trimmedSpec.StartsWith('['))
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(trimmedSpec);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement elem in doc.RootElement.EnumerateArray())
+                    {
+                        if (elem.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        string? qid = (elem.TryGetProperty("question_id", out JsonElement q1) ? q1.GetString() : null)
+                            ?? (elem.TryGetProperty("questionId", out JsonElement q2) ? q2.GetString() : null);
+                        string? ans = (elem.TryGetProperty("answer_text", out JsonElement a1) ? a1.GetString() : null)
+                            ?? (elem.TryGetProperty("answerText", out JsonElement a2) ? a2.GetString() : null)
+                            ?? (elem.TryGetProperty("answer", out JsonElement a3) ? a3.GetString() : null);
+
+                        if (!string.IsNullOrWhiteSpace(qid) && !string.IsNullOrWhiteSpace(ans))
+                        {
+                            answers.Add(new GroupQuestionAnswer(qid.Trim(), ans.Trim()));
+                        }
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Fall back to delimiter parsing below
+            }
+        }
+
+        if (answers.Count == 0 && trimmedSpec.Contains(':', StringComparison.Ordinal))
+        {
+            string[] pairs = trimmedSpec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                int colonIdx = pairs[i].IndexOf(':', StringComparison.Ordinal);
+                if (colonIdx > 0 && colonIdx < pairs[i].Length - 1)
+                {
+                    string qid = pairs[i][..colonIdx].Trim();
+                    string ans = pairs[i][(colonIdx + 1)..].Trim();
+                    if (qid.All(char.IsDigit) && !string.IsNullOrWhiteSpace(ans))
+                    {
+                        answers.Add(new GroupQuestionAnswer(qid, ans));
+                    }
+                }
+            }
+        }
+
+        if (answers.Count == 0)
+        {
+            IReadOnlyList<GroupQuestion> questions = await _manager.CometClient
+                .GetGroupQuestionsAsync(session, cleanGroupId, ct)
+                .ConfigureAwait(false);
+
+            for (int i = 0; i < questions.Count; i++)
+            {
+                answers.Add(new GroupQuestionAnswer(questions[i].QuestionId, trimmedSpec));
+            }
+        }
+
+        if (answers.Count == 0)
+        {
+            return McpJson.Serialize(new
+            {
+                status = "no_questions_found",
+                account_uid = account.Uid,
+                group_id = cleanGroupId,
+                message = "No pending membership questions were found for this group."
+            });
+        }
+
+        GroupMembershipState state = await _manager.CometClient
+            .SubmitGroupAnswersAsync(session, cleanGroupId, answers, ct)
+            .ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Group,
+            AuditSeverity.Success,
+            account,
+            cleanGroupId,
+            $"MCP submitted {answers.Count} membership approval answer(s) for group '{cleanGroupId}' -> {state}.",
+            ct: ct).ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            group_id = cleanGroupId,
+            submitted_answers_count = answers.Count,
+            membership_state = state.ToString()
+        });
+    }
+
+    [McpServerTool(Name = "fb_get_group_new_members")]
+    [Description("Scrape newly joined members of a target Facebook community group via Comet GraphQL ('GroupsCometMembersPageNewMembersSectionRefetchQuery') to discover fresh leads or community prospects.")]
+    public async Task<string> GetGroupNewMembersAsync(
+        [Description("Target Facebook Group ID")] string groupId,
+        [Description("Maximum number of new members to fetch (1..100, default 20)")] int count = 20,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanGroupId = groupId.Trim();
+        PagedResult<UserSummary> members = await _manager.CometClient
+            .GetGroupNewMembersAsync(session, cleanGroupId, count: Math.Clamp(count, 1, 100), ct: ct)
+            .ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = "success",
+            account_uid = account.Uid,
+            group_id = cleanGroupId,
+            count = members.Items.Count,
+            has_next_page = members.HasNextPage,
+            new_members = members.Items.Select(m => new
+            {
+                uid = m.Uid,
+                name = m.Name,
+                avatar_uri = m.AvatarUri,
+                friendship_state = m.Friendship.ToString()
+            })
+        });
+    }
+
+    [McpServerTool(Name = "fb_invite_friends_to_group")]
+    [Description("Invite one or more Facebook friends (by comma-separated UIDs) to join a target community group ('useGroupAddMembersMutation').")]
+    public async Task<string> InviteFriendsToGroupAsync(
+        [Description("Target Facebook Group ID")] string groupId,
+        [Description("Comma- or semicolon-separated friend UIDs to invite to the group")] string friendUidsCsv,
+        [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(friendUidsCsv);
+        (AccountProfile account, IBrowserSession session) = await _manager
+            .AcquireBrowserSessionAsync(accountUid, forceVisible: false, ct)
+            .ConfigureAwait(false);
+
+        string cleanGroupId = groupId.Trim();
+        string[] friendUids = friendUidsCsv.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        bool ok = await _manager.CometClient
+            .InviteFriendsToGroupAsync(session, cleanGroupId, friendUids, ct)
+            .ConfigureAwait(false);
+
+        _ = await _manager.LogAuditAsync(
+            AuditCategory.Group,
+            ok ? AuditSeverity.Success : AuditSeverity.Warning,
+            account,
+            cleanGroupId,
+            $"MCP invited {friendUids.Length} friend(s) to group '{cleanGroupId}' (success={ok}).",
+            ct: ct).ConfigureAwait(false);
+
+        return McpJson.Serialize(new
+        {
+            status = ok ? "success" : "failed",
+            account_uid = account.Uid,
+            group_id = cleanGroupId,
+            invited_count = friendUids.Length,
+            invited_uids = friendUids
         });
     }
 }

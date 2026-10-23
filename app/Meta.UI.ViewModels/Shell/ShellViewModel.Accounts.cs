@@ -1,0 +1,903 @@
+// Copyright (c) 2026 PPN Corporation. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Facebook.Net.Contracts.Abstractions;
+using Facebook.Net.Contracts.Models;
+using Facebook.Net.Contracts.Primitives;
+using Meta.UI.Core.Audit;
+using Meta.UI.Core.Importing;
+
+namespace Meta.UI.ViewModels.Shell;
+
+/// <summary>
+/// Partial implementation of <see cref="ShellViewModel"/> handling Zero-UID Account Management,
+/// Universal J2Team/Cookie importing, and 1-Click Browser Login with automatic Group discovery.
+/// </summary>
+public sealed partial class ShellViewModel
+{
+    /// <summary>Gets or sets the currently selected account profile.</summary>
+    [ObservableProperty]
+    public partial AccountProfile? SelectedAccount { get; set; }
+
+    /// <summary>Gets or sets the friendly account label entered by the user (optional).</summary>
+    [ObservableProperty]
+    public partial string AccountFriendlyNameInput { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the optional J2Team JSON or raw Cookie string pasted by the user.</summary>
+    [ObservableProperty]
+    public partial string SessionImportRawInput { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the optional dedicated proxy string (<c>host:port</c> or <c>socks5://host:port:user:pass</c>) for the account.</summary>
+    [ObservableProperty]
+    public partial string AccountProxyInput { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the local search/filter text for the accounts list.</summary>
+    [ObservableProperty]
+    public partial string AccountFilterText { get; set; } = string.Empty;
+
+    private readonly List<AccountProfile> _allAccounts = new();
+    private string? _lastAccountSearchKeyword;
+    private string? _lastAccountStatusFilterMode;
+    private bool? _lastAccountHasProxyFilter;
+
+    /// <summary>
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, optional status, and optional proxy assignment.
+    /// </summary>
+    public void ApplyLocalAccountFilter(string? filterText, AccountStatus? statusFilter = null, bool? hasProxyFilter = null)
+    {
+        if (_allAccounts.Count == 0 && this.Accounts.Count > 0)
+        {
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                _allAccounts.Add(this.Accounts[i]);
+            }
+        }
+
+        _lastAccountSearchKeyword = filterText;
+        _lastAccountStatusFilterMode = statusFilter == AccountStatus.Active
+            ? "active"
+            : (statusFilter is not null ? "attention" : null);
+        _lastAccountHasProxyFilter = hasProxyFilter;
+
+        this.AccountFilterText = filterText ?? string.Empty;
+        string kw = this.AccountFilterText.Trim();
+
+        if (string.IsNullOrWhiteSpace(kw) && statusFilter is null && hasProxyFilter is null)
+        {
+            this.Accounts.ReplaceAll(_allAccounts);
+            return;
+        }
+
+        List<AccountProfile> filtered = new(_allAccounts.Count);
+        for (int i = 0; i < _allAccounts.Count; i++)
+        {
+            AccountProfile acc = _allAccounts[i];
+            if (statusFilter is not null && acc.Status != statusFilter.Value)
+            {
+                continue;
+            }
+
+            if (hasProxyFilter is not null)
+            {
+                bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
+                if (hasProxyFilter.Value != hasProxy)
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !_context.LeadScoring.MatchesAccentInsensitive(acc.DisplayName, kw))
+            {
+                continue;
+            }
+
+            filtered.Add(acc);
+        }
+
+        this.Accounts.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Filters the displayed <see cref="Accounts"/> collection locally by keyword, status mode (<c>"all"</c>, <c>"active"</c>, <c>"attention"</c>), and optional proxy assignment.
+    /// </summary>
+    public void ApplyLocalAccountFilterByMode(string? keyword, string? mode, bool? hasProxyFilter = null)
+    {
+        if (_allAccounts.Count == 0 && this.Accounts.Count > 0)
+        {
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                _allAccounts.Add(this.Accounts[i]);
+            }
+        }
+
+        _lastAccountSearchKeyword = keyword;
+        _lastAccountStatusFilterMode = mode;
+        if (hasProxyFilter is not null || mode is null)
+        {
+            _lastAccountHasProxyFilter = hasProxyFilter;
+        }
+
+        bool? effectiveProxyFilter = hasProxyFilter ?? _lastAccountHasProxyFilter;
+        this.AccountFilterText = keyword ?? string.Empty;
+        string kw = this.AccountFilterText.Trim();
+        string normalizedMode = (mode ?? string.Empty).Trim();
+        bool isActiveMode = string.Equals(normalizedMode, "active", StringComparison.OrdinalIgnoreCase);
+        bool isAttentionMode = string.Equals(normalizedMode, "attention", StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(kw) && !isActiveMode && !isAttentionMode && effectiveProxyFilter is null)
+        {
+            this.Accounts.ReplaceAll(_allAccounts);
+            return;
+        }
+
+        List<AccountProfile> filtered = new(_allAccounts.Count);
+        for (int i = 0; i < _allAccounts.Count; i++)
+        {
+            AccountProfile acc = _allAccounts[i];
+            if (isActiveMode && acc.Status != AccountStatus.Active)
+            {
+                continue;
+            }
+
+            if (isAttentionMode && acc.Status == AccountStatus.Active)
+            {
+                continue;
+            }
+
+            if (effectiveProxyFilter is not null)
+            {
+                bool hasProxy = !string.IsNullOrWhiteSpace(acc.ProxyId);
+                if (effectiveProxyFilter.Value != hasProxy)
+                {
+                    continue;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !_context.LeadScoring.MatchesAccentInsensitive(acc.DisplayName, kw))
+            {
+                continue;
+            }
+
+            filtered.Add(acc);
+        }
+
+        this.Accounts.ReplaceAll(filtered);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and runs a live session health check.
+    /// </summary>
+    public async Task CheckAccountItemHealthAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.CheckAccountHealthAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and either warms it up (when active) or launches browser login/sync.
+    /// </summary>
+    public async Task WarmUpOrLoginAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        if (account.Status == AccountStatus.Active)
+        {
+            await this.WarmUpSelectedAccountAsync().ConfigureAwait(true);
+        }
+        else
+        {
+            await this.OpenBrowserAndSyncAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Selects the specified <paramref name="account"/> and deletes it from the local vault.
+    /// </summary>
+    public async Task DeleteAccountItemAsync(AccountProfile? account)
+    {
+        if (account is null)
+        {
+            return;
+        }
+
+        this.SelectedAccount = account;
+        await this.DeleteSelectedAccountAsync().ConfigureAwait(true);
+    }
+
+    partial void OnSelectedAccountChanged(AccountProfile? value)
+    {
+        if (value is not null && !this._isLoadingSettings)
+        {
+            this.FlushSettingsToDisk();
+        }
+
+        if (value is null || string.IsNullOrWhiteSpace(value.ProxyId))
+        {
+            this.AccountProxyInput = string.Empty;
+            return;
+        }
+
+        _ = this.LoadSelectedAccountProxyTextAsync(value.ProxyId);
+    }
+
+    private async Task LoadSelectedAccountProxyTextAsync(string proxyId)
+    {
+        IReadOnlyList<ProxyConfig> proxies = await _context.AccountStore.GetAllProxiesAsync().ConfigureAwait(true);
+        for (int i = 0; i < proxies.Count; i++)
+        {
+            if (string.Equals(proxies[i].Id, proxyId, StringComparison.Ordinal))
+            {
+                this.AccountProxyInput = _context.SessionImporter.FormatProxySpec(proxies[i]);
+                return;
+            }
+        }
+
+        this.AccountProxyInput = string.Empty;
+    }
+
+    private async Task ReloadAllStoredDataAsync(string? preferredUid = null)
+    {
+        string? targetUid = preferredUid
+            ?? this.SelectedAccount?.Uid
+            ?? _context.Settings.Current.LastSelectedAccountUid;
+        IReadOnlyList<AccountProfile> storedAccounts = await _context.AccountStore.GetAllAccountsAsync().ConfigureAwait(true);
+
+        List<AccountProfile> normalizedAccounts = new(storedAccounts.Count);
+        for (int i = 0; i < storedAccounts.Count; i++)
+        {
+            (AccountProfile acc, bool modified) = _context.AccountVault.NormalizeAccountProfile(storedAccounts[i]);
+            if (modified)
+            {
+                await _context.AccountStore.UpsertAccountAsync(acc).ConfigureAwait(true);
+            }
+
+            normalizedAccounts.Add(acc);
+        }
+
+        _allAccounts.Clear();
+        _allAccounts.AddRange(normalizedAccounts);
+        if (!string.IsNullOrWhiteSpace(_lastAccountSearchKeyword) ||
+            !string.IsNullOrWhiteSpace(_lastAccountStatusFilterMode) ||
+            _lastAccountHasProxyFilter is not null)
+        {
+            this.ApplyLocalAccountFilterByMode(_lastAccountSearchKeyword, _lastAccountStatusFilterMode, _lastAccountHasProxyFilter);
+        }
+        else
+        {
+            this.Accounts.ReplaceAll(normalizedAccounts);
+        }
+
+        AccountProfile? matched = null;
+        for (int i = 0; i < normalizedAccounts.Count; i++)
+        {
+            AccountProfile acc = normalizedAccounts[i];
+            if (!string.IsNullOrWhiteSpace(targetUid) &&
+                string.Equals(acc.Uid, targetUid, StringComparison.Ordinal))
+            {
+                matched = acc;
+                break;
+            }
+        }
+
+        if (matched is not null)
+        {
+            this.SelectedAccount = matched;
+        }
+        else if (this.Accounts.Count > 0)
+        {
+            this.SelectedAccount = this.Accounts[0];
+        }
+        else
+        {
+            this.SelectedAccount = null;
+        }
+
+        IReadOnlyList<SavedTargetGroup> storedGroups = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+        if (_context.GroupTagService.IsMassTagBdsPolluted(storedGroups))
+        {
+            (IReadOnlyList<GroupTag> requiredTags, IReadOnlyList<SavedTargetGroup> modifiedGroups, _) =
+                _context.GroupTagService.ClassifyAndCleanGroups(
+                    storedGroups,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                    resetExistingTagsFirst: false);
+
+            for (int i = 0; i < requiredTags.Count; i++)
+            {
+                await _context.AccountStore.UpsertGroupTagAsync(requiredTags[i]).ConfigureAwait(true);
+            }
+
+            if (modifiedGroups.Count > 0)
+            {
+                await _context.AccountStore.UpsertTargetGroupsBatchAsync(modifiedGroups).ConfigureAwait(true);
+                storedGroups = await _context.AccountStore.GetAllTargetGroupsAsync().ConfigureAwait(true);
+            }
+        }
+
+        this.TargetGroups.ReplaceAll(storedGroups);
+        this.RebuildTargetGroupIndex();
+        if (this.SelectedTargetGroup is null && this.TargetGroups.Count > 0)
+        {
+            this.SelectedTargetGroup = this.TargetGroups[0];
+        }
+
+        // Only seed _allCatalogGroups and JoinedGroups from storedGroups if no live catalog has been loaded yet
+        if (_allCatalogGroups.Count == 0)
+        {
+            for (int i = 0; i < storedGroups.Count; i++)
+            {
+                GroupSummary summary = new(storedGroups[i].GroupId, storedGroups[i].GroupName, GroupMembershipState.Member, storedGroups[i].AvatarUrl);
+                _allCatalogGroups.Add(summary);
+            }
+
+            this.JoinedGroups.ReplaceAll(_allCatalogGroups);
+        }
+
+        if (this.SelectedGroup is null && this.JoinedGroups.Count > 0)
+        {
+            this.SelectedGroup = this.JoinedGroups[0];
+        }
+
+        await this.ReloadGroupTagsOnlyAsync().ConfigureAwait(true);
+        await this.ReloadTemplatesOnlyAsync().ConfigureAwait(true);
+        await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
+        await this.QueryLocalScrapedPostsAsync().ConfigureAwait(true);
+        this.PruneOrphanPlaceholderProfiles();
+        this.SyncBackgroundScraperLoop();
+    }
+
+    private async Task ReloadTemplatesOnlyAsync()
+    {
+        IReadOnlyList<CampaignTemplate> storedTemplates = await _context.AccountStore.GetAllCampaignTemplatesAsync().ConfigureAwait(true);
+        this.SavedTemplates.ReplaceAll(storedTemplates);
+    }
+
+    private bool HasProfileAuthenticatedCookieStore(string? profileDirectory) =>
+        _context.AccountVault.HasProfileAuthenticatedCookieStore(profileDirectory);
+
+    /// <summary>
+    /// Imports a session from J2Team JSON, Cookie-Editor JSON, pipe-delimited string, or creates a new browser login profile.
+    /// </summary>
+    public async Task QuickImportSessionAsync()
+    {
+        ImportedSessionBundle bundle = _context.SessionImporter.Parse(
+            this.SessionImportRawInput,
+            this.AccountFriendlyNameInput,
+            _context.Localization["Accounts.DefaultBrowserLoginName"],
+            _context.Localization["Accounts.DefaultImportedName"]);
+
+        string profileDir = Path.Combine(_context.ProfilesRootDirectory, bundle.AccountUid);
+        _ = Directory.CreateDirectory(profileDir);
+
+        string resolvedUa = !string.IsNullOrWhiteSpace(bundle.UserAgent)
+            ? bundle.UserAgent
+            : (OperatingSystem.IsMacOS()
+                ? ProtocolConstants.Protocol.DefaultMacOsUserAgent
+                : ProtocolConstants.Protocol.DefaultWindowsUserAgent);
+
+        string? proxyId = null;
+        if (!string.IsNullOrWhiteSpace(this.AccountProxyInput))
+        {
+            string candidateId = $"proxy_{bundle.AccountUid}";
+            if (_context.SessionImporter.TryParseProxySpec(this.AccountProxyInput, candidateId, out ProxyConfig? parsedProxy) &&
+                parsedProxy is not null)
+            {
+                await _context.AccountStore.UpsertProxyAsync(parsedProxy).ConfigureAwait(true);
+                proxyId = parsedProxy.Id;
+            }
+        }
+
+        AccountProfile profile = new(
+            Uid: bundle.AccountUid,
+            DisplayName: bundle.SuggestedDisplayName,
+            CookieHeader: bundle.CookieHeader,
+            UserAgent: resolvedUa,
+            ProfileDirectory: profileDir,
+            ProxyId: proxyId,
+            TwoFactorSecret: bundle.TwoFactorSecret,
+            Status: string.IsNullOrWhiteSpace(bundle.CookieHeader) ? AccountStatus.Idle : AccountStatus.Active,
+            LastActiveAt: DateTimeOffset.UtcNow);
+
+        await _context.AccountStore.UpsertAccountAsync(profile).ConfigureAwait(true);
+        await this.ReloadAllStoredDataAsync(profile.Uid).ConfigureAwait(true);
+
+        this.AccountFriendlyNameInput = string.Empty;
+        this.SessionImportRawInput = string.Empty;
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            profile.DisplayName,
+            _context.Localization.Format("Log.SessionSaved", profile.DisplayName)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Assigns, updates, or clears the dedicated HTTP/SOCKS5 proxy for the currently selected account.
+    /// </summary>
+    public async Task SaveAccountProxyAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile current = this.SelectedAccount;
+        string rawProxy = this.AccountProxyInput.Trim();
+
+        if (string.IsNullOrWhiteSpace(rawProxy))
+        {
+            if (!string.IsNullOrWhiteSpace(current.ProxyId))
+            {
+                _ = await _context.AccountStore.DeleteProxyAsync(current.ProxyId).ConfigureAwait(true);
+            }
+
+            AccountProfile cleared = current with { ProxyId = null };
+            await _context.AccountStore.UpsertAccountAsync(cleared).ConfigureAwait(true);
+            await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(cleared.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Personal,
+                AuditSeverity.Info,
+                cleared.DisplayName,
+                _context.Localization.Format("Log.ProxyCleared", cleared.DisplayName)).ConfigureAwait(true);
+            return;
+        }
+
+        string proxyId = $"proxy_{current.Uid}";
+        if (!_context.SessionImporter.TryParseProxySpec(rawProxy, proxyId, out ProxyConfig? parsed) || parsed is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                current.DisplayName,
+                _context.Localization["Log.ProxyInvalidFormat"]).ConfigureAwait(true);
+            return;
+        }
+
+        await _context.AccountStore.UpsertProxyAsync(parsed).ConfigureAwait(true);
+        AccountProfile updated = current with { ProxyId = parsed.Id };
+        await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+        await _context.SessionManager.CloseSessionAsync(current.Uid).ConfigureAwait(true);
+        await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Success,
+            updated.DisplayName,
+            _context.Localization.Format("Log.ProxySaved", parsed.Host, parsed.Port, updated.DisplayName)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Performs a 1-click live health check on the selected account's session cookies and updates its <see cref="AccountStatus"/>.
+    /// </summary>
+    public async Task CheckAccountHealthAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile current = this.SelectedAccount;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            SessionMaterial? material = null;
+            try
+            {
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+
+            bool isHealthy = !string.IsNullOrWhiteSpace(material.Uid) && material.Uid != "0";
+            AccountStatus resolvedStatus = isHealthy ? AccountStatus.Active : AccountStatus.CookieExpired;
+
+            string realUid = isHealthy ? material.Uid : current.Uid;
+            string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
+            bool isDefaultPlaceholder =
+                current.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                current.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
+
+            string formattedDefaultName = _context.Localization.Format("Accounts.DefaultImportedName", suffix);
+            string fallbackDefaultName = formattedDefaultName.Contains(suffix, StringComparison.Ordinal)
+                ? formattedDefaultName
+                : $"{formattedDefaultName} {suffix}";
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder && isHealthy
+                    ? fallbackDefaultName
+                    : current.DisplayName);
+
+            AccountProfile checkedProfile = current with
+            {
+                Uid = realUid,
+                DisplayName = displayName,
+                CookieHeader = !string.IsNullOrWhiteSpace(material.CookieHeader) ? material.CookieHeader : current.CookieHeader,
+                UserAgent = !string.IsNullOrWhiteSpace(material.UserAgent) ? material.UserAgent : current.UserAgent,
+                Status = resolvedStatus,
+                LastActiveAt = DateTimeOffset.UtcNow,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : current.AvatarUrl
+            };
+
+            if (!string.Equals(current.Uid, realUid, StringComparison.Ordinal))
+            {
+                _ = await _context.AccountStore.DeleteAccountAsync(current.Uid, ct).ConfigureAwait(true);
+            }
+
+            await _context.AccountStore.UpsertAccountAsync(checkedProfile, ct).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(checkedProfile.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                isHealthy ? AuditSeverity.Success : AuditSeverity.Warning,
+                checkedProfile.DisplayName,
+                isHealthy
+                    ? _context.Localization.Format("Log.SessionHealthy", checkedProfile.DisplayName)
+                    : _context.Localization.Format("Log.SessionExpired", checkedProfile.DisplayName)).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                current.DisplayName,
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            string msg = ex.Message;
+            bool isActualCheckpoint =
+                msg.Contains("190", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("checkpoint required", StringComparison.OrdinalIgnoreCase);
+
+            AccountStatus faultStatus = isActualCheckpoint
+                ? AccountStatus.Checkpoint
+                : AccountStatus.CookieExpired;
+
+            AccountProfile updated = current with { Status = faultStatus };
+            await _context.AccountStore.UpsertAccountAsync(updated).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                updated.DisplayName,
+                _context.Localization.Format("Log.HealthCheckFault", updated.DisplayName, _context.Localization.FormatAccountStatus(faultStatus), this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+
+    private async Task OpenBrowserAndSyncAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            // Automatically create a fresh interactive browser profile if the user hasn't added any account yet
+            await this.QuickImportSessionAsync().ConfigureAwait(true);
+        }
+
+        if (this.SelectedAccount is null)
+        {
+            return;
+        }
+
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            AccountProfile account = this.SelectedAccount;
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Info,
+                account.DisplayName,
+                _context.Localization.Format("Log.LaunchingBrowser", account.DisplayName)).ConfigureAwait(true);
+
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct, forceVisible: true).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            SessionMaterial? material = null;
+            try
+            {
+                material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            }
+
+            if (material is null)
+            {
+                Exception? lastExtractEx = null;
+                for (int attempt = 0; attempt < 60 && !ct.IsCancellationRequested; attempt++)
+                {
+                    if (session.State != BrowserState.Running)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        material = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+                        if (!string.IsNullOrWhiteSpace(material.Uid) && material.Uid != "0")
+                        {
+                            break;
+                        }
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        lastExtractEx = ex;
+                    }
+
+                    await Task.Delay(1500, ct).ConfigureAwait(true);
+                }
+
+                if (material is null)
+                {
+                    throw lastExtractEx ?? new InvalidOperationException(_context.Localization["Log.ConnectionInterrupted"]);
+                }
+            }
+
+            // If the account was created as a placeholder before login, update its internal session identifier cleanly
+            string realUid = !string.IsNullOrWhiteSpace(material.Uid) ? material.Uid : account.Uid;
+            string suffix = realUid.Length >= 4 ? realUid[^4..] : realUid;
+            bool isDefaultPlaceholder =
+                account.DisplayName.StartsWith("Tài khoản", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Account", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Browser Login", StringComparison.OrdinalIgnoreCase) ||
+                account.DisplayName.StartsWith("Facebook", StringComparison.OrdinalIgnoreCase);
+
+            string displayName = !string.IsNullOrWhiteSpace(material.DisplayName) && isDefaultPlaceholder
+                ? material.DisplayName
+                : (isDefaultPlaceholder
+                    ? $"{_context.Localization["Accounts.DefaultImportedName"]} {suffix}"
+                    : account.DisplayName);
+
+            AccountProfile updated = account with
+            {
+                Uid = realUid,
+                DisplayName = displayName,
+                CookieHeader = material.CookieHeader,
+                UserAgent = material.UserAgent,
+                Status = AccountStatus.Active,
+                LastActiveAt = material.ExtractedAt,
+                AvatarUrl = !string.IsNullOrWhiteSpace(material.AvatarUrl) ? material.AvatarUrl : account.AvatarUrl
+            };
+
+            if (!string.Equals(account.Uid, realUid, StringComparison.Ordinal))
+            {
+                _ = await _context.AccountStore.DeleteAccountAsync(account.Uid, ct).ConfigureAwait(true);
+            }
+
+            await _context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Success,
+                updated.DisplayName,
+                _context.Localization["Log.BrowserSessionSynced"]).ConfigureAwait(true);
+
+            // Automatically sync joined groups so the user can pick groups visually without copying Group IDs
+            await this.SyncJoinedGroupsCoreAsync(session, ct).ConfigureAwait(true);
+
+            if (this.RunBrowserHeadless && session.IsBrowserProcessAttached)
+            {
+                if (!string.Equals(account.Uid, updated.Uid, StringComparison.Ordinal))
+                {
+                    await _context.SessionManager.CloseSessionAsync(account.Uid, ct).ConfigureAwait(true);
+                }
+
+                await _context.SessionManager.CloseSessionAsync(updated.Uid, ct).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this.SelectedAccount?.DisplayName ?? _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                this.SelectedAccount?.DisplayName ?? _context.Localization["Audit.Cat.Account"],
+                _context.Localization.Format("Log.BrowserSignInPrompt", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+
+    private async Task DeleteSelectedAccountAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            return;
+        }
+
+        string removedName = this.SelectedAccount.DisplayName;
+        string removedUid = this.SelectedAccount.Uid;
+        string? removedProxyId = this.SelectedAccount.ProxyId;
+        string? removedProfileDir = this.SelectedAccount.ProfileDirectory;
+
+        if (!string.IsNullOrWhiteSpace(removedProxyId))
+        {
+            _ = await _context.AccountStore.DeleteProxyAsync(removedProxyId).ConfigureAwait(true);
+        }
+
+        await _context.SessionManager.CloseSessionAsync(removedUid).ConfigureAwait(true);
+        _ = await _context.AccountStore.DeleteAccountAsync(removedUid).ConfigureAwait(true);
+        this.SelectedAccount = null;
+        await this.ReloadAllStoredDataAsync().ConfigureAwait(true);
+
+        if (!string.IsNullOrWhiteSpace(removedProfileDir) &&
+            this.IsProfileInsideManagedRoot(removedProfileDir) &&
+            Directory.Exists(removedProfileDir))
+        {
+            bool stillUsed = false;
+            for (int i = 0; i < this.Accounts.Count; i++)
+            {
+                if (string.Equals(this.Accounts[i].ProfileDirectory, removedProfileDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    stillUsed = true;
+                    break;
+                }
+            }
+
+            if (!stillUsed)
+            {
+                try
+                {
+                    Directory.Delete(removedProfileDir, recursive: true);
+                    _context.StorageUsage.InvalidateCache();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Ignore locked profile directory
+                }
+            }
+        }
+
+        _ = await this.LogAuditAsync(
+            AuditCategory.Personal,
+            AuditSeverity.Info,
+            removedName,
+            _context.Localization.Format("Log.AccountRemoved", removedName)).ConfigureAwait(true);
+    }
+
+    private async Task WarmUpSelectedAccountAsync()
+    {
+        if (this.SelectedAccount is null)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                _context.Localization["Audit.Cat.Account"],
+                _context.Localization["Log.SelectAccountFirst"]).ConfigureAwait(true);
+            return;
+        }
+
+        AccountProfile account = this.SelectedAccount;
+        System.Threading.CancellationToken ct = this.BeginTaskScope();
+        try
+        {
+            IBrowserSession? session = await this.TryGetOrLaunchActiveSessionAsync(ct).ConfigureAwait(true);
+            if (session is null)
+            {
+                return;
+            }
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Info,
+                account.DisplayName,
+                _context.Localization.Format("Log.WarmUpStarted", account.DisplayName)).ConfigureAwait(true);
+
+            await session.NavigateAsync(ProtocolConstants.Endpoints.BaseOrigin, ct).ConfigureAwait(true);
+            _ = await session.ExtractMaterialAsync(ct).ConfigureAwait(true);
+
+            PagedResult<PostSummary> feed = await _context.CometClient
+                .GetNewsFeedAsync(session, count: 5, ct: ct)
+                .ConfigureAwait(true);
+
+            int reactedCount = 0;
+            for (int i = 0; i < feed.Items.Count && reactedCount < 2; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                PostSummary item = feed.Items[i];
+                if (string.IsNullOrWhiteSpace(item.PostId))
+                {
+                    continue;
+                }
+
+                ReactionKind reaction = Random.Shared.NextDouble() < 0.7 ? ReactionKind.Like : ReactionKind.Love;
+                bool ok = await _context.CometClient
+                    .ReactToPostAsync(session, item.PostId, reaction, ct)
+                    .ConfigureAwait(true);
+                if (ok)
+                {
+                    reactedCount++;
+                }
+            }
+
+            AccountProfile updated = account with
+            {
+                Status = AccountStatus.Active,
+                LastActiveAt = DateTimeOffset.UtcNow
+            };
+            await _context.AccountStore.UpsertAccountAsync(updated, ct).ConfigureAwait(true);
+            await this.ReloadAllStoredDataAsync(updated.Uid).ConfigureAwait(true);
+
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Success,
+                updated.DisplayName,
+                _context.Localization.Format("Log.WarmUpCompleted", updated.DisplayName, reactedCount)).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Warning,
+                account.DisplayName,
+                _context.Localization["Log.TaskStoppedByUser"]).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = await this.LogAuditAsync(
+                AuditCategory.Account,
+                AuditSeverity.Error,
+                account.DisplayName,
+                _context.Localization.Format("Log.WarmUpFailed", this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+        }
+        finally
+        {
+            this.EndTaskScope();
+        }
+    }
+}

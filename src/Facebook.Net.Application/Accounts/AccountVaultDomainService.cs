@@ -8,7 +8,7 @@ using System.Text;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
 
-namespace Facebook.Net.UI.Core.Accounts;
+namespace Meta.UI.Core.Accounts;
 
 /// <summary>
 /// Domain service contract for the Account Vault Bounded Context: inspects isolated Chromium cookie

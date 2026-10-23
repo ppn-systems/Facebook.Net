@@ -7,7 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Facebook.Net.UI.Core.Audit;
+namespace Meta.UI.Core.Audit;
 
 /// <summary>
 /// Event category for structured audit logging.

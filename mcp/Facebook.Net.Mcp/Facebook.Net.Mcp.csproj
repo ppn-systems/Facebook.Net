@@ -26,7 +26,7 @@
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser\Facebook.Net.Browser.csproj" />
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser.Windows\Facebook.Net.Browser.Windows.csproj" />
     <ProjectReference Include="..\..\browser\Facebook.Net.Browser.MacOS\Facebook.Net.Browser.MacOS.csproj" />
-    <ProjectReference Include="..\..\ui\Facebook.Net.UI.Core\Facebook.Net.UI.Core.csproj" />
+    <ProjectReference Include="..\..\app\Meta.UI.Core\Meta.UI.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

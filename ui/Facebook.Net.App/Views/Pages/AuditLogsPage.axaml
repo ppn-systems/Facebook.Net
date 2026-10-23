@@ -1,9 +1,0 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:Facebook.Net.UI.ViewModels.Shell"
-             x:Class="Facebook.Net.App.Views.Pages.AuditLogsPage"
-             x:DataType="vm:ShellViewModel">
-    <ContentControl x:Name="PageRoot"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch" />
-</UserControl>

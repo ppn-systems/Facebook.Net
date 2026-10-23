@@ -137,6 +137,25 @@ public interface IActionHistoryRepository
     /// Retrieves the most recent action history entries.
     /// </summary>
     Task<IReadOnlyList<ActionHistoryEntry>> GetRecentActionsAsync(int limit = 100, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves distinct target IDs for a specific <paramref name="actionKind"/> (e.g., <c>"COMMENT"</c>) directly from SQLite.
+    /// </summary>
+    async Task<IReadOnlySet<string>> GetExecutedTargetIdsByKindAsync(string actionKind, int limit = 2000, CancellationToken ct = default)
+    {
+        IReadOnlyList<ActionHistoryEntry> recent = await this.GetRecentActionsAsync(limit, ct).ConfigureAwait(false);
+        HashSet<string> ids = new(System.StringComparer.Ordinal);
+        for (int i = 0; i < recent.Count; i++)
+        {
+            if (string.Equals(recent[i].ActionKind, actionKind, System.StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(recent[i].TargetId))
+            {
+                _ = ids.Add(recent[i].TargetId);
+            }
+        }
+
+        return ids;
+    }
 }
 
 /// <summary>
@@ -183,6 +202,42 @@ public interface ILeadCrmRepository
     /// Updates the assigned customer/lead tags (<paramref name="tagsCsv"/>) and optional CRM <paramref name="notes"/> on a scraped post.
     /// </summary>
     Task UpdateScrapedPostTagsAndNotesAsync(string postId, string? tagsCsv, string? notes = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves a single scraped post by its exact <paramref name="postId"/> primary key without loading the entire table.
+    /// </summary>
+    async Task<PostSummary?> GetScrapedPostByIdAsync(string postId, CancellationToken ct = default)
+    {
+        IReadOnlyList<PostSummary> all = await this.QueryScrapedPostsAsync(limit: 2000, ct: ct).ConfigureAwait(false);
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (string.Equals(all[i].PostId, postId, System.StringComparison.Ordinal))
+            {
+                return all[i];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Atomically updates customer/lead tags and optional CRM notes across multiple scraped posts inside a single SQLite transaction.
+    /// </summary>
+    async Task UpdateScrapedPostsTagsAndNotesBatchAsync(
+        IReadOnlyList<(string PostId, string? TagsCsv, string? Notes)> updates,
+        CancellationToken ct = default)
+    {
+        if (updates is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < updates.Count; i++)
+        {
+            (string postId, string? tagsCsv, string? notes) = updates[i];
+            await this.UpdateScrapedPostTagsAndNotesAsync(postId, tagsCsv, notes, ct).ConfigureAwait(false);
+        }
+    }
 }
 
 /// <summary>

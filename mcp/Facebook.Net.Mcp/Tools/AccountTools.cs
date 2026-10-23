@@ -2,13 +2,12 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.ComponentModel;
-using System.Text.Json;
 using Facebook.Net.Contracts.Abstractions;
 using Facebook.Net.Contracts.Models;
 using Facebook.Net.Contracts.Primitives;
-using Facebook.Net.UI.Core.Audit;
-using Facebook.Net.UI.Core.Configuration;
-using Facebook.Net.UI.Core.Importing;
+using Meta.UI.Core.Audit;
+using Meta.UI.Core.Configuration;
+using Meta.UI.Core.Importing;
 using ModelContextProtocol.Server;
 
 namespace Facebook.Net.Mcp.Tools;
@@ -41,7 +40,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             is_active = string.Equals(acc.Uid, _manager.ActiveAccountUid, StringComparison.Ordinal)
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             active_account_uid = _manager.ActiveAccountUid,
             total_count = accounts.Count,
@@ -67,7 +66,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
                 ct: ct).ConfigureAwait(false);
         }
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             success = switched is not null,
             active_uid = switched?.Uid ?? _manager.ActiveAccountUid,
@@ -91,8 +90,8 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         ImportedSessionBundle bundle = UniversalSessionImporter.Parse(
             rawSessionInput,
             friendlyName,
-            defaultBrowserLoginName: "Tài khoản trình duyệt",
-            defaultImportedPrefix: "Tài khoản");
+            defaultBrowserLoginName: "Browser Account",
+            defaultImportedPrefix: "Account");
 
         string profileDir = Path.Combine(_manager.ProfilesRootDirectory, bundle.AccountUid);
         _ = Directory.CreateDirectory(profileDir);
@@ -137,7 +136,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP imported account session '{profile.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = profile.Uid,
@@ -200,7 +199,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP verified session health for '{updated.DisplayName}' (healthy={isHealthy}, status={updated.Status}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             is_healthy = isHealthy,
             uid = updated.Uid,
@@ -239,7 +238,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
                 $"MCP cleared proxy for account '{cleared.DisplayName}'.",
                 ct: ct).ConfigureAwait(false);
 
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "success",
                 uid = cleared.Uid,
@@ -250,7 +249,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         string proxyId = $"proxy_{current.Uid}";
         if (!UniversalSessionImporter.TryParseProxySpec(trimmed, proxyId, out ProxyConfig? parsed) || parsed is null)
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "error",
                 message = "Invalid proxy format. Expected host:port or host:port:user:pass."
@@ -270,7 +269,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP assigned {parsed.Protocol} proxy '{parsed.Host}:{parsed.Port}' to '{updated.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = updated.Uid,
@@ -295,7 +294,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
         AccountProfile? existing = await _manager.AccountStore.GetAccountByUidAsync(cleanUid, ct).ConfigureAwait(false);
         if (existing is null)
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "not_found",
                 uid = cleanUid,
@@ -355,7 +354,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP deleted account '{existing.DisplayName}' ({existing.Uid}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = deleted ? "deleted" : "failed",
             uid = existing.Uid,
@@ -438,7 +437,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP warmed up account '{updated.DisplayName}' ({newsFeed.Items.Count} feed posts loaded, {reactedCount} reactions).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             uid = updated.Uid,
@@ -591,7 +590,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP opened interactive browser login for '{updated.DisplayName}' (authenticated={isAuthenticated}, syncedNewGroups={syncedGroupsCount}).",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = isAuthenticated ? "authenticated" : "browser_opened_pending_login",
             uid = updated.Uid,
@@ -628,7 +627,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             };
         });
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             effective_browser_kind = effectiveKind.ToString(),
             profiles_root_directory = _manager.ProfilesRootDirectory,
@@ -699,7 +698,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP bound browser profile '{friendlyLabel}' to account '{targetAccount.DisplayName}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "success",
             account_uid = targetAccount.Uid,
@@ -726,7 +725,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
 
         if (!_manager.StorageUsage.IsProfileInsideManagedRoot(targetDir, _manager.ProfilesRootDirectory))
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "forbidden",
                 directory_path = targetDir,
@@ -736,7 +735,7 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
 
         if (!Directory.Exists(targetDir))
         {
-            return JsonSerializer.Serialize(new
+            return McpJson.Serialize(new
             {
                 status = "not_found",
                 directory_path = targetDir
@@ -763,10 +762,149 @@ public sealed class AccountTools(FacebookMcpSessionManager manager)
             $"MCP deleted managed browser profile folder '{Path.GetFileName(targetDir)}'.",
             ct: ct).ConfigureAwait(false);
 
-        return JsonSerializer.Serialize(new
+        return McpJson.Serialize(new
         {
             status = "deleted",
             directory_path = targetDir
+        });
+    }
+
+    [McpServerTool(Name = "fb_get_account_safety_quota")]
+    [Description("Evaluate anti-checkpoint safety and rate-limit quotas across all stored Facebook accounts (or a specific accountUid) based on recent action history (posts, comments, bumps, group joins, friend requests in the last 1h and 24h) and recommend the safest account for the next batch campaign.")]
+    public async Task<string> GetAccountSafetyQuotaAsync(
+        [Description("Optional target Facebook account UID (if omitted, evaluates all accounts in the vault)")] string? accountUid = null,
+        CancellationToken ct = default)
+    {
+        await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
+
+        IReadOnlyList<AccountProfile> allAccounts = await _manager.AccountStore.GetAllAccountsAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<ActionHistoryEntry> recentActions = await _manager.AccountStore.GetRecentActionsAsync(2000, ct).ConfigureAwait(false);
+
+        DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
+        DateTimeOffset oneHourAgo = nowUtc.AddHours(-1);
+        DateTimeOffset twentyFourHoursAgo = nowUtc.AddHours(-24);
+
+        List<AccountProfile> selectedAccounts = string.IsNullOrWhiteSpace(accountUid)
+            ? allAccounts.ToList()
+            : allAccounts.Where(a => string.Equals(a.Uid, accountUid.Trim(), StringComparison.Ordinal)).ToList();
+
+        List<object> evaluations = [];
+        string? recommendedSafestUid = null;
+        int lowestHeatScore = int.MaxValue;
+
+        for (int i = 0; i < selectedAccounts.Count; i++)
+        {
+            AccountProfile acc = selectedAccounts[i];
+            int posts1h = 0, posts24h = 0;
+            int comments1h = 0, comments24h = 0;
+            int joins1h = 0, joins24h = 0;
+            int friendReqs1h = 0, friendReqs24h = 0;
+            DateTimeOffset? lastActionAt = null;
+
+            for (int a = 0; a < recentActions.Count; a++)
+            {
+                ActionHistoryEntry entry = recentActions[a];
+                if (!string.Equals(entry.AccountUid, acc.Uid, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!lastActionAt.HasValue || entry.ExecutedAt > lastActionAt.Value)
+                {
+                    lastActionAt = entry.ExecutedAt;
+                }
+
+                if (entry.ExecutedAt < twentyFourHoursAgo)
+                {
+                    continue;
+                }
+
+                bool inLastHour = entry.ExecutedAt >= oneHourAgo;
+                if (string.Equals(entry.ActionKind, "POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    posts24h++;
+                    if (inLastHour)
+                    {
+                        posts1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, "COMMENT", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(entry.ActionKind, "BUMP_COMMENT", StringComparison.OrdinalIgnoreCase))
+                {
+                    comments24h++;
+                    if (inLastHour)
+                    {
+                        comments1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, DomainActionKinds.JoinGroup, StringComparison.OrdinalIgnoreCase))
+                {
+                    joins24h++;
+                    if (inLastHour)
+                    {
+                        joins1h++;
+                    }
+                }
+                else if (string.Equals(entry.ActionKind, "FRIEND_REQUEST", StringComparison.OrdinalIgnoreCase))
+                {
+                    friendReqs24h++;
+                    if (inLastHour)
+                    {
+                        friendReqs1h++;
+                    }
+                }
+            }
+
+            int heatScore = (posts1h * 6) + (comments1h * 4) + (joins1h * 5) + (friendReqs1h * 3)
+                          + (posts24h * 2) + comments24h + (joins24h * 2) + friendReqs24h;
+
+            string safetyState = acc.Status is AccountStatus.Checkpoint or AccountStatus.Disabled or AccountStatus.CookieExpired
+                ? "UNAVAILABLE"
+                : heatScore >= 80 || posts1h >= 12 || comments1h >= 20
+                    ? "COOLDOWN_RECOMMENDED"
+                    : heatScore >= 35 || posts1h >= 6 || comments1h >= 10
+                        ? "MODERATE"
+                        : "SAFE";
+
+            if (safetyState is "SAFE" or "MODERATE" && heatScore < lowestHeatScore)
+            {
+                lowestHeatScore = heatScore;
+                recommendedSafestUid = acc.Uid;
+            }
+
+            evaluations.Add(new
+            {
+                uid = acc.Uid,
+                display_name = acc.DisplayName,
+                account_status = acc.Status.ToString(),
+                is_active = string.Equals(acc.Uid, _manager.ActiveAccountUid, StringComparison.Ordinal),
+                safety_state = safetyState,
+                heat_score = heatScore,
+                last_action_at = lastActionAt?.ToString("o"),
+                last_1h = new
+                {
+                    posts = posts1h,
+                    comments_and_bumps = comments1h,
+                    group_joins = joins1h,
+                    friend_requests = friendReqs1h
+                },
+                last_24h = new
+                {
+                    posts = posts24h,
+                    comments_and_bumps = comments24h,
+                    group_joins = joins24h,
+                    friend_requests = friendReqs24h
+                }
+            });
+        }
+
+        return McpJson.Serialize(new
+        {
+            status = "success",
+            active_account_uid = _manager.ActiveAccountUid,
+            recommended_safest_account_uid = recommendedSafestUid,
+            accounts_evaluated = evaluations.Count,
+            quotas = evaluations
         });
     }
 }

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Meta.UI.Tests - Unit Tests for UI Core, i18n, Theme, Audit DB &amp; ViewModels</Title>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Facebook.Net.Application\Facebook.Net.Application.csproj" />
+    <ProjectReference Include="..\..\app\Meta.UI.Core\Meta.UI.Core.csproj" />
+    <ProjectReference Include="..\..\app\Meta.UI.Components\Meta.UI.Components.csproj" />
+    <ProjectReference Include="..\..\app\Meta.UI.ViewModels\Meta.UI.ViewModels.csproj" />
+    <ProjectReference Include="..\..\mcp\Facebook.Net.Mcp\Facebook.Net.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>

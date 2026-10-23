@@ -97,29 +97,10 @@ jobs:
             echo "${{ secrets.SIGNING_KEY }}" | base64 -d > "$GITHUB_WORKSPACE/src/Facebook.Net.snk"
           fi
 
-      - name: Publish Companion MCP Server — Facebook.Net.Mcp.exe
+      - name: Publish Desktop Client & Unified MCP Host — FacebookOneClient.exe
         shell: bash
         run: |
-          dotnet publish mcp/Facebook.Net.Mcp/Facebook.Net.Mcp.csproj \
-            --configuration Release \
-            --runtime win-x64 \
-            --self-contained true \
-            -p:Version=${{ steps.release.outputs.msi_version }} \
-            -p:AssemblyVersion=${{ steps.release.outputs.msi_version }}.0 \
-            -p:FileVersion=${{ steps.release.outputs.msi_version }}.0 \
-            -p:PublishSingleFile=true \
-            -p:IncludeNativeLibrariesForSelfExtract=true \
-            -p:EnableCompressionInSingleFile=true \
-            -p:DebugType=none \
-            -p:DebugSymbols=false \
-            --output ./publish/win-x64-mcp
-
-          rm -f ./publish/win-x64-mcp/*.pdb ./publish/win-x64-mcp/*.xml 2>/dev/null || true
-
-      - name: Publish Desktop Client — FacebookOneClient.exe
-        shell: bash
-        run: |
-          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+          dotnet publish app/Meta.App/Meta.App.csproj \
             --configuration Release \
             --runtime win-x64 \
             --self-contained true \
@@ -137,7 +118,6 @@ jobs:
             -p:DebugSymbols=false \
             --output ./publish/win-x64
 
-          cp ./publish/win-x64-mcp/Facebook.Net.Mcp.exe ./publish/win-x64/Facebook.Net.Mcp.exe
           rm -f ./publish/win-x64/*.pdb ./publish/win-x64/*.xml 2>/dev/null || true
 
       - name: Build Windows MSI Installer — FacebookOneClient-win-x64.msi
@@ -150,7 +130,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path "./dist/win-x64" | Out-Null
           $publishDir = (Resolve-Path "./publish/win-x64").Path
-          $iconPath = (Resolve-Path "./ui/Facebook.Net.App/Assets/app.ico").Path
+          $iconPath = (Resolve-Path "./app/Meta.App/Assets/app.ico").Path
           $msiVersion = "${{ steps.release.outputs.msi_version }}"
 
           # Compile standalone native Windows uninstaller launcher (uninstall.exe)
@@ -163,6 +143,28 @@ jobs:
             "$uninstallerSrc"
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $uninstallerOut)) {
             throw "Failed to compile uninstall.exe (exit code $LASTEXITCODE)."
+          }
+
+          # Compile lightweight 4KB console stdio shim (Facebook.Net.Mcp.exe -> FacebookOneClient.exe --mcp)
+          $mcpShimSrc = Join-Path $env:RUNNER_TEMP "McpShimLauncher.cs"
+          Set-Content -Path $mcpShimSrc -Encoding UTF8 -Value @"
+          using System;
+          using System.Diagnostics;
+          using System.IO;
+          internal static class Program {
+              private static int Main(string[] args) {
+                  string dir = AppDomain.CurrentDomain.BaseDirectory;
+                  string target = Path.Combine(dir, "FacebookOneClient.exe");
+                  string joined = args.Length > 0 ? " \"" + string.Join("\" \"", args) + "\"" : "";
+                  ProcessStartInfo psi = new ProcessStartInfo(target, "--mcp" + joined) { UseShellExecute = false };
+                  using (Process p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode; }
+              }
+          }
+          "@
+          $mcpShimOut = Join-Path $publishDir "Facebook.Net.Mcp.exe"
+          & $cscPath /nologo /target:exe /optimize+ /platform:x64 /out:"$mcpShimOut" "$mcpShimSrc"
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $mcpShimOut)) {
+            throw "Failed to compile Facebook.Net.Mcp.exe shim (exit code $LASTEXITCODE)."
           }
 
           $wxsContent = @"
@@ -374,29 +376,10 @@ jobs:
             echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$GITHUB_WORKSPACE/src/Facebook.Net.snk"
           fi
 
-      - name: Publish Companion MCP Server — Facebook.Net.Mcp
+      - name: Publish Desktop Client & Unified MCP Host — FacebookOneClient
         shell: bash
         run: |
-          dotnet publish mcp/Facebook.Net.Mcp/Facebook.Net.Mcp.csproj \
-            --configuration Release \
-            --runtime ${{ matrix.rid }} \
-            --self-contained true \
-            -p:Version=${{ steps.release.outputs.bundle_version }} \
-            -p:AssemblyVersion=${{ steps.release.outputs.bundle_version }}.0 \
-            -p:FileVersion=${{ steps.release.outputs.bundle_version }}.0 \
-            -p:PublishSingleFile=true \
-            -p:IncludeNativeLibrariesForSelfExtract=true \
-            -p:EnableCompressionInSingleFile=true \
-            -p:DebugType=none \
-            -p:DebugSymbols=false \
-            --output ./publish/${{ matrix.rid }}-mcp
-
-          rm -f ./publish/${{ matrix.rid }}-mcp/*.pdb ./publish/${{ matrix.rid }}-mcp/*.xml 2>/dev/null || true
-
-      - name: Publish Desktop Client — FacebookOneClient
-        shell: bash
-        run: |
-          dotnet publish ui/Facebook.Net.App/Facebook.Net.App.csproj \
+          dotnet publish app/Meta.App/Meta.App.csproj \
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
@@ -430,14 +413,17 @@ jobs:
           mkdir -p "${BUNDLE_DIR}/Contents/Resources"
           mkdir -p "${DIST_DIR}"
 
-          # Copy both main UI binary and companion MCP binary into Contents/MacOS
+          # Copy unified binary and create lightweight MCP forwarder script inside Contents/MacOS
           cp -R ./publish/${RID}/* "${BUNDLE_DIR}/Contents/MacOS/"
-          cp ./publish/${RID}-mcp/Facebook.Net.Mcp "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp"
+          cat > "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp" <<'SHIM'
+          #!/bin/sh
+          exec "$(dirname "$0")/FacebookOneClient" --mcp "$@"
+          SHIM
           chmod +x "${BUNDLE_DIR}/Contents/MacOS/FacebookOneClient"
           chmod +x "${BUNDLE_DIR}/Contents/MacOS/Facebook.Net.Mcp"
 
           # Generate macOS .icns from brand-logo.png
-          ICON_SRC="ui/Facebook.Net.UI.Components/Assets/Icons/brand-logo.png"
+          ICON_SRC="app/Meta.UI.Components/Assets/Icons/brand-logo.png"
           if [ -f "$ICON_SRC" ]; then
             ICONSET_DIR="./bundle/${RID}/app.iconset"
             mkdir -p "$ICONSET_DIR"
