@@ -287,6 +287,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
     [Description("Synchronize recent posts from the active account's personal Facebook timeline via Comet GraphQL into local SQLite so they can be inspected or reposted to community groups.")]
     public async Task<string> SyncPersonalTimelinePostsAsync(
         [Description("Number of recent personal timeline posts to fetch (1..50, default 25)")] int count = 25,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -344,7 +345,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             posts = records.Select(r => new
             {
                 post_id = r.PostId,
-                message_text = r.MessageText,
+                message_text = McpJson.TruncateText(r.MessageText, maxTextLength),
                 media_preview_url = r.MediaPreviewUrl,
                 permalink_url = r.PermalinkUrl,
                 created_at = r.CreatedAt.ToString("o")
@@ -599,6 +600,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
     public async Task<string> ListPublishedPostsAsync(
         [Description("Optional account UID filter")] string? accountUid = null,
         [Description("Maximum number of posts to return (default 50)")] int limit = 50,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         CancellationToken ct = default)
     {
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
@@ -614,7 +616,7 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 post_id = p.PostId,
                 account_uid = p.AccountUid,
                 author_name = p.AuthorName,
-                message_text = p.MessageText,
+                message_text = McpJson.TruncateText(p.MessageText, maxTextLength),
                 target_group_id = p.TargetGroupId,
                 target_group_name = p.TargetGroupName,
                 is_personal_profile = p.IsPersonalProfilePost,

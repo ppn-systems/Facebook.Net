@@ -28,4 +28,24 @@ public static class McpJson
     /// </summary>
     public static string Serialize<T>(T value) =>
         JsonSerializer.Serialize(value, Options);
+
+    /// <summary>
+    /// Normalizes excessive blank lines and truncates long post text for list-returning MCP tools
+    /// to save AI context tokens while preserving full text when <paramref name="maxLength"/> is <c>&lt;= 0</c>.
+    /// </summary>
+    public static string? TruncateText(string? text, int maxLength = 450)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        string trimmed = text.Trim();
+        if (maxLength <= 0 || trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return string.Concat(trimmed.AsSpan(0, maxLength).TrimEnd(), "...");
+    }
 }

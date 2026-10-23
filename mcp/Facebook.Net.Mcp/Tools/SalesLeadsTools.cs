@@ -38,6 +38,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         [Description("Optional group name label")] string? groupName = null,
         [Description("Number of posts to scrape (5..100, default 15)")] int count = 15,
         [Description("Optional comma-separated buyer filter keywords to score and filter posts")] string? filterKeywords = null,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -97,7 +98,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 post_id = p.PostId,
                 author_uid = p.AuthorUid,
                 author_name = p.AuthorName,
-                message_text = p.MessageText,
+                message_text = McpJson.TruncateText(p.MessageText, maxTextLength),
                 extracted_phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(p.MessageText),
                 buyer_intent_score = _manager.LeadScoring.CalculateBuyerIntentScore(p.MessageText, filterKeywords),
                 reaction_count = p.ReactionCount,
@@ -450,6 +451,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         [Description("Optional Facebook Group ID filter")] string? groupId = null,
         [Description("Comment status filter: 'all', 'pending' (not yet commented), or 'commented' (default 'all')")] string commentStatus = "all",
         [Description("Maximum number of posts to return (default 50)")] int limit = 50,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         CancellationToken ct = default)
     {
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
@@ -499,7 +501,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             group_name = p.GroupName,
             author_uid = p.AuthorUid,
             author_name = p.AuthorName,
-            message_text = p.MessageText,
+            message_text = McpJson.TruncateText(p.MessageText, maxTextLength),
             extracted_phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(p.MessageText),
             buyer_intent_score = _manager.LeadScoring.CalculateBuyerIntentScore(p.MessageText, keywords),
             lead_tags = p.GetTagIds(),
@@ -883,6 +885,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         [Description("Optional group color tag ID or name filter")] string? groupTagId = null,
         [Description("Optional customer/lead color tag ID or name filter")] string? leadTagId = null,
         [Description("Maximum number of leads to return (default 50)")] int limit = 50,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         CancellationToken ct = default)
     {
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
@@ -1033,7 +1036,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             author_name = x.Post.AuthorName,
             group_id = x.Post.GroupId,
             group_name = x.Post.GroupName,
-            message_text = x.Post.MessageText,
+            message_text = McpJson.TruncateText(x.Post.MessageText, maxTextLength),
             extracted_phones = x.Phones,
             buyer_intent_score = x.Score,
             has_inquiry_signal = x.HasInquiry,
@@ -1305,6 +1308,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         [Description("Optional comma-separated buyer-intent keywords to filter and score posts")] string? keywords = null,
         [Description("If true, only return posts containing extracted Vietnamese phone numbers (default false)")] bool onlyWithPhone = false,
         [Description("If true, persists scraped News Feed posts into the local SQLite scraped_posts vault (default true)")] bool saveToVault = true,
+        [Description("Maximum character length for each returned post message_text (default 450; pass 0 for full untruncated text)")] int maxTextLength = 450,
         [Description("Target Facebook account UID (optional, defaults to active account)")] string? accountUid = null,
         CancellationToken ct = default)
     {
@@ -1351,7 +1355,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 author_name = post.AuthorName,
                 buyer_intent_score = score,
                 extracted_phones = phones,
-                message_text = post.MessageText,
+                message_text = McpJson.TruncateText(post.MessageText, maxTextLength),
                 reaction_count = post.ReactionCount,
                 comment_count = post.CommentCount,
                 created_at = post.CreatedAt?.ToString("o"),
