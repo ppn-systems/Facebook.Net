@@ -154,6 +154,8 @@ public sealed partial class SqliteAccountStore : IAccountStore
 
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_group_id ON scraped_posts(group_id);
             CREATE INDEX IF NOT EXISTS idx_scraped_posts_scraped_at ON scraped_posts(scraped_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_scraped_posts_created_scraped ON scraped_posts(created_at DESC, scraped_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_action_history_kind_time ON action_history(action_kind, executed_at DESC);
             """;
 
         using SqliteConnection conn = new(_connectionString);

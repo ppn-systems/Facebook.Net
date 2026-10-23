@@ -749,7 +749,7 @@ public sealed class SqliteAiMemoryStore : IAiMemoryStore
             keyword: null,
             category: null,
             accountUid: activeAccountUid,
-            limit: int.MaxValue,
+            limit: 40,
             ct: ct).ConfigureAwait(false);
 
         if (memories.Count > 0)

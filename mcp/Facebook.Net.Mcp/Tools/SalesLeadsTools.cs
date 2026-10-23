@@ -467,7 +467,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             : keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         string normStatus = commentStatus?.Trim().ToLowerInvariant() ?? "all";
-        List<PostSummary> filtered = [];
+        List<(PostSummary Post, int Score)> filtered = [];
 
         for (int i = 0; i < dbPosts.Count; i++)
         {
@@ -485,32 +485,31 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
 
             if (_manager.LeadScoring.MatchesPostOrAuthorKeywords(post, kwArray))
             {
-                filtered.Add(post);
+                int score = _manager.LeadScoring.CalculateBuyerIntentScore(post.MessageText, keywords);
+                filtered.Add((post, score));
             }
         }
 
-        filtered.Sort((a, b) =>
-            _manager.LeadScoring.CalculateBuyerIntentScore(b.MessageText, keywords)
-                .CompareTo(_manager.LeadScoring.CalculateBuyerIntentScore(a.MessageText, keywords)));
+        filtered.Sort(static (a, b) => b.Score.CompareTo(a.Score));
 
         int take = Math.Clamp(limit, 1, 200);
-        var items = filtered.Take(take).Select(p => new
+        var items = filtered.Take(take).Select(x => new
         {
-            post_id = p.PostId,
-            group_id = p.GroupId,
-            group_name = p.GroupName,
-            author_uid = p.AuthorUid,
-            author_name = p.AuthorName,
-            message_text = McpJson.TruncateText(p.MessageText, maxTextLength),
-            extracted_phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(p.MessageText),
-            buyer_intent_score = _manager.LeadScoring.CalculateBuyerIntentScore(p.MessageText, keywords),
-            lead_tags = p.GetTagIds(),
-            notes = p.Notes,
-            is_commented = commentedPostIds.Contains(p.PostId),
-            reaction_count = p.ReactionCount,
-            comment_count = p.CommentCount,
-            permalink_url = p.PermalinkUrl,
-            created_at = p.CreatedAt?.ToString("o")
+            post_id = x.Post.PostId,
+            group_id = x.Post.GroupId,
+            group_name = x.Post.GroupName,
+            author_uid = x.Post.AuthorUid,
+            author_name = x.Post.AuthorName,
+            message_text = McpJson.TruncateText(x.Post.MessageText, maxTextLength),
+            extracted_phones = _manager.LeadScoring.ExtractVietnamesePhoneNumbers(x.Post.MessageText),
+            buyer_intent_score = x.Score,
+            lead_tags = x.Post.GetTagIds(),
+            notes = x.Post.Notes,
+            is_commented = commentedPostIds.Contains(x.Post.PostId),
+            reaction_count = x.Post.ReactionCount,
+            comment_count = x.Post.CommentCount,
+            permalink_url = x.Post.PermalinkUrl,
+            created_at = x.Post.CreatedAt?.ToString("o")
         });
 
         return McpJson.Serialize(new
@@ -683,6 +682,9 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             .ConfigureAwait(false);
 
         List<string> modifiedPostIds = [];
+        List<(string PostId, string? TagsCsv, string? Notes)> batchUpdates = [];
+        string? normalizedNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+
         for (int i = 0; i < allPosts.Count; i++)
         {
             PostSummary post = allPosts[i];
@@ -697,17 +699,18 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             }
 
             (string? updatedTagsCsv, bool tagChanged) = _manager.LeadScoring.ApplyLeadTagChange(post.GetTagIds(), resolvedTag.Id, assign);
-            bool notesChanged = !string.IsNullOrWhiteSpace(notes) && !string.Equals(post.Notes, notes.Trim(), StringComparison.Ordinal);
+            bool notesChanged = normalizedNotes is not null && !string.Equals(post.Notes, normalizedNotes, StringComparison.Ordinal);
 
             if (tagChanged || notesChanged)
             {
-                await _manager.AccountStore.UpdateScrapedPostTagsAndNotesAsync(
-                    post.PostId,
-                    updatedTagsCsv,
-                    string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
-                    ct).ConfigureAwait(false);
+                batchUpdates.Add((post.PostId, updatedTagsCsv, normalizedNotes));
                 modifiedPostIds.Add(post.PostId);
             }
+        }
+
+        if (batchUpdates.Count > 0)
+        {
+            await _manager.AccountStore.UpdateScrapedPostsTagsAndNotesBatchAsync(batchUpdates, ct).ConfigureAwait(false);
         }
 
         _ = await _manager.LogAuditAsync(
@@ -785,6 +788,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             : keywords.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         List<object> matchedSummary = [];
+        List<(string PostId, string? TagsCsv, string? Notes)> batchUpdates = [];
         int newlyTaggedCount = 0;
 
         for (int i = 0; i < allPosts.Count; i++)
@@ -832,7 +836,7 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             (string? updatedCsv, bool changed) = _manager.LeadScoring.ApplyLeadTagChange(post.GetTagIds(), resolvedTag.Id, assign: true);
             if (changed)
             {
-                await _manager.AccountStore.UpdateScrapedPostTagsAndNotesAsync(post.PostId, updatedCsv, notes: null, ct).ConfigureAwait(false);
+                batchUpdates.Add((post.PostId, updatedCsv, null));
                 newlyTaggedCount++;
             }
 
@@ -845,6 +849,11 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
                 extracted_phones = phones,
                 newly_tagged = changed
             });
+        }
+
+        if (batchUpdates.Count > 0)
+        {
+            await _manager.AccountStore.UpdateScrapedPostsTagsAndNotesBatchAsync(batchUpdates, ct).ConfigureAwait(false);
         }
 
         _ = await _manager.LogAuditAsync(
@@ -1067,11 +1076,10 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
         await _manager.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
         string cleanId = postId.Trim();
-        IReadOnlyList<PostSummary> allPosts = await _manager.AccountStore
-            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 2000, ct: ct)
+        PostSummary? existing = await _manager.AccountStore
+            .GetScrapedPostByIdAsync(cleanId, ct)
             .ConfigureAwait(false);
 
-        PostSummary? existing = allPosts.FirstOrDefault(p => string.Equals(p.PostId, cleanId, StringComparison.Ordinal));
         await _manager.AccountStore.UpdateScrapedPostTagsAndNotesAsync(
             cleanId,
             existing?.TagsCsv,
@@ -1119,17 +1127,23 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
             .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 2000, ct: ct)
             .ConfigureAwait(false);
 
-        int clearedCount = 0;
+        List<(string PostId, string? TagsCsv, string? Notes)> batchUpdates = [];
         for (int i = 0; i < allPosts.Count; i++)
         {
             PostSummary post = allPosts[i];
             (string? updatedCsv, bool changed) = _manager.LeadScoring.ApplyLeadTagChange(post.GetTagIds(), effectiveTagId, assign: false);
             if (changed)
             {
-                await _manager.AccountStore.UpdateScrapedPostTagsAndNotesAsync(post.PostId, updatedCsv, notes: null, ct).ConfigureAwait(false);
-                clearedCount++;
+                batchUpdates.Add((post.PostId, updatedCsv, null));
             }
         }
+
+        if (batchUpdates.Count > 0)
+        {
+            await _manager.AccountStore.UpdateScrapedPostsTagsAndNotesBatchAsync(batchUpdates, ct).ConfigureAwait(false);
+        }
+
+        int clearedCount = batchUpdates.Count;
 
         bool deletedDef = false;
         if (deleteTagDefinition && targetTag is not null)
@@ -1385,21 +1399,11 @@ public sealed class SalesLeadsTools(FacebookMcpSessionManager manager)
 
     private async Task<HashSet<string>> GetCommentedPostIdsAsync(CancellationToken ct)
     {
-        IReadOnlyList<ActionHistoryEntry> actions = await _manager.AccountStore
-            .GetRecentActionsAsync(1000, ct)
+        IReadOnlySet<string> ids = await _manager.AccountStore
+            .GetExecutedTargetIdsByKindAsync("COMMENT", 2000, ct)
             .ConfigureAwait(false);
 
-        HashSet<string> commentedPostIds = new(StringComparer.Ordinal);
-        for (int i = 0; i < actions.Count; i++)
-        {
-            if (string.Equals(actions[i].ActionKind, "COMMENT", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(actions[i].TargetId))
-            {
-                _ = commentedPostIds.Add(actions[i].TargetId);
-            }
-        }
-
-        return commentedPostIds;
+        return ids as HashSet<string> ?? new HashSet<string>(ids, StringComparer.Ordinal);
     }
 
     private async Task<(GroupTag Tag, bool CreatedNew)> ResolveOrCreateLeadTagAsync(

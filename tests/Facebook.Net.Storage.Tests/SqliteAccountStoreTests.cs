@@ -196,6 +196,21 @@ public sealed class SqliteAccountStoreTests : IDisposable
         _ = Assert.Single(byKeyword);
         Assert.Equal("post_laptop_2", byKeyword[0].PostId);
 
+        PostSummary? singleFetched = await this._store.GetScrapedPostByIdAsync("post_net_1");
+        Assert.NotNull(singleFetched);
+        Assert.Equal("Nguyễn Văn A", singleFetched.AuthorName);
+
+        await this._store.UpdateScrapedPostsTagsAndNotesBatchAsync(
+        [
+            ("post_net_1", "lead_vip,lead_phone", "Gọi sáng mai"),
+            ("post_laptop_2", "lead_followup", "Khách hỏi M3")
+        ]);
+
+        PostSummary? afterBatch = await this._store.GetScrapedPostByIdAsync("post_net_1");
+        Assert.NotNull(afterBatch);
+        Assert.Equal("lead_vip,lead_phone", afterBatch.TagsCsv);
+        Assert.Equal("Gọi sáng mai", afterBatch.Notes);
+
         int deletedDotnet = await this._store.ClearScrapedPostsAsync(groupId: "grp_dotnet");
         Assert.Equal(1, deletedDotnet);
 

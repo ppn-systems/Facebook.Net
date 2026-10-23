@@ -518,10 +518,9 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 .ConfigureAwait(false);
         }
 
-        IReadOnlyList<PostSummary> cachedPosts = await _manager.AccountStore
-            .QueryScrapedPostsAsync(groupId: null, searchKeyword: null, limit: 500, ct: ct)
+        PostSummary? matchedPost = await _manager.AccountStore
+            .GetScrapedPostByIdAsync(cleanPostId, ct)
             .ConfigureAwait(false);
-        PostSummary? matchedPost = cachedPosts.FirstOrDefault(p => string.Equals(p.PostId, cleanPostId, StringComparison.Ordinal));
         string resolvedComment = _manager.CampaignPublisher.ResolveDynamicVariables(commentText, matchedPost?.AuthorName, matchedPost?.GroupName);
 
         string? commentId = await _manager.CometClient
