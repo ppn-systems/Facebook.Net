@@ -137,7 +137,13 @@ internal sealed class FakeCometClient : ICometClient
 
     public int ReactionsCount { get; private set; }
 
+    public int PhotoUploadCallCount { get; private set; }
+
     public Exception? NextExceptionToThrow { get; set; }
+
+    public Func<string?, Exception?>? FailGroupPredicate { get; set; }
+
+    public List<(string? TargetGroupId, IReadOnlyList<string>? PhotoIds)> PublishedCalls { get; } = new();
 
     public Task<GraphQlResult> ExecuteGraphQlAsync(IBrowserSession session, GraphQlRequest request, CancellationToken ct = default) =>
         Task.FromResult(new GraphQlResult(true, ["{\"data\":{}}"], null));
@@ -151,6 +157,11 @@ internal sealed class FakeCometClient : ICometClient
         IReadOnlyList<string>? videoIds = null,
         CancellationToken ct = default)
     {
+        if (this.FailGroupPredicate?.Invoke(targetGroupId) is Exception groupEx)
+        {
+            throw groupEx;
+        }
+
         if (this.NextExceptionToThrow is not null)
         {
             Exception ex = this.NextExceptionToThrow;
@@ -159,6 +170,7 @@ internal sealed class FakeCometClient : ICometClient
         }
 
         this.PublishedPostsCount++;
+        this.PublishedCalls.Add((targetGroupId, photoIds));
         return Task.FromResult<string?>($"post_{this.PublishedPostsCount}");
     }
 
@@ -311,8 +323,11 @@ internal sealed class FakeCometClient : ICometClient
     public Task<IReadOnlyList<ManagedPageSummary>> GetManagedPagesAsync(IBrowserSession session, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ManagedPageSummary>>([]);
 
-    public Task<string> UploadUfiPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default) =>
-        Task.FromResult("fbid_photo_123");
+    public Task<string> UploadUfiPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default)
+    {
+        this.PhotoUploadCallCount++;
+        return Task.FromResult($"fbid_photo_{this.PhotoUploadCallCount}");
+    }
 
     public Task<string> UploadStoryPhotoAsync(IBrowserSession session, string localFilePath, CancellationToken ct = default) =>
         Task.FromResult("story_photo_123");
