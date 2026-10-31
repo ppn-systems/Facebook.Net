@@ -320,6 +320,7 @@
   "Log.PublishingToGroup": "Publishing post to group '{0}', step {1}/{2}...",
   "Log.PostSubmittedPending": "Submitted post to group '{0}', awaiting administrator approval.",
   "Log.PostPublishedSuccess": "Published post to group '{0}' successfully!",
+  "Log.PostPublishFailed": "Failed to publish post to group '{0}': {1}",
   "Log.NoRecentPostsToBump": "No recently published posts in this session to bump — please publish a post first.",
   "Log.PostBumpedSuccess": "Bumped post {0}/{1} to the top of the group feed successfully!",
   "Log.PostBumpFailed": "Failed to bump post: {0}",

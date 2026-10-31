@@ -378,7 +378,6 @@ public sealed partial class ShellViewModel
             }
 
             List<string> mediaFiles = ParseExistingMediaFilePaths(this.PostMediaFilePath);
-            List<string>? photoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
 
             bool publishToFeed = !this.PublishToTargetGroups || this.PublishTargetMode == 0 || this.PublishTargetMode == 2;
             bool publishToGroups = this.PublishToTargetGroups && (this.PublishTargetMode == 1 || this.PublishTargetMode == 2);
@@ -391,9 +390,10 @@ public sealed partial class ShellViewModel
 
             if (publishToFeed)
             {
+                List<string>? feedPhotoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
                 string feedSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.PostSpintaxText, accountName, accountName);
                 string? postId = await _context.CometClient
-                    .PublishPostAsync(session, feedSpintax, ComposerTarget.Feed, null, photoIds, ct: ct)
+                    .PublishPostAsync(session, feedSpintax, ComposerTarget.Feed, null, feedPhotoIds, ct: ct)
                     .ConfigureAwait(true);
 
                 string recordedPostId = !string.IsNullOrWhiteSpace(postId)
@@ -405,9 +405,16 @@ public sealed partial class ShellViewModel
                     _recentPublishedPostIds.Add(postId);
                     if (this.AutoReactPublishedPost)
                     {
-                        _ = await _context.CometClient
-                            .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
-                            .ConfigureAwait(true);
+                        try
+                        {
+                            _ = await _context.CometClient
+                                .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
+                                .ConfigureAwait(true);
+                        }
+                        catch (Exception) when (!ct.IsCancellationRequested)
+                        {
+                            // Non-fatal if react fails (e.g. pending admin approval)
+                        }
                     }
                 }
 
@@ -438,12 +445,24 @@ public sealed partial class ShellViewModel
                 await _context.AccountStore.UpsertPublishedPostAsync(feedRecord, ct).ConfigureAwait(true);
                 await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
 
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Post,
-                    AuditSeverity.Success,
-                    _context.Localization["Publisher.TargetModePersonal"],
-                    _context.Localization["Log.PublishedPersonalTimeline"],
-                    feedRecord.PermalinkUrl).ConfigureAwait(true);
+                if (!string.IsNullOrWhiteSpace(postId))
+                {
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Post,
+                        AuditSeverity.Success,
+                        _context.Localization["Publisher.TargetModePersonal"],
+                        _context.Localization["Log.PublishedPersonalTimeline"],
+                        feedRecord.PermalinkUrl).ConfigureAwait(true);
+                }
+                else
+                {
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Post,
+                        AuditSeverity.Warning,
+                        _context.Localization["Publisher.TargetModePersonal"],
+                        _context.Localization.Format("Log.PostSubmittedPending", _context.Localization["Publisher.TargetModePersonal"]),
+                        feedRecord.PermalinkUrl).ConfigureAwait(true);
+                }
 
                 if (!publishToGroups)
                 {
@@ -460,7 +479,7 @@ public sealed partial class ShellViewModel
                 }
             }
 
-            if (targets.Count == 0 && this.SelectedGroup is not null)
+            if (targets.Count == 0 && this.TargetGroups.Count == 0 && this.SelectedGroup is not null)
             {
                 targets.Add(new SavedTargetGroup(this.SelectedGroup.GroupId, this.SelectedGroup.Name, IsEnabled: true, Notes: null, AvatarUrl: this.SelectedGroup.AvatarUrl));
             }
@@ -479,12 +498,12 @@ public sealed partial class ShellViewModel
             for (int i = 0; i < targets.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
+                SavedTargetGroup group = targets[i];
                 if (i > 0 || publishToFeed)
                 {
-                    await this.WaitAntiCheckpointDelayAsync(targets[i].GroupName, ct).ConfigureAwait(true);
+                    await this.WaitAntiCheckpointDelayAsync(group.GroupName, ct).ConfigureAwait(true);
                 }
 
-                SavedTargetGroup group = targets[i];
                 this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 _ = await this.LogAuditAsync(
                     AuditCategory.Post,
@@ -492,65 +511,106 @@ public sealed partial class ShellViewModel
                     group.GroupName,
                     _context.Localization.Format("Log.PublishingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
-                string groupSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.PostSpintaxText, accountName, group.GroupName);
-                string? postId = await _context.CometClient
-                    .PublishPostAsync(session, groupSpintax, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
-                    .ConfigureAwait(true);
-
-                string recordedPostId = !string.IsNullOrWhiteSpace(postId)
-                    ? postId
-                    : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-
-                if (!string.IsNullOrWhiteSpace(postId))
+                try
                 {
-                    successCount++;
-                    _recentPublishedPostIds.Add(postId);
-                    if (this.AutoReactPublishedPost)
+                    List<string>? groupPhotoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
+                    string groupSpintax = _context.CampaignPublisher.ResolveDynamicVariables(this.PostSpintaxText, accountName, group.GroupName);
+                    string? postId = await _context.CometClient
+                        .PublishPostAsync(session, groupSpintax, ComposerTarget.Group, group.GroupId, groupPhotoIds, ct: ct)
+                        .ConfigureAwait(true);
+
+                    string recordedPostId = !string.IsNullOrWhiteSpace(postId)
+                        ? postId
+                        : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+                    if (!string.IsNullOrWhiteSpace(postId))
                     {
-                        _ = await _context.CometClient
-                            .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
-                            .ConfigureAwait(true);
+                        successCount++;
+                        _recentPublishedPostIds.Add(postId);
+                        if (this.AutoReactPublishedPost)
+                        {
+                            try
+                            {
+                                _ = await _context.CometClient
+                                    .ReactToPostAsync(session, postId, ReactionKind.Love, ct)
+                                    .ConfigureAwait(true);
+                            }
+                            catch (Exception) when (!ct.IsCancellationRequested)
+                            {
+                                // Non-fatal if react fails (e.g. pending admin approval)
+                            }
+                        }
+                    }
+
+                    await _context.AccountStore.RecordActionAsync(
+                        new ActionHistoryEntry(
+                            session.AccountUid,
+                            DomainActionKinds.Post,
+                            group.GroupId,
+                            postId,
+                            DateTimeOffset.UtcNow),
+                        ct).ConfigureAwait(true);
+
+                    PublishedPostRecord groupRecord = new(
+                        PostId: recordedPostId,
+                        AccountUid: session.AccountUid,
+                        AuthorName: accountName,
+                        AuthorAvatarUrl: accountAvatar,
+                        MessageText: _context.CampaignPublisher.SpinText(groupSpintax),
+                        MediaPreviewUrl: null,
+                        LocalMediaFilePath: trimmedMediaPath,
+                        TargetGroupId: group.GroupId,
+                        TargetGroupName: group.GroupName,
+                        TargetGroupAvatarUrl: group.AvatarUrl,
+                        PermalinkUrl: !string.IsNullOrWhiteSpace(postId)
+                            ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{postId}"
+                            : $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{group.GroupId}",
+                        CreatedAt: DateTimeOffset.UtcNow,
+                        IsPersonalProfilePost: false);
+
+                    await _context.AccountStore.UpsertPublishedPostAsync(groupRecord, ct).ConfigureAwait(true);
+                    this.PublishedPosts.Insert(0, groupRecord);
+                    this.SelectedPublishedPost ??= groupRecord;
+
+                    if (!string.IsNullOrWhiteSpace(postId))
+                    {
+                        _ = await this.LogAuditAsync(
+                            AuditCategory.Post,
+                            AuditSeverity.Success,
+                            group.GroupName,
+                            _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
+                            groupRecord.PermalinkUrl).ConfigureAwait(true);
+                    }
+                    else
+                    {
+                        _ = await this.LogAuditAsync(
+                            AuditCategory.Post,
+                            AuditSeverity.Warning,
+                            group.GroupName,
+                            _context.Localization.Format("Log.PostSubmittedPending", group.GroupName),
+                            groupRecord.PermalinkUrl).ConfigureAwait(true);
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    AutomationErrorCategory errorCategory = _context.CampaignPublisher.ClassifyAutomationException(ex);
+                    if (errorCategory == AutomationErrorCategory.CheckpointOrAuthFailure ||
+                        errorCategory == AutomationErrorCategory.ActionBlocked368)
+                    {
+                        await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, group.GroupName, ex, ct).ConfigureAwait(true);
+                        break;
+                    }
 
-                await _context.AccountStore.RecordActionAsync(
-                    new ActionHistoryEntry(
-                        session.AccountUid,
-                        DomainActionKinds.Post,
-                        group.GroupId,
-                        postId,
-                        DateTimeOffset.UtcNow),
-                    ct).ConfigureAwait(true);
-
-                PublishedPostRecord groupRecord = new(
-                    PostId: recordedPostId,
-                    AccountUid: session.AccountUid,
-                    AuthorName: accountName,
-                    AuthorAvatarUrl: accountAvatar,
-                    MessageText: _context.CampaignPublisher.SpinText(groupSpintax),
-                    MediaPreviewUrl: null,
-                    LocalMediaFilePath: trimmedMediaPath,
-                    TargetGroupId: group.GroupId,
-                    TargetGroupName: group.GroupName,
-                    TargetGroupAvatarUrl: group.AvatarUrl,
-                    PermalinkUrl: !string.IsNullOrWhiteSpace(postId)
-                        ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{postId}"
-                        : $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{group.GroupId}",
-                    CreatedAt: DateTimeOffset.UtcNow,
-                    IsPersonalProfilePost: false);
-
-                await _context.AccountStore.UpsertPublishedPostAsync(groupRecord, ct).ConfigureAwait(true);
-                this.PublishedPosts.Insert(0, groupRecord);
-                this.SelectedPublishedPost ??= groupRecord;
-
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Post,
-                    AuditSeverity.Success,
-                    group.GroupName,
-                    string.IsNullOrWhiteSpace(postId)
-                        ? _context.Localization.Format("Log.PostSubmittedPending", group.GroupName)
-                        : _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
-                    groupRecord.PermalinkUrl).ConfigureAwait(true);
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Post,
+                        AuditSeverity.Warning,
+                        group.GroupName,
+                        _context.Localization.Format("Log.PostPublishFailed", group.GroupName, this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
+                }
             }
 
             await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);
@@ -765,8 +825,6 @@ public sealed partial class ShellViewModel
             }
 
             List<string> mediaFiles = ParseExistingMediaFilePaths(sourcePost.LocalMediaFilePath);
-            List<string>? photoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
-
             string accountName = this.SelectedAccount?.DisplayName ?? session.AccountUid;
             string? accountAvatar = this.SelectedAccount?.AvatarUrl;
             bool isRealFbPostId = !sourcePost.PostId.StartsWith("feed_", StringComparison.Ordinal) &&
@@ -775,12 +833,12 @@ public sealed partial class ShellViewModel
             for (int i = 0; i < targets.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
+                SavedTargetGroup group = targets[i];
                 if (i > 0)
                 {
-                    await this.WaitAntiCheckpointDelayAsync(targets[i].GroupName, ct).ConfigureAwait(true);
+                    await this.WaitAntiCheckpointDelayAsync(group.GroupName, ct).ConfigureAwait(true);
                 }
 
-                SavedTargetGroup group = targets[i];
                 this.CampaignProgressText = _context.Localization.Format("Publisher.CampaignProgressFormat", i + 1, targets.Count, group.GroupName);
                 string groupText = _context.CampaignPublisher.ResolveDynamicVariables(rawSpintax, accountName, group.GroupName);
 
@@ -790,70 +848,113 @@ public sealed partial class ShellViewModel
                     group.GroupName,
                     _context.Localization.Format("Log.RepostingToGroup", group.GroupName, i + 1, targets.Count)).ConfigureAwait(true);
 
-                string? newPostId = null;
-                if (isRealFbPostId && photoIds is null && sourcePost.IsPersonalProfilePost)
+                try
                 {
-                    try
+                    string? newPostId = null;
+                    if (isRealFbPostId && mediaFiles.Count == 0 && sourcePost.IsPersonalProfilePost)
                     {
+                        try
+                        {
+                            newPostId = await _context.CometClient
+                                .SharePostAsync(session, sourcePost.PostId, groupText, group.GroupId, ct)
+                                .ConfigureAwait(true);
+                        }
+                        catch (Exception) when (!ct.IsCancellationRequested)
+                        {
+                            // Fallback to native group post below
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(newPostId))
+                    {
+                        List<string>? groupPhotoIds = await this.UploadMediaFilesParallelAsync(session, mediaFiles, ct).ConfigureAwait(true);
                         newPostId = await _context.CometClient
-                            .SharePostAsync(session, sourcePost.PostId, groupText, group.GroupId, ct)
+                            .PublishPostAsync(session, groupText, ComposerTarget.Group, group.GroupId, groupPhotoIds, ct: ct)
                             .ConfigureAwait(true);
                     }
-                    catch (Exception) when (!ct.IsCancellationRequested)
+
+                    if (!string.IsNullOrWhiteSpace(newPostId))
                     {
-                        // Fallback to native group post below
+                        _recentPublishedPostIds.Add(newPostId);
+                        if (this.AutoReactPublishedPost)
+                        {
+                            try
+                            {
+                                _ = await _context.CometClient
+                                    .ReactToPostAsync(session, newPostId, ReactionKind.Love, ct)
+                                    .ConfigureAwait(true);
+                            }
+                            catch (Exception) when (!ct.IsCancellationRequested)
+                            {
+                                // Non-fatal
+                            }
+                        }
+                    }
+
+                    string recordedId = !string.IsNullOrWhiteSpace(newPostId)
+                        ? newPostId
+                        : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+                    PublishedPostRecord repostRecord = new(
+                        PostId: recordedId,
+                        AccountUid: session.AccountUid,
+                        AuthorName: accountName,
+                        AuthorAvatarUrl: accountAvatar,
+                        MessageText: _context.CampaignPublisher.SpinText(groupText),
+                        MediaPreviewUrl: sourcePost.MediaPreviewUrl,
+                        LocalMediaFilePath: sourcePost.LocalMediaFilePath,
+                        TargetGroupId: group.GroupId,
+                        TargetGroupName: group.GroupName,
+                        TargetGroupAvatarUrl: group.AvatarUrl,
+                        PermalinkUrl: !string.IsNullOrWhiteSpace(newPostId)
+                            ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{newPostId}"
+                            : $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{group.GroupId}",
+                        CreatedAt: DateTimeOffset.UtcNow,
+                        IsPersonalProfilePost: false);
+
+                    await _context.AccountStore.UpsertPublishedPostAsync(repostRecord, ct).ConfigureAwait(true);
+                    this.PublishedPosts.Insert(0, repostRecord);
+                    this.SelectedPublishedPost ??= repostRecord;
+
+                    if (!string.IsNullOrWhiteSpace(newPostId))
+                    {
+                        _ = await this.LogAuditAsync(
+                            AuditCategory.Post,
+                            AuditSeverity.Success,
+                            group.GroupName,
+                            _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
+                            repostRecord.PermalinkUrl).ConfigureAwait(true);
+                    }
+                    else
+                    {
+                        _ = await this.LogAuditAsync(
+                            AuditCategory.Post,
+                            AuditSeverity.Warning,
+                            group.GroupName,
+                            _context.Localization.Format("Log.PostSubmittedPending", group.GroupName),
+                            repostRecord.PermalinkUrl).ConfigureAwait(true);
                     }
                 }
-
-                if (string.IsNullOrWhiteSpace(newPostId))
+                catch (OperationCanceledException)
                 {
-                    newPostId = await _context.CometClient
-                        .PublishPostAsync(session, groupText, ComposerTarget.Group, group.GroupId, photoIds, ct: ct)
-                        .ConfigureAwait(true);
+                    throw;
                 }
-
-                if (!string.IsNullOrWhiteSpace(newPostId))
+                catch (Exception ex)
                 {
-                    _recentPublishedPostIds.Add(newPostId);
-                    if (this.AutoReactPublishedPost)
+                    AutomationErrorCategory errorCategory = _context.CampaignPublisher.ClassifyAutomationException(ex);
+                    if (errorCategory == AutomationErrorCategory.CheckpointOrAuthFailure ||
+                        errorCategory == AutomationErrorCategory.ActionBlocked368)
                     {
-                        _ = await _context.CometClient
-                            .ReactToPostAsync(session, newPostId, ReactionKind.Love, ct)
-                            .ConfigureAwait(true);
+                        await this.HandleClassifiedCampaignExceptionAsync(AuditCategory.Post, group.GroupName, ex, ct).ConfigureAwait(true);
+                        break;
                     }
+
+                    _ = await this.LogAuditAsync(
+                        AuditCategory.Post,
+                        AuditSeverity.Warning,
+                        group.GroupName,
+                        _context.Localization.Format("Log.PostPublishFailed", group.GroupName, this.SanitizeErrorMessage(ex))).ConfigureAwait(true);
                 }
-
-                string recordedId = !string.IsNullOrWhiteSpace(newPostId)
-                    ? newPostId
-                    : $"grp_{group.GroupId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-
-                PublishedPostRecord repostRecord = new(
-                    PostId: recordedId,
-                    AccountUid: session.AccountUid,
-                    AuthorName: accountName,
-                    AuthorAvatarUrl: accountAvatar,
-                    MessageText: _context.CampaignPublisher.SpinText(groupText),
-                    MediaPreviewUrl: sourcePost.MediaPreviewUrl,
-                    LocalMediaFilePath: sourcePost.LocalMediaFilePath,
-                    TargetGroupId: group.GroupId,
-                    TargetGroupName: group.GroupName,
-                    TargetGroupAvatarUrl: group.AvatarUrl,
-                    PermalinkUrl: !string.IsNullOrWhiteSpace(newPostId)
-                        ? $"{ProtocolConstants.Endpoints.BaseOrigin}/{newPostId}"
-                        : $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{group.GroupId}",
-                    CreatedAt: DateTimeOffset.UtcNow,
-                    IsPersonalProfilePost: false);
-
-                await _context.AccountStore.UpsertPublishedPostAsync(repostRecord, ct).ConfigureAwait(true);
-                this.PublishedPosts.Insert(0, repostRecord);
-                this.SelectedPublishedPost ??= repostRecord;
-
-                _ = await this.LogAuditAsync(
-                    AuditCategory.Post,
-                    AuditSeverity.Success,
-                    group.GroupName,
-                    _context.Localization.Format("Log.PostPublishedSuccess", group.GroupName),
-                    repostRecord.PermalinkUrl).ConfigureAwait(true);
             }
 
             await this.ReloadPublishedPostsOnlyAsync().ConfigureAwait(true);

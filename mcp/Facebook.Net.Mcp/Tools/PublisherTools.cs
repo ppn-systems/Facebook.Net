@@ -144,26 +144,30 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             .ConfigureAwait(false);
 
         string? trimmedMedia = string.IsNullOrWhiteSpace(mediaFilePaths) ? null : mediaFilePaths.Trim();
-        Dictionary<string, (List<string>? PhotoIds, List<string>? VideoIds)> mediaCacheByUid = new(StringComparer.Ordinal);
-
-        (List<string>? primaryPhotoIds, List<string>? primaryVideoIds) = await this.UploadMediaFilesOnceAsync(primarySession, trimmedMedia, ct).ConfigureAwait(false);
-        mediaCacheByUid[primaryAccount.Uid] = (primaryPhotoIds, primaryVideoIds);
-
+        List<string> mediaFiles = _manager.CampaignPublisher.ParseExistingMediaFilePaths(trimmedMedia);
         int delaySec = Math.Clamp(delaySeconds, 2, 120);
         List<object> publishedResults = [];
 
         if (alsoPublishToPersonalFeed)
         {
+            (List<string>? feedPhotoIds, List<string>? feedVideoIds) = await this.UploadMediaFilesOnceAsync(primarySession, trimmedMedia, ct).ConfigureAwait(false);
             string feedMsg = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, primaryAccount.DisplayName, "Personal Feed");
             string? feedPostId = await _manager.CometClient
-                .PublishPostAsync(primarySession, feedMsg, ComposerTarget.Feed, null, primaryPhotoIds, primaryVideoIds, ct: ct)
+                .PublishPostAsync(primarySession, feedMsg, ComposerTarget.Feed, null, feedPhotoIds, feedVideoIds, ct: ct)
                 .ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(feedPostId))
             {
                 if (autoReactAfterPost)
                 {
-                    _ = await _manager.CometClient.ReactToPostAsync(primarySession, feedPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                    try
+                    {
+                        _ = await _manager.CometClient.ReactToPostAsync(primarySession, feedPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                    }
+                    catch (Exception) when (!ct.IsCancellationRequested)
+                    {
+                        // Non-fatal
+                    }
                 }
 
                 string feedPermalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/{feedPostId}";
@@ -209,55 +213,91 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
                 ? (primaryAccount, primarySession)
                 : await _manager.AcquireBrowserSessionAsync(currentUid, forceVisible: false, ct).ConfigureAwait(false);
 
-            if (!mediaCacheByUid.TryGetValue(account.Uid, out (List<string>? PhotoIds, List<string>? VideoIds) mediaForAccount))
-            {
-                mediaForAccount = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
-                mediaCacheByUid[account.Uid] = mediaForAccount;
-            }
-
             SavedTargetGroup grp = targetGroups[i];
-            string personalized = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, grp.GroupName);
-            string? postId = await _manager.CometClient
-                .PublishPostAsync(session, personalized, ComposerTarget.Group, grp.GroupId, mediaForAccount.PhotoIds, mediaForAccount.VideoIds, ct: ct)
-                .ConfigureAwait(false);
-
-            if (!string.IsNullOrWhiteSpace(postId))
+            try
             {
-                if (autoReactAfterPost)
+                (List<string>? groupPhotoIds, List<string>? groupVideoIds) = await this.UploadMediaFilesOnceAsync(session, trimmedMedia, ct).ConfigureAwait(false);
+                string personalized = _manager.CampaignPublisher.ResolveDynamicVariables(messageSpintax, account.DisplayName, grp.GroupName);
+                string? postId = await _manager.CometClient
+                    .PublishPostAsync(session, personalized, ComposerTarget.Group, grp.GroupId, groupPhotoIds, groupVideoIds, ct: ct)
+                    .ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(postId))
                 {
-                    _ = await _manager.CometClient.ReactToPostAsync(session, postId, ReactionKind.Love, ct).ConfigureAwait(false);
+                    if (autoReactAfterPost)
+                    {
+                        try
+                        {
+                            _ = await _manager.CometClient.ReactToPostAsync(session, postId, ReactionKind.Love, ct).ConfigureAwait(false);
+                        }
+                        catch (Exception) when (!ct.IsCancellationRequested)
+                        {
+                            // Non-fatal
+                        }
+                    }
+
+                    string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{postId}/";
+                    await _manager.AccountStore.RecordActionAsync(
+                        new ActionHistoryEntry(session.AccountUid, "POST", grp.GroupId, postId, DateTimeOffset.UtcNow),
+                        ct).ConfigureAwait(false);
+
+                    await _manager.AccountStore.UpsertPublishedPostAsync(
+                        new PublishedPostRecord(
+                            PostId: postId,
+                            AccountUid: session.AccountUid,
+                            AuthorName: account.DisplayName,
+                            AuthorAvatarUrl: account.AvatarUrl,
+                            MessageText: PayloadBuilder.SpinText(personalized),
+                            MediaPreviewUrl: null,
+                            LocalMediaFilePath: trimmedMedia,
+                            TargetGroupId: grp.GroupId,
+                            TargetGroupName: grp.GroupName,
+                            TargetGroupAvatarUrl: grp.AvatarUrl,
+                            PermalinkUrl: permalink,
+                            CreatedAt: DateTimeOffset.UtcNow,
+                            IsPersonalProfilePost: false),
+                        ct).ConfigureAwait(false);
+
+                    publishedResults.Add(new
+                    {
+                        target = "Group",
+                        account_uid = account.Uid,
+                        group_id = grp.GroupId,
+                        group_name = grp.GroupName,
+                        post_id = postId,
+                        permalink_url = permalink,
+                        success = true
+                    });
                 }
-
-                string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{postId}/";
-                await _manager.AccountStore.RecordActionAsync(
-                    new ActionHistoryEntry(session.AccountUid, "POST", grp.GroupId, postId, DateTimeOffset.UtcNow),
-                    ct).ConfigureAwait(false);
-
-                await _manager.AccountStore.UpsertPublishedPostAsync(
-                    new PublishedPostRecord(
-                        PostId: postId,
-                        AccountUid: session.AccountUid,
-                        AuthorName: account.DisplayName,
-                        AuthorAvatarUrl: account.AvatarUrl,
-                        MessageText: PayloadBuilder.SpinText(personalized),
-                        MediaPreviewUrl: null,
-                        LocalMediaFilePath: trimmedMedia,
-                        TargetGroupId: grp.GroupId,
-                        TargetGroupName: grp.GroupName,
-                        TargetGroupAvatarUrl: grp.AvatarUrl,
-                        PermalinkUrl: permalink,
-                        CreatedAt: DateTimeOffset.UtcNow,
-                        IsPersonalProfilePost: false),
-                    ct).ConfigureAwait(false);
-
+                else
+                {
+                    publishedResults.Add(new
+                    {
+                        target = "Group",
+                        account_uid = account.Uid,
+                        group_id = grp.GroupId,
+                        group_name = grp.GroupName,
+                        post_id = (string?)null,
+                        permalink_url = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}",
+                        success = false,
+                        note = "Pending approval or rejected by Facebook"
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
                 publishedResults.Add(new
                 {
                     target = "Group",
                     account_uid = account.Uid,
                     group_id = grp.GroupId,
                     group_name = grp.GroupName,
-                    post_id = postId,
-                    permalink_url = permalink
+                    success = false,
+                    error = ex.Message
                 });
             }
         }
@@ -277,8 +317,8 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             accounts_rotated = rotationUids,
             target_groups_selected = targetGroups.Count,
             published_count = publishedResults.Count,
-            attached_photos_count = primaryPhotoIds?.Count ?? 0,
-            attached_videos_count = primaryVideoIds?.Count ?? 0,
+            attached_photos_count = mediaFiles.Count,
+            attached_videos_count = 0,
             posts = publishedResults
         });
     }
@@ -383,13 +423,6 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
         List<SavedTargetGroup> targetGroups = await this.ResolveCampaignTargetGroupsAsync(filterByTagIdOrName, Math.Clamp(maxGroups, 1, 50), ct)
             .ConfigureAwait(false);
 
-        List<string>? fallbackPhotoIds = null;
-        List<string>? fallbackVideoIds = null;
-        if (!string.IsNullOrWhiteSpace(sourceRecord?.LocalMediaFilePath))
-        {
-            (fallbackPhotoIds, fallbackVideoIds) = await this.UploadMediaFilesOnceAsync(session, sourceRecord.LocalMediaFilePath, ct).ConfigureAwait(false);
-        }
-
         int delaySec = Math.Clamp(delaySeconds, 2, 120);
         List<object> reposted = [];
 
@@ -402,50 +435,91 @@ public sealed class PublisherTools(FacebookMcpSessionManager manager)
             }
 
             SavedTargetGroup grp = targetGroups[i];
-            string caption = _manager.CampaignPublisher.ResolveDynamicVariables(baseTemplate, account.DisplayName, grp.GroupName);
-
-            string? newPostId = await _manager.CometClient
-                .SharePostAsync(session, cleanSourceId, caption, grp.GroupId, ct)
-                .ConfigureAwait(false);
-
-            if (string.IsNullOrWhiteSpace(newPostId) && !string.IsNullOrWhiteSpace(caption))
+            try
             {
-                newPostId = await _manager.CometClient
-                    .PublishPostAsync(session, caption, ComposerTarget.Group, grp.GroupId, fallbackPhotoIds, fallbackVideoIds, ct: ct)
+                string caption = _manager.CampaignPublisher.ResolveDynamicVariables(baseTemplate, account.DisplayName, grp.GroupName);
+
+                string? newPostId = await _manager.CometClient
+                    .SharePostAsync(session, cleanSourceId, caption, grp.GroupId, ct)
                     .ConfigureAwait(false);
-            }
 
-            if (!string.IsNullOrWhiteSpace(newPostId))
-            {
-                if (autoReactAfterPost)
+                if (string.IsNullOrWhiteSpace(newPostId) && !string.IsNullOrWhiteSpace(caption))
                 {
-                    _ = await _manager.CometClient.ReactToPostAsync(session, newPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                    (List<string>? fallbackPhotoIds, List<string>? fallbackVideoIds) = !string.IsNullOrWhiteSpace(sourceRecord?.LocalMediaFilePath)
+                        ? await this.UploadMediaFilesOnceAsync(session, sourceRecord.LocalMediaFilePath, ct).ConfigureAwait(false)
+                        : (null, null);
+
+                    newPostId = await _manager.CometClient
+                        .PublishPostAsync(session, caption, ComposerTarget.Group, grp.GroupId, fallbackPhotoIds, fallbackVideoIds, ct: ct)
+                        .ConfigureAwait(false);
                 }
 
-                string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{newPostId}/";
-                await _manager.AccountStore.UpsertPublishedPostAsync(
-                    new PublishedPostRecord(
-                        PostId: newPostId,
-                        AccountUid: session.AccountUid,
-                        AuthorName: account.DisplayName,
-                        AuthorAvatarUrl: account.AvatarUrl,
-                        MessageText: PayloadBuilder.SpinText(caption),
-                        MediaPreviewUrl: sourceRecord?.MediaPreviewUrl,
-                        LocalMediaFilePath: sourceRecord?.LocalMediaFilePath,
-                        TargetGroupId: grp.GroupId,
-                        TargetGroupName: grp.GroupName,
-                        TargetGroupAvatarUrl: grp.AvatarUrl,
-                        PermalinkUrl: permalink,
-                        CreatedAt: DateTimeOffset.UtcNow,
-                        IsPersonalProfilePost: false),
-                    ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(newPostId))
+                {
+                    if (autoReactAfterPost)
+                    {
+                        try
+                        {
+                            _ = await _manager.CometClient.ReactToPostAsync(session, newPostId, ReactionKind.Love, ct).ConfigureAwait(false);
+                        }
+                        catch (Exception) when (!ct.IsCancellationRequested)
+                        {
+                            // Non-fatal
+                        }
+                    }
 
+                    string permalink = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}/posts/{newPostId}/";
+                    await _manager.AccountStore.UpsertPublishedPostAsync(
+                        new PublishedPostRecord(
+                            PostId: newPostId,
+                            AccountUid: session.AccountUid,
+                            AuthorName: account.DisplayName,
+                            AuthorAvatarUrl: account.AvatarUrl,
+                            MessageText: PayloadBuilder.SpinText(caption),
+                            MediaPreviewUrl: sourceRecord?.MediaPreviewUrl,
+                            LocalMediaFilePath: sourceRecord?.LocalMediaFilePath,
+                            TargetGroupId: grp.GroupId,
+                            TargetGroupName: grp.GroupName,
+                            TargetGroupAvatarUrl: grp.AvatarUrl,
+                            PermalinkUrl: permalink,
+                            CreatedAt: DateTimeOffset.UtcNow,
+                            IsPersonalProfilePost: false),
+                        ct).ConfigureAwait(false);
+
+                    reposted.Add(new
+                    {
+                        group_id = grp.GroupId,
+                        group_name = grp.GroupName,
+                        post_id = newPostId,
+                        permalink_url = permalink,
+                        success = true
+                    });
+                }
+                else
+                {
+                    reposted.Add(new
+                    {
+                        group_id = grp.GroupId,
+                        group_name = grp.GroupName,
+                        post_id = (string?)null,
+                        permalink_url = $"{ProtocolConstants.Endpoints.BaseOrigin}/groups/{grp.GroupId}",
+                        success = false,
+                        note = "Pending approval or rejected by Facebook"
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
                 reposted.Add(new
                 {
                     group_id = grp.GroupId,
                     group_name = grp.GroupName,
-                    post_id = newPostId,
-                    permalink_url = permalink
+                    success = false,
+                    error = ex.Message
                 });
             }
         }

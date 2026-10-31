@@ -320,6 +320,7 @@
   "Log.PublishingToGroup": "Đang đăng bài vào nhóm '{0}', lượt {1}/{2}...",
   "Log.PostSubmittedPending": "Đã gửi bài đăng vào nhóm '{0}', đang chờ quản trị viên duyệt.",
   "Log.PostPublishedSuccess": "Đăng bài thành công vào nhóm '{0}'!",
+  "Log.PostPublishFailed": "Đăng bài vào nhóm '{0}' thất bại: {1}",
   "Log.NoRecentPostsToBump": "Chưa có bài viết vừa đăng nào trong phiên này để đẩy bài — hãy chạy đăng bài trước.",
   "Log.PostBumpedSuccess": "Đã bình luận đẩy bài viết lượt {0}/{1} lên đầu nhóm thành công!",
   "Log.PostBumpFailed": "Lỗi khi đẩy bài viết: {0}",

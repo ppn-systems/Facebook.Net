@@ -346,6 +346,12 @@ public static class GroupCard
         };
 
         Border avatar = AvatarBadge.Create(theme, tg.GroupName, 30, tg.AvatarUrl);
+        avatar.Cursor = new Cursor(StandardCursorType.Hand);
+        avatar.PointerPressed += (_, e) =>
+        {
+            enabledCheck.IsChecked = !(enabledCheck.IsChecked ?? false);
+            e.Handled = true;
+        };
 
         StackPanel nameAndTagsStack = new()
         {
@@ -356,6 +362,12 @@ public static class GroupCard
         TextBlock nameTb = SectionHeader.CreateLabel(theme, tg.GroupName, 13, FontWeight.SemiBold);
         nameTb.TextWrapping = TextWrapping.NoWrap;
         nameTb.TextTrimming = TextTrimming.CharacterEllipsis;
+        nameTb.Cursor = new Cursor(StandardCursorType.Hand);
+        nameTb.PointerPressed += (_, e) =>
+        {
+            enabledCheck.IsChecked = !(enabledCheck.IsChecked ?? false);
+            e.Handled = true;
+        };
         nameAndTagsStack.Children.Add(nameTb);
 
         if (assignedTags is not null && assignedTags.Count > 0)

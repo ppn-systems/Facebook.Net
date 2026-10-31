@@ -157,6 +157,141 @@ public sealed class ShellViewModelCommandsTests : IDisposable
     }
 
     [Fact]
+    public async Task ShellViewModel_PublishCampaign_MultiGroupWithMedia_UploadsFreshMediaPerGroup_AndPublishesAllTargets()
+    {
+        string workspaceDir = Path.Combine(this._tempDir, "vm_multigroup_media");
+        _ = Directory.CreateDirectory(workspaceDir);
+        string dummyPhoto = Path.Combine(workspaceDir, "test_item.jpg");
+        await File.WriteAllTextAsync(dummyPhoto, "dummy image bytes");
+
+        FakeBrowserManager browserManager = new();
+        FakeCometClient cometClient = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            sessionManager: browserManager,
+            cometClient: cometClient);
+        using ShellViewModel vm = new(context);
+
+        await vm.InitializeAsync();
+        vm.MinDelaySeconds = 0;
+        vm.MaxDelaySeconds = 0;
+        vm.AccountFriendlyNameInput = "Nick Multi Test";
+        vm.SessionImportRawInput = "c_user=1000999; xs=99%3Atest;";
+        await vm.QuickImportSessionCommand.ExecuteAsync(null);
+
+        // Add 3 target groups
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_1", "Nhóm 1", AvatarUrl: null));
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_2", "Nhóm 2", AvatarUrl: null));
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_3", "Nhóm 3", AvatarUrl: null));
+        Assert.Equal(3, vm.TargetGroups.Count);
+
+        vm.PublishTargetMode = 1; // Groups only
+        vm.PublishToTargetGroups = true;
+        vm.PostSpintaxText = "Bài đăng bán hàng vào {group_name}";
+        vm.PostMediaFilePath = dummyPhoto;
+
+        await vm.PublishCampaignCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, cometClient.PublishedPostsCount);
+        Assert.Equal(3, cometClient.PhotoUploadCallCount);
+        Assert.Equal(3, cometClient.PublishedCalls.Count);
+        // Ensure each group received a unique staging photo ID (not reused)
+        Assert.Equal("grp_1", cometClient.PublishedCalls[0].TargetGroupId);
+        Assert.Equal("grp_2", cometClient.PublishedCalls[1].TargetGroupId);
+        Assert.Equal("grp_3", cometClient.PublishedCalls[2].TargetGroupId);
+        Assert.NotEqual(cometClient.PublishedCalls[0].PhotoIds![0], cometClient.PublishedCalls[1].PhotoIds![0]);
+        Assert.NotEqual(cometClient.PublishedCalls[1].PhotoIds![0], cometClient.PublishedCalls[2].PhotoIds![0]);
+    }
+
+    [Fact]
+    public async Task ShellViewModel_PublishCampaign_WhenOneGroupFails_ContinuesToRemainingGroups()
+    {
+        string workspaceDir = Path.Combine(this._tempDir, "vm_multigroup_resilience");
+        FakeBrowserManager browserManager = new();
+        FakeCometClient cometClient = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            sessionManager: browserManager,
+            cometClient: cometClient);
+        using ShellViewModel vm = new(context);
+
+        await vm.InitializeAsync();
+        vm.MinDelaySeconds = 0;
+        vm.MaxDelaySeconds = 0;
+        vm.AccountFriendlyNameInput = "Nick Resilience Test";
+        vm.SessionImportRawInput = "c_user=1000888; xs=88%3Atest;";
+        await vm.QuickImportSessionCommand.ExecuteAsync(null);
+
+        // Add 3 target groups
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_1", "Nhóm 1", AvatarUrl: null));
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_2", "Nhóm 2 (Failing)", AvatarUrl: null));
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_3", "Nhóm 3", AvatarUrl: null));
+
+        // Group 2 throws a non-fatal group permission exception
+        cometClient.FailGroupPredicate = gid => gid == "grp_2"
+            ? new InvalidOperationException("You do not have permission to post in this group")
+            : null;
+
+        vm.PublishTargetMode = 1; // Groups only
+        vm.PublishToTargetGroups = true;
+        vm.PostSpintaxText = "Bài đăng thử nghiệm";
+
+        await vm.PublishCampaignCommand.ExecuteAsync(null);
+
+        // Group 1 and Group 3 should succeed despite Group 2 failing!
+        Assert.Equal(2, cometClient.PublishedPostsCount);
+        Assert.Contains(cometClient.PublishedCalls, c => c.TargetGroupId == "grp_1");
+        Assert.Contains(cometClient.PublishedCalls, c => c.TargetGroupId == "grp_3");
+    }
+
+    [Fact]
+    public async Task ShellViewModel_PublishCampaign_WhenZeroTargetsEnabled_AndTargetGroupsExist_DoesNotPostToRandomSingleGroup()
+    {
+        string workspaceDir = Path.Combine(this._tempDir, "vm_multigroup_zerotargets");
+        FakeBrowserManager browserManager = new();
+        FakeCometClient cometClient = new();
+
+        using UiServiceContext context = new(
+            new StubBrowserAdapter(),
+            workspaceDir,
+            new ImmediateDispatcher(),
+            sessionManager: browserManager,
+            cometClient: cometClient);
+        using ShellViewModel vm = new(context);
+
+        await vm.InitializeAsync();
+        vm.MinDelaySeconds = 0;
+        vm.MaxDelaySeconds = 0;
+        vm.AccountFriendlyNameInput = "Nick Zero Target";
+        vm.SessionImportRawInput = "c_user=1000777; xs=77%3Atest;";
+        await vm.QuickImportSessionCommand.ExecuteAsync(null);
+
+        // Add target group but disable it
+        await vm.AddGroupToTargetsAsync(new GroupSummary("grp_disabled", "Nhóm Bị Tắt", AvatarUrl: null));
+        await vm.ToggleTargetGroupEnabledAsync(vm.TargetGroups[0], false);
+        Assert.False(vm.TargetGroups[0].IsEnabled);
+
+        // Set SelectedGroup to another group
+        vm.SelectedGroup = new GroupSummary("grp_catalog", "Nhóm Danh Mục", AvatarUrl: null);
+
+        vm.PublishTargetMode = 1;
+        vm.PublishToTargetGroups = true;
+        vm.PostSpintaxText = "Nội dung bài viết";
+
+        await vm.PublishCampaignCommand.ExecuteAsync(null);
+
+        // Must not publish to anything because TargetGroups exist but all are disabled
+        Assert.Equal(0, cometClient.PublishedPostsCount);
+        Assert.Empty(cometClient.PublishedCalls);
+    }
+
+    [Fact]
     public void NavigationService_ShouldNavigateBetweenPagesAndSupportBackStackFromAuditLogsToSettings()
     {
         using UiServiceContext ctx = new(
